@@ -1,0 +1,9 @@
+faiss-cpu
+huggingface_hub
+numpy
+pyyaml
+rank-bm25
+sentence-transformers
+torch
+tqdm
+transformers

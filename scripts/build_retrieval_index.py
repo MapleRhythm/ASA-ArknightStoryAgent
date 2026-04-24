@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import pickle
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
+
+from goldenglow.config import (
+    BM25_TOKENS_PATH,
+    CHUNKS_DEBUG_PATH,
+    CORPUS_METADATA_PATH,
+    DOCUMENTS_PATH,
+    EMBEDDING_MODEL_DIR,
+    EXCEL_ROOT,
+    FAISS_INDEX_PATH,
+    INDEX_ROOT,
+    STORY_ROOT,
+    BuildConfig,
+)
+from goldenglow.data.story_parser import build_story_documents
+from goldenglow.retrieval.hybrid import tokenize_for_bm25
+
+
+def save_jsonl(path: Path, records: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False))
+            handle.write("\n")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build FAISS + BM25 retrieval index.")
+    parser.add_argument("--max-chars", type=int, default=420)
+    parser.add_argument("--overlap-segments", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument(
+        "--embedding-model",
+        type=Path,
+        default=EMBEDDING_MODEL_DIR,
+        help="Local path to the embedding model.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    config = BuildConfig(
+        max_chars=args.max_chars,
+        overlap_segments=args.overlap_segments,
+        embedding_batch_size=args.batch_size,
+    )
+
+    documents = build_story_documents(
+        story_root=STORY_ROOT,
+        excel_root=EXCEL_ROOT,
+        max_chars=config.max_chars,
+        overlap_segments=config.overlap_segments,
+    )
+    if not documents:
+        raise RuntimeError("No story documents were parsed from the source data.")
+
+    INDEX_ROOT.mkdir(parents=True, exist_ok=True)
+    CHUNKS_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    save_jsonl(DOCUMENTS_PATH, documents)
+    save_jsonl(CHUNKS_DEBUG_PATH, documents[:200])
+
+    embedding_model = SentenceTransformer(str(args.embedding_model), device=args.device)
+    search_texts = [document["search_text"] for document in documents]
+    embeddings = embedding_model.encode(
+        search_texts,
+        batch_size=config.embedding_batch_size,
+        show_progress_bar=True,
+        normalize_embeddings=config.normalize_embeddings,
+        convert_to_numpy=True,
+    ).astype(np.float32)
+
+    index = faiss.IndexFlatIP(embeddings.shape[1])
+    index.add(embeddings)
+    faiss.write_index(index, str(FAISS_INDEX_PATH))
+
+    tokenized_corpus = [tokenize_for_bm25(text) for text in tqdm(search_texts, desc="Tokenizing BM25")]
+    with BM25_TOKENS_PATH.open("wb") as handle:
+        pickle.dump(tokenized_corpus, handle)
+
+    meta = {
+        "documents": len(documents),
+        "embedding_dim": int(embeddings.shape[1]),
+        "story_root": str(STORY_ROOT),
+        "embedding_model": str(args.embedding_model),
+        "max_chars": config.max_chars,
+        "overlap_segments": config.overlap_segments,
+    }
+    CORPUS_METADATA_PATH.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print(json.dumps(meta, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

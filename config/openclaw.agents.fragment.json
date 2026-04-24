@@ -1,0 +1,32 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/zhb/goldenglow",
+      "model": {
+        "primary": "gmn1/gpt-5.4"
+      },
+      "imageModel": "gmn1/gpt-5.4",
+      "thinkingDefault": "xhigh"
+    },
+    "list": [
+      {
+        "id": "sft-data-curator",
+        "name": "SFT Data Curator",
+        "workspace": "/home/zhb/goldenglow/.openclaw-agents/sft-data-curator",
+        "thinkingDefault": "high"
+      },
+      {
+        "id": "lora-trainer",
+        "name": "LoRA Trainer",
+        "workspace": "/home/zhb/goldenglow/.openclaw-agents/lora-trainer",
+        "thinkingDefault": "xhigh"
+      },
+      {
+        "id": "rag-retrieval-optimizer",
+        "name": "RAG Retrieval Optimizer",
+        "workspace": "/home/zhb/goldenglow/.openclaw-agents/rag-retrieval-optimizer",
+        "thinkingDefault": "xhigh"
+      }
+    ]
+  }
+}

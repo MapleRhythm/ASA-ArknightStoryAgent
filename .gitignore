@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environments
+.conda/
+.venv/
+venv/
+env/
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+tmp/
+
+# Runtime outputs
+outputs/
+
+# Retrieval / build artifacts
+indexes/
+
+# Model weights and caches
+model/qwen3.5-4b/
+model/lora/
+model/embeddings/
+model/reranker/
+model/**/.cache/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.gguf
+
+# Generated data artifacts
+data/processed/
+data/sft/
+
+# Large external game data checkout
+data/ArknightsGameData/
+
+# Keep repo structure placeholders if needed
+!data/processed/.gitkeep
+!data/sft/.gitkeep
+!outputs/.gitkeep
+!indexes/.gitkeep
