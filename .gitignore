@@ -58,3 +58,7 @@ data/ArknightsGameData/
 !data/sft/.gitkeep
 !outputs/.gitkeep
 !indexes/.gitkeep
+
+#openclaw
+.openclaw-agents
+.openclaw-cli
