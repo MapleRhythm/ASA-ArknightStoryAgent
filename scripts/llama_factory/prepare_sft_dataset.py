@@ -9,8 +9,13 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "processed" / "sft_data" / "teacher_v2"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "llama_factory" / "teacher_v2"
+DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "processed" / "sft_data" / "teacher_v2_plus_prompt_supplement_v2"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "llama_factory" / "teacher_v2_plus_prompt_supplement_v2"
+CORE_JSON_TASK_TYPES = {
+    "user_question_hypothesis_generation",
+    "follow_up_hypothesis_generation",
+    "conclusion_generation",
+}
 
 ROLE_TAGS = {
     "role_tag": "from",
@@ -31,6 +36,31 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                 continue
             records.append(json.loads(line))
     return records
+
+
+def validate_record(record: dict[str, Any]) -> None:
+    messages = record.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("empty messages")
+    system_positions = [idx for idx, message in enumerate(messages) if message.get("role") == "system"]
+    if len(system_positions) > 1:
+        raise ValueError("multiple system messages")
+    if system_positions and system_positions[0] != 0:
+        raise ValueError("system message is not first")
+    if messages[-1].get("role") != "assistant":
+        raise ValueError("last message is not assistant")
+    if record.get("task_type") in CORE_JSON_TASK_TYPES:
+        if any(message.get("role") == "tool" or message.get("tool_calls") for message in messages):
+            raise ValueError("legacy tool trace in core json task")
+        final_content = messages[-1].get("content")
+        if not isinstance(final_content, str):
+            raise ValueError("assistant content is not string")
+        try:
+            payload = json.loads(final_content)
+        except json.JSONDecodeError as exc:
+            raise ValueError("assistant content is not valid json") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("assistant content is not a json object")
 
 
 def normalize_tool_call(message: dict[str, Any]) -> dict[str, Any]:
@@ -147,7 +177,10 @@ def export_split(
     dataset_entries: dict[str, str],
 ) -> tuple[int, Counter]:
     records = load_jsonl(input_path)
-    converted = [convert_record(record) for record in records]
+    converted: list[dict[str, Any]] = []
+    for record in records:
+        validate_record(record)
+        converted.append(convert_record(record))
     write_json(output_path, converted)
     dataset_entries[dataset_name] = output_path.name
 
@@ -171,6 +204,7 @@ def main() -> None:
     source_dir = args.source_dir.resolve()
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    dataset_prefix = source_dir.name
 
     dataset_entries: dict[str, str] = {}
     manifest: dict[str, Any] = {
@@ -187,7 +221,7 @@ def main() -> None:
         count, task_counter = export_split(
             input_path,
             output_path,
-            dataset_name=f"teacher_v2_{split}",
+            dataset_name=f"{dataset_prefix}_{split}",
             dataset_entries=dataset_entries,
         )
         manifest["splits"][split] = {
@@ -207,7 +241,7 @@ def main() -> None:
             count, task_counter = export_split(
                 input_path,
                 output_path,
-                dataset_name=f"teacher_v2_{bucket}_{split}",
+                dataset_name=f"{dataset_prefix}_{bucket}_{split}",
                 dataset_entries=dataset_entries,
             )
             manifest["splits"][f"{bucket}_{split}"] = {

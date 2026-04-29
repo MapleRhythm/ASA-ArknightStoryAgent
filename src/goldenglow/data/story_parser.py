@@ -122,6 +122,18 @@ def _build_story_lookup(excel_root: Path) -> dict[str, dict]:
     return _load_json(excel_root / "story_table.json")
 
 
+def _build_character_name_lookup(excel_root: Path) -> dict[str, str]:
+    character_table = _load_json(excel_root / "character_table.json")
+    lookup: dict[str, str] = {}
+    for char_id, payload in character_table.items():
+        if not isinstance(payload, dict):
+            continue
+        name = normalize_text(str(payload.get("name") or ""))
+        if name:
+            lookup[char_id] = name
+    return lookup
+
+
 def _extract_stage_id(item: dict) -> str | None:
     required = item.get("requiredStages") or []
     if required:
@@ -174,6 +186,137 @@ def _resolve_story_meta(relative_story_key: str, excel_root: Path) -> dict:
 _resolve_story_meta.review_lookup = {}  # type: ignore[attr-defined]
 _resolve_story_meta.stage_lookup = {}  # type: ignore[attr-defined]
 _resolve_story_meta.story_lookup = {}  # type: ignore[attr-defined]
+
+
+def build_handbook_documents(excel_root: Path) -> list[dict]:
+    handbook_table = _load_json(excel_root / "handbook_info_table.json")
+    handbook_dict = handbook_table.get("handbookDict", {})
+    character_name_lookup = _build_character_name_lookup(excel_root)
+
+    documents: list[dict] = []
+    source_path = (excel_root / "handbook_info_table.json").as_posix()
+
+    for char_id, payload in handbook_dict.items():
+        if not isinstance(payload, dict):
+            continue
+        codename = normalize_text(character_name_lookup.get(char_id, ""))
+        story_blocks = payload.get("storyTextAudio") or []
+        for block_index, block in enumerate(story_blocks):
+            if not isinstance(block, dict):
+                continue
+            story_title = normalize_text(str(block.get("storyTitle") or ""))
+            stories = block.get("stories") or []
+            text_parts: list[str] = []
+            for item in stories:
+                if not isinstance(item, dict):
+                    continue
+                story_text = normalize_text(str(item.get("storyText") or ""))
+                if story_text:
+                    text_parts.append(story_text)
+            if not text_parts:
+                continue
+
+            clean_text_parts = [part for part in (story_title, "\n\n".join(text_parts)) if part]
+            clean_text = "\n".join(clean_text_parts).strip()
+            if not clean_text:
+                continue
+
+            search_parts = [
+                codename,
+                char_id,
+                "干员档案",
+                story_title,
+                clean_text,
+            ]
+            document = {
+                "id": f"handbook/{char_id}#chunk-{block_index:04d}",
+                "chunk_index": block_index,
+                "source_path": source_path,
+                "clean_text": clean_text,
+                "search_text": "\n".join(part for part in search_parts if part).strip(),
+                "segments": [
+                    {
+                        "speaker": None,
+                        "text": clean_text,
+                        "segment_type": "handbook",
+                    }
+                ],
+                "story_key": f"handbook/{char_id}",
+                "story_id": f"handbook/{char_id}",
+                "activity_id": "operator_handbook",
+                "activity_name": "干员档案",
+                "story_name": story_title or codename or char_id,
+                "story_code": None,
+                "avg_tag": "档案",
+                "story_sort": block_index,
+                "stage_id": None,
+                "stage_code": None,
+                "stage_name": None,
+                "stage_type": None,
+                "zone_id": None,
+                "trigger_type": "HANDBOOK",
+            }
+            documents.append(document)
+    return documents
+
+
+def build_charword_documents(excel_root: Path) -> list[dict]:
+    charword_table = _load_json(excel_root / "charword_table.json")
+    char_words = charword_table.get("charWords", {})
+    character_name_lookup = _build_character_name_lookup(excel_root)
+
+    documents: list[dict] = []
+    source_path = (excel_root / "charword_table.json").as_posix()
+
+    for voice_id, payload in char_words.items():
+        if not isinstance(payload, dict):
+            continue
+        char_id = str(payload.get("charId") or "").strip()
+        voice_text = normalize_text(str(payload.get("voiceText") or ""))
+        if not char_id or not voice_text:
+            continue
+        codename = normalize_text(character_name_lookup.get(char_id, ""))
+        voice_title = normalize_text(str(payload.get("voiceTitle") or ""))
+        clean_text_parts = [part for part in (voice_title, voice_text) if part]
+        clean_text = "\n".join(clean_text_parts).strip()
+        search_parts = [
+            codename,
+            char_id,
+            "干员语音",
+            voice_title,
+            voice_text,
+        ]
+        documents.append(
+            {
+                "id": f"charword/{voice_id}",
+                "chunk_index": 0,
+                "source_path": source_path,
+                "clean_text": clean_text,
+                "search_text": "\n".join(part for part in search_parts if part).strip(),
+                "segments": [
+                    {
+                        "speaker": codename or None,
+                        "text": voice_text,
+                        "segment_type": "voice",
+                    }
+                ],
+                "story_key": f"charword/{voice_id}",
+                "story_id": f"charword/{voice_id}",
+                "activity_id": "operator_voice",
+                "activity_name": "干员语音",
+                "story_name": voice_title or codename or char_id,
+                "story_code": None,
+                "avg_tag": "语音",
+                "story_sort": int(payload.get("voiceIndex") or 0),
+                "stage_id": None,
+                "stage_code": None,
+                "stage_name": None,
+                "stage_type": None,
+                "zone_id": None,
+                "trigger_type": "VOICE",
+            }
+        )
+    return documents
 
 
 def chunk_segments(
@@ -265,6 +408,23 @@ def build_story_documents(
             }
             document.update(story_meta)
             documents.append(document)
+    return documents
+
+
+def build_corpus_documents(
+    story_root: Path,
+    excel_root: Path,
+    max_chars: int = 420,
+    overlap_segments: int = 1,
+) -> list[dict]:
+    documents = build_story_documents(
+        story_root=story_root,
+        excel_root=excel_root,
+        max_chars=max_chars,
+        overlap_segments=overlap_segments,
+    )
+    documents.extend(build_handbook_documents(excel_root))
+    documents.extend(build_charword_documents(excel_root))
     return documents
 
 

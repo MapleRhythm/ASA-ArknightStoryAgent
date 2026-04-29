@@ -13,24 +13,39 @@ from pathlib import Path
 from typing import Any
 
 from goldenglow.config import DOCUMENTS_PATH, EXCEL_ROOT, STORY_ROOT
-from goldenglow.data.story_parser import build_story_documents
+from goldenglow.data.story_parser import build_corpus_documents
 
+
+INITIAL_HYPOTHESIS_TASK_TYPE = "user_question_hypothesis_generation"
+FOLLOW_UP_HYPOTHESIS_TASK_TYPE = "follow_up_hypothesis_generation"
+CONCLUSION_TASK_TYPE = "conclusion_generation"
+
+LEGACY_TOOL_TASK_TYPE_ALIASES = {
+    "intent_hypothesis_rag": INITIAL_HYPOTHESIS_TASK_TYPE,
+    "tool_calling_rag": FOLLOW_UP_HYPOTHESIS_TASK_TYPE,
+    "unknown_rag_negative": CONCLUSION_TASK_TYPE,
+}
 
 SUPPORTED_TASK_TYPES = {
     "canon_qa",
     "worldbuilding_qa",
     "persona_grounded_qa",
     "multi_turn_dialogue",
-    "intent_hypothesis_rag",
-    "tool_calling_rag",
-    "unknown_rag_negative",
+    INITIAL_HYPOTHESIS_TASK_TYPE,
+    FOLLOW_UP_HYPOTHESIS_TASK_TYPE,
+    CONCLUSION_TASK_TYPE,
 }
+
+ACCEPTED_TASK_TYPES = SUPPORTED_TASK_TYPES | set(LEGACY_TOOL_TASK_TYPE_ALIASES)
 
 TASK_BUCKET_MAP = {
     "canon_qa": "knowledge",
     "worldbuilding_qa": "knowledge",
     "persona_grounded_qa": "style",
     "multi_turn_dialogue": "tool",
+    INITIAL_HYPOTHESIS_TASK_TYPE: "tool",
+    FOLLOW_UP_HYPOTHESIS_TASK_TYPE: "tool",
+    CONCLUSION_TASK_TYPE: "tool",
     "intent_hypothesis_rag": "tool",
     "tool_calling_rag": "tool",
     "unknown_rag_negative": "tool",
@@ -119,6 +134,97 @@ RAG_TOOL_SCHEMA = {
 }
 
 JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+PRIMARY_ENTITY_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,8}")
+CODE_NAME_RE = re.compile(r"【代号】\s*([\u4e00-\u9fff]{2,8})")
+REAL_NAME_RE = re.compile(r"本名([\u4e00-\u9fff]{2,8})")
+OPERATOR_NAME_RE = re.compile(r"干员([\u4e00-\u9fff]{2,8})")
+PRIMARY_ENTITY_STOP_WORDS = {
+    "用户问题",
+    "多轮上下文",
+    "当前假设",
+    "当前证据",
+    "历史生成",
+    "历史检索",
+    "检索轮次",
+    "行动前",
+    "行动后",
+    "幕间",
+    "档案",
+    "语音",
+    "剧情",
+    "故事",
+    "问题",
+    "关系",
+    "身份",
+    "来历",
+    "真相",
+    "原因",
+    "动机",
+}
+INITIAL_HYPOTHESIS_SCHEMA_FIELDS = (
+    "question",
+    "intent",
+    "entities",
+    "keywords",
+    "expected_answer_type",
+    "dialogue_context",
+)
+FOLLOW_UP_HYPOTHESIS_SCHEMA_FIELDS = (
+    "question",
+    "entities",
+    "keywords",
+    "expected_answer_type",
+    "dialogue_context",
+)
+CONCLUSION_SCHEMA_FIELDS = (
+    "question",
+    "next_action",
+    "answer",
+    "missing_slots",
+    "clarification_question",
+)
+RETRIEVAL_ACTIONS = {
+    "answer_directly",
+    "retrieve_more",
+    "clarify_user",
+    "abstain",
+}
+HYPOTHESIS_INTENTS = {
+    "plot_fact",
+    "plot_reasoning",
+    "timeline",
+    "character_relation",
+    "event_summary",
+    "compare",
+    "persona_chat",
+    "out_of_scope",
+}
+LEGACY_INTENT_MAP = {
+    "plot_inference": "plot_reasoning",
+    "plot_motivation": "plot_reasoning",
+    "character_motivation": "plot_reasoning",
+    "identity_relationship": "character_relation",
+    "character_relationship": "character_relation",
+    "relationship_inference": "character_relation",
+    "character_identity": "plot_fact",
+    "role_identification": "plot_fact",
+    "plot_item": "plot_fact",
+    "plot_explanation": "plot_reasoning",
+    "plot_qa": "plot_fact",
+    "follow_up": "plot_fact",
+    "clarification_needed": "out_of_scope",
+}
+LEGACY_PROMPT_HYPOTHESIS_MARKERS = (
+    '"character_name"',
+    '"appearances"',
+    '"known_info"',
+    '"relationship_hints"',
+    '"bridging_objects"',
+    '"bridge_objects"',
+    '"upstream_titles"',
+    '"upper_titles"',
+    '"relationship_clues"',
+)
 
 
 @dataclass(slots=True)
@@ -146,7 +252,7 @@ def load_story_documents(documents_path: Path | None = None) -> list[dict]:
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-    return build_story_documents(STORY_ROOT, EXCEL_ROOT)
+    return build_corpus_documents(STORY_ROOT, EXCEL_ROOT)
 
 
 def normalize_message_content(value: Any) -> str:
@@ -155,6 +261,210 @@ def normalize_message_content(value: Any) -> str:
     if isinstance(value, str):
         return re.sub(r"\s+", " ", value).strip()
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(normalized)
+    return output
+
+
+def _is_noisy_term(value: str) -> bool:
+    lowered = value.lower()
+    return (
+        "{@" in value
+        or "{" in value
+        or "}" in value
+        or "@nickname" in lowered
+        or lowered.startswith("dr.")
+        or lowered.startswith("doctor ")
+    )
+
+
+def _normalize_string_list(value: Any, *, limit: int) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = [value]
+    elif isinstance(value, list):
+        raw_items = [item for item in value if isinstance(item, (str, int, float))]
+    else:
+        return []
+    items = [
+        str(item).strip()
+        for item in raw_items
+        if str(item).strip() and not _is_noisy_term(str(item).strip())
+    ]
+    return _dedupe_keep_order(items)[:limit]
+
+
+def _normalize_intent(value: Any) -> str:
+    intent = str(value or "").strip()
+    intent = LEGACY_INTENT_MAP.get(intent, intent)
+    return intent if intent in HYPOTHESIS_INTENTS else ""
+
+
+def normalize_task_type(task_type: Any) -> str:
+    normalized = str(task_type or "").strip()
+    return LEGACY_TOOL_TASK_TYPE_ALIASES.get(normalized, normalized)
+
+
+def normalize_task_mix(task_mix: dict[str, float]) -> dict[str, float]:
+    normalized: dict[str, float] = {}
+    for task_type, weight in task_mix.items():
+        canonical = normalize_task_type(task_type)
+        if canonical not in SUPPORTED_TASK_TYPES:
+            raise ValueError(f"Unsupported task type in task_mix: {task_type}")
+        normalized[canonical] = normalized.get(canonical, 0.0) + float(weight)
+    return normalized
+
+
+def _extract_expected_answer_type(payload: dict[str, Any]) -> str:
+    direct_value = str(payload.get("expected_answer_type") or "").strip()
+    if direct_value:
+        return direct_value
+    constraints = payload.get("constraints")
+    if isinstance(constraints, dict):
+        return str(constraints.get("expected_answer_type") or "").strip()
+    return ""
+
+
+def _normalize_hypothesis_tool_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    question = str(payload.get("question") or "").strip()
+    intent = _normalize_intent(payload.get("intent"))
+    entities = _normalize_string_list(payload.get("entities"), limit=12)
+    keywords = _normalize_string_list(payload.get("keywords"), limit=20)
+    expected_answer_type = _extract_expected_answer_type(payload)
+    dialogue_context = str(payload.get("dialogue_context") or "").strip()
+
+    if not question or not intent or not entities or not keywords or not expected_answer_type:
+        return None
+
+    normalized = {
+        "question": question,
+        "intent": intent,
+        "entities": entities,
+        "keywords": keywords,
+        "expected_answer_type": expected_answer_type,
+    }
+    if dialogue_context:
+        normalized["dialogue_context"] = dialogue_context
+    return normalized
+
+
+def _parse_json_content(text: Any) -> dict[str, Any] | None:
+    if not isinstance(text, str):
+        return None
+    candidate = text.strip()
+    match = JSON_BLOCK_RE.search(candidate)
+    if match:
+        candidate = match.group(1).strip()
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _contains_empty_current_hypothesis(user_text: str) -> bool:
+    normalized = re.sub(r"\s+", "", user_text)
+    return "当前假设文档(JSON):{}" in normalized or "当前假设文档:{}" in normalized
+
+
+def _contains_legacy_prompt_hypothesis_schema(user_text: str) -> bool:
+    return any(marker in user_text for marker in LEGACY_PROMPT_HYPOTHESIS_MARKERS)
+
+
+def _normalize_initial_hypothesis_assistant_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    required_fields = tuple(field for field in INITIAL_HYPOTHESIS_SCHEMA_FIELDS if field != "dialogue_context")
+    if any(field not in payload for field in required_fields):
+        return None
+    extra_keys = set(payload) - set(INITIAL_HYPOTHESIS_SCHEMA_FIELDS)
+    if extra_keys:
+        return None
+    question = str(payload.get("question") or "").strip()
+    intent = _normalize_intent(payload.get("intent"))
+    entities = _normalize_string_list(payload.get("entities"), limit=12)
+    keywords = _normalize_string_list(payload.get("keywords"), limit=20)
+    expected_answer_type = _extract_expected_answer_type(payload)
+    dialogue_context = str(payload.get("dialogue_context") or "").strip()
+
+    if not question or not intent or not entities or not keywords or not expected_answer_type:
+        return None
+
+    return {
+        "question": question,
+        "intent": intent,
+        "entities": entities,
+        "keywords": keywords,
+        "expected_answer_type": expected_answer_type,
+        "dialogue_context": dialogue_context,
+    }
+
+
+def _normalize_follow_up_hypothesis_assistant_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if any(field not in payload for field in FOLLOW_UP_HYPOTHESIS_SCHEMA_FIELDS):
+        return None
+    extra_keys = set(payload) - set(FOLLOW_UP_HYPOTHESIS_SCHEMA_FIELDS)
+    if extra_keys:
+        return None
+    question = str(payload.get("question") or "").strip()
+    entities = _normalize_string_list(payload.get("entities"), limit=12)
+    keywords = _normalize_string_list(payload.get("keywords"), limit=20)
+    expected_answer_type = _extract_expected_answer_type(payload)
+    dialogue_context = str(payload.get("dialogue_context") or "").strip()
+
+    if not question or not entities or not keywords or not expected_answer_type:
+        return None
+
+    return {
+        "question": question,
+        "entities": entities,
+        "keywords": keywords,
+        "expected_answer_type": expected_answer_type,
+        "dialogue_context": dialogue_context,
+    }
+
+
+def _normalize_conclusion_assistant_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if any(field not in payload for field in CONCLUSION_SCHEMA_FIELDS):
+        return None
+    extra_keys = set(payload) - set(CONCLUSION_SCHEMA_FIELDS)
+    if extra_keys:
+        return None
+    question = str(payload.get("question") or "").strip()
+    next_action = str(payload.get("next_action") or "").strip()
+    answer = str(payload.get("answer") or "").strip()
+    missing_slots = _normalize_string_list(payload.get("missing_slots"), limit=8)
+    clarification_question = str(payload.get("clarification_question") or "").strip()
+
+    if not question or next_action not in RETRIEVAL_ACTIONS:
+        return None
+    if next_action in {"answer_directly", "abstain"} and not answer:
+        return None
+    if next_action == "clarify_user" and not clarification_question:
+        return None
+    if next_action == "retrieve_more":
+        if answer or not missing_slots:
+            return None
+    else:
+        missing_slots = []
+        if next_action != "clarify_user":
+            clarification_question = ""
+
+    return {
+        "question": question,
+        "next_action": next_action,
+        "answer": answer,
+        "missing_slots": missing_slots,
+        "clarification_question": clarification_question,
+    }
 
 
 def make_sample_fingerprint(sample: dict) -> str:
@@ -175,6 +485,15 @@ def make_sample_fingerprint(sample: dict) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
+
+
+def build_normalized_sample_id(
+    *,
+    request_id: str,
+    task_type: str,
+    index: int,
+) -> str:
+    return f"{request_id}-{task_type}-{index:04d}"
 
 
 def weighted_choice(rng: random.Random, weights: dict[str, float]) -> str:
@@ -227,6 +546,31 @@ def format_evidence_pack(evidence_docs: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
+def extract_primary_entity_candidates(
+    evidence_docs: list[dict],
+    *,
+    limit: int = 8,
+) -> list[str]:
+    counts: dict[str, int] = {}
+    for doc in evidence_docs:
+        for segment in doc.get("segments") or []:
+            if not isinstance(segment, dict):
+                continue
+            speaker = str(segment.get("speaker") or "").strip()
+            if speaker and speaker not in PRIMARY_ENTITY_STOP_WORDS:
+                counts[speaker] = counts.get(speaker, 0) + 4
+
+        clean_text = str(doc.get("clean_text") or "")[:200]
+        for pattern in (CODE_NAME_RE, REAL_NAME_RE, OPERATOR_NAME_RE):
+            for match in pattern.findall(clean_text):
+                token = str(match).strip()
+                if token and token not in PRIMARY_ENTITY_STOP_WORDS:
+                    counts[token] = counts.get(token, 0) + 2
+
+    ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    return [name for name, _ in ranked[:limit]]
+
+
 def format_worldbuilding_topic(topic: dict[str, Any]) -> str:
     lines = [
         f"主题: {topic.get('topic') or ''}",
@@ -250,6 +594,360 @@ def format_worldbuilding_topic(topic: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_latest_hypothesis_schema_example(
+    *,
+    question: str = "烛煌的真实身份是什么？",
+    intent: str = "plot_fact",
+    entities: list[str] | None = None,
+    keywords: list[str] | None = None,
+    expected_answer_type: str = "身份关系",
+    dialogue_context: str = "",
+) -> dict[str, Any]:
+    return {
+        "question": question,
+        "intent": intent,
+        "entities": entities or ["烛煌"],
+        "keywords": keywords or ["烛煌", "真实身份", "身世", "来历"],
+        "expected_answer_type": expected_answer_type,
+        "dialogue_context": dialogue_context,
+    }
+
+
+def build_follow_up_hypothesis_schema_example(
+    *,
+    question: str = "烛煌的真实身份是什么？",
+    entities: list[str] | None = None,
+    keywords: list[str] | None = None,
+    expected_answer_type: str = "身份关系",
+    dialogue_context: str = "",
+) -> dict[str, Any]:
+    return {
+        "question": question,
+        "entities": entities or ["烛煌", "太师"],
+        "keywords": keywords or ["烛煌", "太师", "身世", "太师是谁", "烛煌 太师 什么关系"],
+        "expected_answer_type": expected_answer_type,
+        "dialogue_context": dialogue_context,
+    }
+
+
+def build_conclusion_schema_example(
+    *,
+    question: str = "烛煌的真实身份是什么？",
+    next_action: str = "retrieve_more",
+    answer: str = "",
+    missing_slots: list[str] | None = None,
+    clarification_question: str = "",
+) -> dict[str, Any]:
+    return {
+        "question": question,
+        "next_action": next_action,
+        "answer": answer,
+        "missing_slots": missing_slots or ["太师是谁", "烛煌与太师的关系"],
+        "clarification_question": clarification_question,
+    }
+
+
+def _schema_block(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def build_initial_hypothesis_field_explanations() -> str:
+    return "\n".join(
+        [
+            "- `question`: 用户当前原问题，不要改写成别的问题。",
+            "- `intent`: 问题的语义类型，只表示问题类型，不表示流程状态。可选值仅限 plot_fact、plot_reasoning、timeline、character_relation、event_summary、compare、persona_chat、out_of_scope。",
+            "- `entities`: 当前问题里最核心、最值得用于检索的实体，一般是角色、组织、地点、事件名。第一个元素必须是主实体。",
+            "- `keywords`: 比 entities 更宽的检索词，可以包含原词、同义改写、关系词、短语化检索扩展；必须包含主实体。",
+            "- `expected_answer_type`: 期望最终答案的形态，例如事实问答、身份关系、原因/动机、时间线、过程解释。",
+            "- `dialogue_context`: 多轮对话上下文，用于补指代和追问背景；如果没有多轮上下文，可以省略，系统会按空字符串处理。",
+        ]
+    )
+
+
+def build_follow_up_hypothesis_field_explanations() -> str:
+    return "\n".join(
+        [
+            "- `question`: 用户当前原问题，保持不变。",
+            "- `entities`: 在上一轮实体基础上，补充本轮证据里出现的关键桥接对象；第一个元素必须保留主实体。",
+            "- `keywords`: 面向下一轮检索的缩小范围关键词，优先加入关系词、称谓、桥接短语；必须包含主实体。",
+            "- `expected_answer_type`: 继续沿用当前问题所需的答案形态，例如身份关系、原因/动机、时间线、过程解释。",
+            "- `dialogue_context`: 多轮对话上下文；通常沿用上一轮上下文，没有则可为空字符串。",
+            "- `intent`: 不在 assistant 输出中出现，默认继承上一轮 hypothesis 的 intent。",
+        ]
+    )
+
+
+def build_conclusion_field_explanations() -> str:
+    return "\n".join(
+        [
+            "- `question`: 用户当前原问题。",
+            "- `next_action`: 当前证据下的下一步动作，只能是 answer_directly、retrieve_more、clarify_user、abstain。",
+            "- `answer`: 当前阶段结论文本。answer_directly 或 abstain 时必须非空；retrieve_more 时必须为空字符串。",
+            "- `missing_slots`: 当前证据还缺哪些具体可检索的信息缺口，主要在 retrieve_more 时使用。",
+            "- `clarification_question`: 当问题本身有歧义时，向用户发出的澄清问题；仅 clarify_user 时必须非空。",
+        ]
+    )
+
+
+def build_initial_hypothesis_prompt_bundle(
+    *,
+    evidence_docs: list[dict[str, Any]],
+    samples_per_request: int,
+) -> tuple[str, str]:
+    primary_entity_candidates = extract_primary_entity_candidates(evidence_docs)
+    system_prompt = (
+        "你是一个严格的中文教师模型数据合成器。"
+        "你的任务是生成专门训练《明日方舟》剧情问答 Agent 中间推理步骤的高质量 SFT 样本。"
+        "当前只生成“初始假设文档生成”样本。"
+        "assistant 输出必须是严格 JSON，不要输出任何额外说明。"
+    )
+    message_example = [
+        {"role": "system", "content": "你是《明日方舟》剧情问答系统中的 hypothesis_builder。"},
+        {
+            "role": "user",
+            "content": "用户问题: 烛煌的真实身份是什么？\n多轮上下文: 无\n请生成初始假设文档 JSON。",
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                build_latest_hypothesis_schema_example(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        },
+    ]
+    schema_text = {
+        "samples": [
+            {
+                "id": "string",
+                "task_type": INITIAL_HYPOTHESIS_TASK_TYPE,
+                "messages": message_example,
+                "meta": {
+                    "grounded": True,
+                    "difficulty": "easy|medium|hard",
+                    "notes": "string",
+                    "source_story_ids": ["string"],
+                    "source_stage_codes": ["string"],
+                    "source_activity_names": ["string"],
+                },
+            }
+        ]
+    }
+    requirements = [
+        f"1. 只生成 `{INITIAL_HYPOTHESIS_TASK_TYPE}` 类型样本。",
+        "2. 每条样本都只允许出现 `system`、`user`、`assistant` 三种 role，不要使用 tool_calls。",
+        "3. assistant 的 content 必须是单个 JSON 对象，不要带 markdown 代码块，不要输出解释。",
+        "4. assistant JSON 必须严格使用初始 hypothesis schema：question、intent、entities、keywords、expected_answer_type、dialogue_context。",
+        "5. assistant JSON 不允许出现任何额外字段。",
+        "6. intent 只能从以下集合中选择：" + "、".join(sorted(HYPOTHESIS_INTENTS)) + "。",
+        "7. user prompt 应围绕“用户问题 + 多轮上下文 -> 初始假设文档 JSON”。",
+        "8. assistant JSON 目标是服务检索，不是直接回答问题；不得把最终结论当作既定事实写死。",
+        "9. 不要编造英文别名、Dr. 前缀、代号扩写、罗德岛职位推断或跨角色别名污染。",
+        "10. 所有文本使用中文。",
+        "11. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",
+        "12. 每条样本都必须围绕 1 到 2 个主实体构造问题；assistant JSON 的 `entities` 第一个元素必须是主实体。",
+        "13. `keywords` 必须包含主实体，不要生成不带锚点实体的宽泛检索词。",
+    ]
+    user_prompt = (
+        f"请基于下面证据生成 {samples_per_request} 条“初始假设文档生成”训练样本。\n\n"
+        "建议主实体候选（优先围绕这些角色/称谓出题）:\n"
+        + ("、".join(primary_entity_candidates) if primary_entity_candidates else "无")
+        + "\n\n"
+        "当前项目唯一合法的初始 hypothesis schema:\n"
+        + _schema_block(build_latest_hypothesis_schema_example())
+        + "\n\n字段含义说明:\n"
+        + build_initial_hypothesis_field_explanations()
+        + "\n\n要求：\n"
+        + "\n".join(requirements)
+        + "\n\n返回格式示例：\n"
+        + json.dumps(schema_text, ensure_ascii=False, indent=2)
+        + "\n\n证据包：\n"
+        + format_evidence_pack(evidence_docs)
+    )
+    return system_prompt, user_prompt
+
+
+def build_follow_up_hypothesis_prompt_bundle(
+    *,
+    evidence_docs: list[dict[str, Any]],
+    samples_per_request: int,
+) -> tuple[str, str]:
+    primary_entity_candidates = extract_primary_entity_candidates(evidence_docs)
+    system_prompt = (
+        "你是一个严格的中文教师模型数据合成器。"
+        "你的任务是生成专门训练《明日方舟》剧情问答 Agent 多轮补充检索步骤的高质量 SFT 样本。"
+        "当前只生成“多轮补充假设文档生成”样本。"
+        "assistant 输出必须是严格 JSON，不要输出任何额外说明。"
+    )
+    message_example = [
+        {"role": "system", "content": "你是《明日方舟》剧情问答系统中的 follow_up_hypothesis_builder。"},
+        {
+            "role": "user",
+            "content": (
+                "用户问题: 烛煌的真实身份是什么？\n多轮上下文: 无\n当前假设文档(JSON): "
+                + json.dumps(
+                    build_latest_hypothesis_schema_example(),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n"
+                '上一轮结论生成结果(JSON): {"question":"烛煌的真实身份是什么？","next_action":"retrieve_more","answer":"","missing_slots":["太师是谁","烛煌与太师的关系"],"clarification_question":""}\n'
+                "历史生成结果: [第1轮 hypothesis 已定位到烛煌身份问题，但尚未补出太师桥接线索]\n"
+                "历史检索上下文: [第1轮检索已使用“烛煌 身份 来历”等查询，但仍缺太师相关桥接信息]\n"
+                "当前检索轮次: 第2轮 / 最多3轮\n当前证据: [...]\n"
+                "当前未解点: 还不知道太师是谁，也不知道烛煌和太师的关系。\n请生成补充检索假设文档 JSON。"
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                build_follow_up_hypothesis_schema_example(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        },
+    ]
+    schema_text = {
+        "samples": [
+            {
+                "id": "string",
+                "task_type": FOLLOW_UP_HYPOTHESIS_TASK_TYPE,
+                "messages": message_example,
+                "meta": {
+                    "grounded": True,
+                    "difficulty": "easy|medium|hard",
+                    "notes": "string",
+                    "source_story_ids": ["string"],
+                    "source_stage_codes": ["string"],
+                    "source_activity_names": ["string"],
+                },
+            }
+        ]
+    }
+    requirements = [
+        f"1. 只生成 `{FOLLOW_UP_HYPOTHESIS_TASK_TYPE}` 类型样本。",
+        "2. 每条样本都只允许出现 `system`、`user`、`assistant` 三种 role，不要使用 tool_calls。",
+        "3. assistant 的 content 必须是单个 JSON 对象，不要带 markdown 代码块，不要输出解释。",
+        "4. assistant JSON 必须严格使用补充 hypothesis schema：question、entities、keywords、expected_answer_type、dialogue_context。",
+        "5. assistant JSON 不允许出现 intent，follow-up hypothesis 必须继承上一轮 intent。",
+        "6. user prompt 必须包含：用户问题、多轮上下文、当前假设文档(JSON)、上一轮结论生成结果(JSON)、历史生成结果、历史检索上下文、当前证据、当前检索轮次。",
+        "7. user prompt 里的 `当前假设文档(JSON)` 必须严格使用初始 hypothesis schema。",
+        '8. 不要在 user prompt 或 assistant JSON 中使用 `character_name`、`appearances`、`known_info`、`relationship_hints`、`bridging_objects`、`constraints`、`aliases` 等旧字段或衍生字段。',
+        "9. assistant JSON 应只生成更强的检索线索，不直接回答问题。",
+        "10. assistant JSON 的 keywords 应体现缩小范围后的二次检索查询。",
+        "11. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",
+        "12. follow-up hypothesis 必须保留上一轮主实体；assistant JSON 的 `entities` 第一个元素必须仍然是主实体。",
+        "13. `keywords` 必须保留主实体，并在其基础上补充桥接词，不要丢失锚点实体。",
+    ]
+    user_prompt = (
+        f"请基于下面证据生成 {samples_per_request} 条“多轮补充假设文档生成”训练样本。\n\n"
+        "建议主实体候选（优先围绕这些角色/称谓缩小检索范围）:\n"
+        + ("、".join(primary_entity_candidates) if primary_entity_candidates else "无")
+        + "\n\n"
+        "当前项目唯一合法的初始 hypothesis schema:\n"
+        + _schema_block(build_latest_hypothesis_schema_example())
+        + "\n\n当前项目唯一合法的 follow-up hypothesis schema:\n"
+        + _schema_block(build_follow_up_hypothesis_schema_example())
+        + "\n\n字段含义说明:\n"
+        + build_follow_up_hypothesis_field_explanations()
+        + "\n\n要求：\n"
+        + "\n".join(requirements)
+        + "\n\n返回格式示例：\n"
+        + json.dumps(schema_text, ensure_ascii=False, indent=2)
+        + "\n\n证据包：\n"
+        + format_evidence_pack(evidence_docs)
+    )
+    return system_prompt, user_prompt
+
+
+def build_conclusion_prompt_bundle(
+    *,
+    evidence_docs: list[dict[str, Any]],
+    samples_per_request: int,
+) -> tuple[str, str]:
+    system_prompt = (
+        "你是一个严格的中文教师模型数据合成器。"
+        "你的任务是生成专门训练《明日方舟》剧情问答 Agent 结论生成步骤的高质量 SFT 样本。"
+        "当前只生成“结论生成”样本。"
+        "assistant 输出必须是严格 JSON，不要输出任何额外说明。"
+    )
+    message_example = [
+        {"role": "system", "content": "你是《明日方舟》剧情问答系统中的 conclusion_generator。"},
+        {
+            "role": "user",
+            "content": (
+                "用户问题: 烛煌的真实身份是什么？\n多轮上下文: 无\n当前假设文档(JSON): "
+                + json.dumps(
+                    build_latest_hypothesis_schema_example(),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n"
+                "历史检索上下文: [第1轮已检索烛煌身世相关片段，但仍缺太师桥接信息]\n"
+                "当前检索轮次: 第2轮 / 最多3轮\n当前证据: [...]\n"
+                "请基于证据生成当前阶段结论 JSON。"
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                build_conclusion_schema_example(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+        },
+    ]
+    schema_text = {
+        "samples": [
+            {
+                "id": "string",
+                "task_type": CONCLUSION_TASK_TYPE,
+                "messages": message_example,
+                "meta": {
+                    "grounded": True,
+                    "difficulty": "easy|medium|hard",
+                    "decision_case": "answer_directly|retrieve_more|clarify_user|abstain",
+                    "notes": "string",
+                    "source_story_ids": ["string"],
+                    "source_stage_codes": ["string"],
+                    "source_activity_names": ["string"],
+                },
+            }
+        ]
+    }
+    requirements = [
+        f"1. 只生成 `{CONCLUSION_TASK_TYPE}` 类型样本。",
+        "2. 每条样本都只允许出现 `system`、`user`、`assistant` 三种 role，不要使用 tool_calls。",
+        "3. assistant 的 content 必须是单个 JSON 对象，不要带 markdown 代码块，不要输出解释。",
+        "4. assistant JSON 必须严格使用：question、next_action、answer、missing_slots、clarification_question。",
+        "5. next_action 只能是 `answer_directly`、`retrieve_more`、`clarify_user`、`abstain`。",
+        "6. user prompt 必须包含：用户问题、多轮上下文、当前假设文档(JSON)、当前证据；当前假设文档不能是空对象 {}。",
+        "7. conclusion prompt 必须显式带出当前检索轮次与历史检索上下文。",
+        "8. `answer_directly` 或 `abstain` 时，answer 必须非空。",
+        "9. `clarify_user` 时 clarification_question 必须非空。",
+        "10. `retrieve_more` 时 answer 必须为空字符串，missing_slots 必须为具体可检索缺口。",
+        "11. 结论生成样本必须显式体现“基于当前证据是否足够作答”的判断。",
+        "12. 所有文本使用中文，不要编造英文别名或 Dr. 前缀。",
+        "13. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",
+    ]
+    user_prompt = (
+        f"请基于下面证据生成 {samples_per_request} 条“结论生成”训练样本。\n\n"
+        "当前项目唯一合法的初始 hypothesis schema:\n"
+        + _schema_block(build_latest_hypothesis_schema_example())
+        + "\n\n当前项目唯一合法的 conclusion schema:\n"
+        + _schema_block(build_conclusion_schema_example())
+        + "\n\n字段含义说明:\n"
+        + build_conclusion_field_explanations()
+        + "\n\n要求：\n"
+        + "\n".join(requirements)
+        + "\n\n返回格式示例：\n"
+        + json.dumps(schema_text, ensure_ascii=False, indent=2)
+        + "\n\n证据包：\n"
+        + format_evidence_pack(evidence_docs)
+    )
+    return system_prompt, user_prompt
+
+
 def build_teacher_prompts(
     *,
     task_type: str,
@@ -257,6 +955,23 @@ def build_teacher_prompts(
     worldbuilding_topic: dict[str, Any] | None,
     samples_per_request: int,
 ) -> tuple[str, str]:
+    task_type = normalize_task_type(task_type)
+    if task_type == INITIAL_HYPOTHESIS_TASK_TYPE:
+        return build_initial_hypothesis_prompt_bundle(
+            evidence_docs=evidence_docs,
+            samples_per_request=samples_per_request,
+        )
+    if task_type == FOLLOW_UP_HYPOTHESIS_TASK_TYPE:
+        return build_follow_up_hypothesis_prompt_bundle(
+            evidence_docs=evidence_docs,
+            samples_per_request=samples_per_request,
+        )
+    if task_type == CONCLUSION_TASK_TYPE:
+        return build_conclusion_prompt_bundle(
+            evidence_docs=evidence_docs,
+            samples_per_request=samples_per_request,
+        )
+
     if task_type == "worldbuilding_qa":
         system_prompt = (
             "你是一个严格的中文教师模型数据合成器。"
@@ -278,75 +993,9 @@ def build_teacher_prompts(
         "worldbuilding_qa": "生成通用世界观问答，重点是概念解释、制度背景、社会结构或通用设定，不要依赖具体剧情片段。",
         "persona_grounded_qa": "生成带有澄闪语气但事实严格受证据约束的问答，语气轻柔、克制、礼貌，不要卖萌过度。",
         "multi_turn_dialogue": "生成 2 到 4 轮多轮对话，包含追问、指代消解或澄清，至少出现 2 次 user 发言和 2 次 assistant 发言。",
-        "intent_hypothesis_rag": "生成完整工具链样本：assistant 必须依次调用 detect_intent、build_hypothesis、retrieve_story_context，然后直接给出最终答案。",
-        "tool_calling_rag": "生成必须先完成意图识别、假设文档生成和检索再回答的样本，所有 tool_calls.arguments 必须是合法 JSON 字符串。",
-        "unknown_rag_negative": "生成用户问题超出证据、含混或带诱导性的负样本，assistant 必须依次调用意图识别、假设文档和检索工具；当 tool 结果为空、低相关或不足时，最终回答必须明确拒绝幻觉并说明证据不足。",
     }[task_type]
 
-    if task_type in {"intent_hypothesis_rag", "tool_calling_rag", "unknown_rag_negative"}:
-        message_example = [
-            {"role": "system", "content": "optional string"},
-            {"role": "user", "content": "string"},
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {
-                            "name": "detect_intent",
-                            "arguments": "{\"question\":\"...\"}",
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "name": "detect_intent",
-                "content": "{\"intent\":\"plot_fact\",\"need_retrieval\":true}",
-            },
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_2",
-                        "type": "function",
-                        "function": {
-                            "name": "build_hypothesis",
-                            "arguments": "{\"question\":\"...\",\"intent\":\"plot_fact\"}",
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "name": "build_hypothesis",
-                "content": "{\"question\":\"...\",\"entities\":[],\"keywords\":[]}",
-            },
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "call_3",
-                        "type": "function",
-                        "function": {
-                            "name": "retrieve_story_context",
-                            "arguments": "{\"question\":\"...\",\"hypothesis\":\"...\",\"keywords\":[\"...\"],\"top_k\":8}",
-                        },
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "name": "retrieve_story_context",
-                "content": "剧情证据 JSON 或 [] 或低相关检索结果",
-            },
-            {"role": "assistant", "content": "直接回答用户问题，不暴露检索过程。"},
-        ]
-    elif task_type == "worldbuilding_qa":
+    if task_type == "worldbuilding_qa":
         message_example = [
             {"role": "system", "content": "optional string"},
             {"role": "user", "content": "请先用一句话解释这个设定。"},
@@ -384,7 +1033,7 @@ def build_teacher_prompts(
 
     requirements = [
         f"1. {task_specific_rules}",
-        "2. `messages` 里的 role 只允许是 `system`、`user`、`assistant`、`tool`。",
+        "2. `messages` 里的 role 只允许是 `system`、`user`、`assistant`。",
         "3. 所有文本使用中文。",
         "4. 输出必须是一个 JSON 对象，顶层只有 `samples` 字段。",
     ]
@@ -407,36 +1056,12 @@ def build_teacher_prompts(
         requirements.extend(
             [
                 "5. 只允许使用证据中的信息；如果证据不足，就生成“需要澄清”或“证据不足”的样本。",
-                "6. 如果任务类型不是 `intent_hypothesis_rag`、`tool_calling_rag` 或 `unknown_rag_negative`，不要使用 `tool_calls` 和 `tool` role。",
+                "6. 不要使用 `tool_calls`，也不要输出 `tool` role。",
                 "7. `multi_turn_dialogue` 必须体现上下文延续，不要把多个单轮问答拼在一起。",
-                "8. 工具链样本必须包含：user -> assistant(detect_intent) -> tool -> assistant(build_hypothesis) -> tool -> assistant(retrieve_story_context) -> tool -> assistant(final answer)。",
-                "9. 最终 assistant 必须直接回答用户，不要出现“根据检索到的剧情证据”“根据检索结果”“根据证据”等暴露检索过程的措辞。",
+                "8. `canon_qa` 与 `persona_grounded_qa` 的答案必须能被证据直接支持，不要把推测写成事实。",
+                "9. 最终 assistant 不要出现“根据检索到的剧情证据”“根据检索结果”“根据证据”等暴露检索过程的措辞。",
             ]
         )
-        if task_type in {"intent_hypothesis_rag", "tool_calling_rag", "unknown_rag_negative"}:
-            requirements.extend(
-                [
-                    "10. 必须使用下面这些工具定义，且顺序固定为 detect_intent -> build_hypothesis -> retrieve_story_context：",
-                    json.dumps(
-                        [INTENT_TOOL_SCHEMA, HYPOTHESIS_TOOL_SCHEMA, RAG_TOOL_SCHEMA],
-                        ensure_ascii=False,
-                        indent=2,
-                    ),
-                    "11. detect_intent 的 tool 结果必须包含 intent、need_retrieval，可包含 clarification_needed。",
-                    "12. build_hypothesis 的 tool 结果必须是结构化 JSON，包含 question、intent、entities、keywords、constraints 或 expected_answer_type。",
-                    "13. retrieve_story_context 的 tool 调用必须使用 build_hypothesis 产出的实体和关键词。",
-                ]
-            )
-        if task_type == "unknown_rag_negative":
-            requirements.extend(
-                [
-                    "14. 用户问题必须是证据包无法直接支持的负样本，例如含混指代、错误前提、诱导补完、二创设定、跨章节过度归因或问不存在的细节。",
-                    "15. assistant 在完成三段工具链前不得直接回答或猜测。",
-                    "16. retrieve_story_context 的 tool content 应表现为空结果、低相关结果或不足以支持结论的检索结果；不要伪造能支持问题前提的证据。",
-                    "17. 最终 assistant 必须明确说“证据不足/无法确认/不确定/现有检索结果不足”，并拒绝把诱导问题说成事实。",
-                    "18. 最终回答可以用澄闪式轻柔语气，但不能用语气掩盖不确定性。",
-                ]
-            )
         source_block = "证据包：\n" + format_evidence_pack(evidence_docs)
 
     user_prompt = (
@@ -583,13 +1208,30 @@ def _normalize_tool_calls(value: Any) -> list[dict]:
         function = item.get("function")
         if not isinstance(function, dict):
             continue
+        name = function.get("name") or ""
+        arguments = function.get("arguments") or ""
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                parsed_arguments = None
+            if isinstance(parsed_arguments, dict):
+                if name == "build_hypothesis" and "intent" in parsed_arguments:
+                    parsed_arguments["intent"] = _normalize_intent(parsed_arguments.get("intent"))
+                    if not parsed_arguments["intent"]:
+                        continue
+                if name == "detect_intent" and "intent" in parsed_arguments:
+                    parsed_arguments["intent"] = _normalize_intent(parsed_arguments.get("intent"))
+                    if not parsed_arguments["intent"]:
+                        parsed_arguments.pop("intent", None)
+                arguments = json.dumps(parsed_arguments, ensure_ascii=False, separators=(",", ":"))
         clean_calls.append(
             {
                 "id": item.get("id") or "call_1",
                 "type": item.get("type") or "function",
                 "function": {
-                    "name": function.get("name") or "",
-                    "arguments": function.get("arguments") or "",
+                    "name": name,
+                    "arguments": arguments,
                 },
             }
         )
@@ -797,6 +1439,8 @@ def validate_and_normalize_samples(
     if not isinstance(samples, list):
         raise ValueError("Teacher payload must contain a list field named 'samples'")
 
+    expected_task_type = normalize_task_type(expected_task_type)
+
     source_story_ids = [doc.get("story_id") for doc in evidence_docs if doc.get("story_id")]
     source_stage_codes = [doc.get("stage_code") for doc in evidence_docs if doc.get("stage_code")]
     source_activity_names = [doc.get("activity_name") for doc in evidence_docs if doc.get("activity_name")]
@@ -805,17 +1449,129 @@ def validate_and_normalize_samples(
     for index, sample in enumerate(samples):
         if not isinstance(sample, dict):
             continue
-        task_type = sample.get("task_type") or expected_task_type
+        task_type = normalize_task_type(sample.get("task_type") or expected_task_type)
         if task_type not in SUPPORTED_TASK_TYPES:
             continue
         messages = sample.get("messages")
         if not isinstance(messages, list) or len(messages) < 2:
             continue
 
+        if task_type in {
+            INITIAL_HYPOTHESIS_TASK_TYPE,
+            FOLLOW_UP_HYPOTHESIS_TASK_TYPE,
+            CONCLUSION_TASK_TYPE,
+        }:
+            if task_type != expected_task_type or len(messages) < 3:
+                continue
+            clean_messages: list[dict[str, Any]] = []
+            valid = True
+            for message in messages:
+                if not isinstance(message, dict):
+                    valid = False
+                    break
+                role = message.get("role")
+                content = message.get("content")
+                if role not in {"system", "user", "assistant"}:
+                    valid = False
+                    break
+                if message.get("tool_calls") or role == "tool":
+                    valid = False
+                    break
+                clean_messages.append(
+                    {"role": role, "content": content if isinstance(content, str) else ""}
+                )
+            if not valid:
+                continue
+            if not any(message["role"] == "system" for message in clean_messages):
+                continue
+            user_message = next(
+                (message for message in clean_messages if message["role"] == "user"),
+                None,
+            )
+            if user_message is None:
+                continue
+            if task_type in {
+                FOLLOW_UP_HYPOTHESIS_TASK_TYPE,
+                CONCLUSION_TASK_TYPE,
+            } and _contains_empty_current_hypothesis(user_message["content"]):
+                continue
+            if _contains_legacy_prompt_hypothesis_schema(user_message["content"]):
+                continue
+            final_assistant = next(
+                (
+                    message
+                    for message in reversed(clean_messages)
+                    if message["role"] == "assistant"
+                    and str(message.get("content") or "").strip()
+                ),
+                None,
+            )
+            if final_assistant is None:
+                continue
+            assistant_payload = _parse_json_content(final_assistant.get("content"))
+            if assistant_payload is None:
+                continue
+            normalized_assistant_payload: dict[str, Any] | None = None
+            if task_type == INITIAL_HYPOTHESIS_TASK_TYPE:
+                normalized_assistant_payload = _normalize_initial_hypothesis_assistant_payload(
+                    assistant_payload
+                )
+            elif task_type == FOLLOW_UP_HYPOTHESIS_TASK_TYPE:
+                normalized_assistant_payload = _normalize_follow_up_hypothesis_assistant_payload(
+                    assistant_payload
+                )
+            elif task_type == CONCLUSION_TASK_TYPE:
+                normalized_assistant_payload = _normalize_conclusion_assistant_payload(
+                    assistant_payload
+                )
+            if normalized_assistant_payload is None:
+                continue
+            final_assistant["content"] = json.dumps(
+                normalized_assistant_payload,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+            meta = sample.get("meta") if isinstance(sample.get("meta"), dict) else {}
+            normalized.append(
+                {
+                    "id": build_normalized_sample_id(
+                        request_id=request_id,
+                        task_type=task_type,
+                        index=index,
+                    ),
+                    "task_type": task_type,
+                    "bucket": "tool",
+                    "messages": clean_messages,
+                    "tools": [],
+                    "meta": {
+                        "category": "tool",
+                        "grounded": True,
+                        "difficulty": meta.get("difficulty") or "medium",
+                        "notes": meta.get("notes") or "",
+                        "source_story_ids": meta.get("source_story_ids") or source_story_ids,
+                        "source_stage_codes": meta.get("source_stage_codes") or source_stage_codes,
+                        "source_activity_names": meta.get("source_activity_names")
+                        or source_activity_names,
+                        "task_family": (
+                            "hypothesis_generation"
+                            if task_type
+                            in {INITIAL_HYPOTHESIS_TASK_TYPE, FOLLOW_UP_HYPOTHESIS_TASK_TYPE}
+                            else "conclusion_generation"
+                        ),
+                        "decision_case": normalized_assistant_payload.get("next_action")
+                        if task_type == CONCLUSION_TASK_TYPE
+                        else None,
+                        "worldbuilding_topic": None,
+                        "generation_mode": "evidence_grounded",
+                        "request_id": request_id,
+                    },
+                }
+            )
+            continue
+
         clean_messages = []
         valid = True
-        has_tool_call = False
-        has_tool_message = False
 
         for message in messages:
             if not isinstance(message, dict):
@@ -831,43 +1587,78 @@ def validate_and_normalize_samples(
             }
             if role == "tool":
                 clean_message["name"] = message.get("name") or "retrieve_story_context"
-                has_tool_message = True
             if role == "assistant" and message.get("tool_calls"):
                 clean_tool_calls = _normalize_tool_calls(message.get("tool_calls"))
                 if clean_tool_calls:
                     clean_message["tool_calls"] = clean_tool_calls
-                    has_tool_call = True
             clean_messages.append(clean_message)
 
         if not valid:
             continue
-        if task_type in {"intent_hypothesis_rag", "tool_calling_rag", "unknown_rag_negative"} and (
-            not has_tool_call or not has_tool_message
-        ):
+        for clean_message in clean_messages:
+            if clean_message["role"] != "tool":
+                continue
+            tool_name = clean_message.get("name")
+            if tool_name == "build_hypothesis":
+                try:
+                    tool_payload = json.loads(str(clean_message.get("content") or "{}"))
+                except json.JSONDecodeError:
+                    valid = False
+                    break
+                if not isinstance(tool_payload, dict):
+                    valid = False
+                    break
+                normalized_payload = _normalize_hypothesis_tool_payload(tool_payload)
+                if normalized_payload is None:
+                    valid = False
+                    break
+                clean_message["content"] = json.dumps(
+                    normalized_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            elif tool_name == "detect_intent":
+                try:
+                    tool_payload = json.loads(str(clean_message.get("content") or "{}"))
+                except json.JSONDecodeError:
+                    valid = False
+                    break
+                if not isinstance(tool_payload, dict):
+                    valid = False
+                    break
+                if "intent" in tool_payload:
+                    normalized_intent = _normalize_intent(tool_payload.get("intent"))
+                    if not normalized_intent:
+                        valid = False
+                        break
+                    tool_payload["intent"] = normalized_intent
+                clean_message["content"] = json.dumps(
+                    tool_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+        if not valid:
             continue
-        if task_type not in {"intent_hypothesis_rag", "tool_calling_rag", "unknown_rag_negative"}:
-            if any(msg.get("tool_calls") for msg in clean_messages):
-                continue
-            if any(msg["role"] == "tool" for msg in clean_messages):
-                continue
+        if any(msg.get("tool_calls") for msg in clean_messages):
+            continue
+        if any(msg["role"] == "tool" for msg in clean_messages):
+            continue
         if task_type == "worldbuilding_qa" and not _validate_worldbuilding_messages(clean_messages):
             continue
         if task_type == "multi_turn_dialogue" and not _validate_multi_turn_messages(clean_messages):
             continue
-        if task_type in {"intent_hypothesis_rag", "tool_calling_rag"} and not _validate_tool_chain_messages(clean_messages):
-            continue
-        if task_type == "unknown_rag_negative" and not _validate_unknown_negative_messages(clean_messages):
-            continue
 
         meta = sample.get("meta") if isinstance(sample.get("meta"), dict) else {}
         normalized_sample = {
-            "id": sample.get("id") or f"{request_id}-{index:04d}",
+            "id": build_normalized_sample_id(
+                request_id=request_id,
+                task_type=task_type,
+                index=index,
+            ),
             "task_type": task_type,
             "bucket": categorize_task_type(task_type),
             "messages": clean_messages,
-            "tools": [INTENT_TOOL_SCHEMA, HYPOTHESIS_TOOL_SCHEMA, RAG_TOOL_SCHEMA]
-            if task_type in {"intent_hypothesis_rag", "tool_calling_rag", "unknown_rag_negative"}
-            else [],
+            "tools": [],
             "meta": {
                 "category": categorize_task_type(task_type),
                 "grounded": True,

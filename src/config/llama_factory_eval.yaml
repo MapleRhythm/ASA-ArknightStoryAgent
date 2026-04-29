@@ -1,5 +1,5 @@
 model_name_or_path: model/qwen3.5-4b
-adapter_name_or_path: model/lora/teacher_v2_qwen35_4b
+adapter_name_or_path: model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b
 trust_remote_code: true
 
 stage: sft
@@ -7,17 +7,17 @@ do_predict: true
 predict_with_generate: true
 finetuning_type: lora
 
-dataset_dir: data/processed/llama_factory/teacher_v2
-eval_dataset: teacher_v2_test
-template: qwen3
+dataset_dir: data/processed/llama_factory/teacher_v2_plus_prompt_supplement_v2
+eval_dataset: teacher_v2_plus_prompt_supplement_v2_test
+template: qwen3_nothink
 cutoff_len: 4096
 max_samples: 1000000
 overwrite_cache: true
 preprocessing_num_workers: 8
 dataloader_num_workers: 2
 
-output_dir: outputs/llama_factory_eval/teacher_v2_qwen35_4b
-run_name: teacher_v2_qwen35_4b_eval
+output_dir: outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v2_qwen35_4b
+run_name: teacher_v2_plus_prompt_supplement_v2_qwen35_4b_eval
 overwrite_output_dir: true
 report_to: wandb
 
@@ -27,5 +27,6 @@ do_sample: false
 temperature: 0.0
 top_p: 1.0
 top_k: 1
-bf16: true
+bf16: false
+fp16: true
 ddp_timeout: 180000000

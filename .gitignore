@@ -14,51 +14,63 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
+.ipynb_checkpoints/
 
 # Local environments
 .conda/
 .venv/
 venv/
 env/
+.env
+.env.*
+!.env.example
+
+# Local package overlays and vendor overrides
+/.python_packages/
+/.vendor/train_override/
+
+# Local agent / CLI tooling
+/.openclaw-agents/
+/.openclaw-cli/
 
 # Logs / temp
 *.log
 *.tmp
 *.temp
 tmp/
+.coverage
+htmlcov/
+wandb/
 
 # Runtime outputs
-outputs/
+/outputs/*
+!/outputs/.gitkeep
 
 # Retrieval / build artifacts
-indexes/
+/indexes/*
+!/indexes/.gitkeep
 
-# Model weights and caches
-model/qwen3.5-4b/
-model/lora/
-model/embeddings/
-model/reranker/
-model/**/.cache/
-*.bin
-*.pt
-*.pth
-*.ckpt
-*.safetensors
-*.gguf
+# Generated datasets
+/data/processed/*
+!/data/processed/.gitkeep
+/data/sft/*
+!/data/sft/.gitkeep
 
-# Generated data artifacts
-data/processed/
-data/sft/
+# External game data checkout
+/data/ArknightsGameData/
 
-# Large external game data checkout
-data/ArknightsGameData/
+# Third-party source checkouts / build outputs
+/third_party/llama.cpp/.git/
+/third_party/llama.cpp/build/
 
-# Keep repo structure placeholders if needed
-!data/processed/.gitkeep
-!data/sft/.gitkeep
-!outputs/.gitkeep
-!indexes/.gitkeep
+# Local model assets
+# For public GitHub repos, do not track local model weights/adapters/checkpoints.
+/model/qwen3.5-4b/
+/model/lora/
+/model/embeddings/
+/model/reranker/
+/model/merged/
+/model/gguf/
 
-#openclaw
-.openclaw-agents
-.openclaw-cli
+# Model-specific caches
+/model/**/.cache/

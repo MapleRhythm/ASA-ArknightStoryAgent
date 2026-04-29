@@ -1,0 +1,5 @@
+# Extra packages for GPU inference acceleration in the `train` environment.
+# Install these on top of the existing train environment or into
+# `.python_packages/train` via `scripts/install_train_vllm.sh`.
+
+vllm

@@ -1,0 +1,40 @@
+{
+  "retrieval": {
+    "device": "cuda",
+    "enable_reranker": true,
+    "dense_top_k": 80,
+    "sparse_top_k": 80,
+    "fusion_top_k": 50,
+    "rerank_top_k": 20,
+    "rerank_batch_size": 8
+  },
+  "generator": {
+    "backend": "vllm",
+    "ctx_size": 8192,
+    "max_tokens": 512,
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "repeat_penalty": 1.05,
+    "llama_cpp": {
+      "device": "cuda",
+      "gpu_layers": "all",
+      "batch_size": 2048,
+      "ubatch_size": 512,
+      "flash_attn": "auto"
+    },
+    "vllm": {
+      "base_model_path": "model/qwen3.5-4b",
+      "lora_path": "model/lora/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/checkpoint-381",
+      "tensor_parallel_size": 1,
+      "gpu_memory_utilization": 0.8,
+      "max_model_len": 8192,
+      "dtype": "auto"
+    }
+  },
+  "inference": {
+    "max_retrieval_rounds": 3,
+    "prompt_evidence_top_k": 8,
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true
+  }
+}

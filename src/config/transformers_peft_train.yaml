@@ -1,0 +1,43 @@
+model_name_or_path: model/qwen3.5-4b
+trust_remote_code: true
+
+train_file: data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2/train.jsonl
+eval_file: data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2/val.jsonl
+output_dir: model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b
+run_name: teacher_v2_plus_prompt_supplement_v2_qwen35_4b_train
+overwrite_output_dir: false
+resume_from_checkpoint:
+
+max_length: 4096
+preprocessing_num_workers: 8
+dataloader_num_workers: 2
+
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_bias: none
+lora_target_modules: all-linear
+
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+gradient_checkpointing: true
+ddp_find_unused_parameters: false
+
+logging_steps: 5
+save_strategy: steps
+save_steps: 100
+save_total_limit: 4
+eval_strategy: steps
+eval_steps: 100
+report_to: wandb
+
+bf16: false
+fp16: true
+seed: 42

@@ -4,28 +4,37 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 LLAMAFACTORY_BIN="${LLAMAFACTORY_BIN:-llamafactory-cli}"
-SOURCE_DIR="${SOURCE_DIR:-$ROOT_DIR/data/processed/sft_data/teacher_v2}"
-DATASET_DIR="${DATASET_DIR:-$ROOT_DIR/data/processed/llama_factory/teacher_v2}"
+SOURCE_DIR="${SOURCE_DIR:-$ROOT_DIR/data/processed/sft_data/teacher_v2_plus_prompt_supplement_v4}"
+DATASET_DIR="${DATASET_DIR:-$ROOT_DIR/data/processed/llama_factory/teacher_v2_plus_prompt_supplement_v4}"
 EVAL_CONFIG_PATH="${EVAL_CONFIG_PATH:-$ROOT_DIR/src/config/llama_factory_eval.yaml}"
-PREDICTIONS_FILE="${PREDICTIONS_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_qwen35_4b/generated_predictions.jsonl}"
-SUMMARY_FILE="${SUMMARY_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_qwen35_4b/custom_metrics.json}"
+PREDICTIONS_FILE="${PREDICTIONS_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/generated_predictions.jsonl}"
+SUMMARY_FILE="${SUMMARY_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/custom_metrics.json}"
 REFERENCE_FILE="${REFERENCE_FILE:-$DATASET_DIR/test.json}"
 EVAL_GPUS="${EVAL_GPUS:-2}"
-MASTER_PORT="${MASTER_PORT:-29511}"
 WANDB_PROJECT="${WANDB_PROJECT:-goldenglow-sft}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
-WANDB_RUN_NAME="${WANDB_RUN_NAME:-teacher_v2_qwen35_4b_eval}"
-WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-teacher_v2}"
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-teacher_v2_plus_prompt_supplement_v2_qwen35_4b_eval}"
+WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-teacher_v2_plus_prompt_supplement_v2}"
 WANDB_DIR="${WANDB_DIR:-$ROOT_DIR/outputs/wandb}"
+CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/outputs/.cache}"
+HF_HOME="${HF_HOME:-$CACHE_DIR/huggingface}"
+HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
+MPLCONFIGDIR="${MPLCONFIGDIR:-$CACHE_DIR/matplotlib}"
 
 cd "$ROOT_DIR"
 
 mkdir -p "$WANDB_DIR"
+mkdir -p "$HF_DATASETS_CACHE" "$TRANSFORMERS_CACHE" "$MPLCONFIGDIR"
 export WANDB_PROJECT
 export WANDB_ENTITY
 export WANDB_NAME="$WANDB_RUN_NAME"
 export WANDB_RUN_GROUP
 export WANDB_DIR
+export HF_HOME
+export HF_DATASETS_CACHE
+export TRANSFORMERS_CACHE
+export MPLCONFIGDIR
 LLAMAFACTORY_PATH="$(command -v "$LLAMAFACTORY_BIN" || true)"
 
 if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
@@ -46,18 +55,12 @@ PY
 echo "Using CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 echo "Evaluation processes=$VISIBLE_GPU_COUNT"
 
-if [[ "$VISIBLE_GPU_COUNT" -gt 1 ]]; then
-  if [[ -z "$LLAMAFACTORY_PATH" ]]; then
-    echo "Cannot find executable: $LLAMAFACTORY_BIN" >&2
-    exit 1
-  fi
-  "$PYTHON_BIN" -m torch.distributed.run \
-    --nproc_per_node="$VISIBLE_GPU_COUNT" \
-    --master_port="$MASTER_PORT" \
-    "$LLAMAFACTORY_PATH" train "$EVAL_CONFIG_PATH"
-else
-  "$LLAMAFACTORY_BIN" train "$EVAL_CONFIG_PATH"
+if [[ -z "$LLAMAFACTORY_PATH" ]]; then
+  echo "Cannot find executable: $LLAMAFACTORY_BIN" >&2
+  exit 1
 fi
+
+"$LLAMAFACTORY_BIN" train "$EVAL_CONFIG_PATH"
 
 exec "$PYTHON_BIN" scripts/llama_factory/summarize_predictions.py \
   --reference-file "$REFERENCE_FILE" \

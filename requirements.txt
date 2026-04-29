@@ -1,8 +1,12 @@
+accelerate
+datasets
 faiss-cpu
 huggingface_hub
 numpy
+peft
 pyyaml
 rank-bm25
+safetensors
 sentence-transformers
 torch
 tqdm

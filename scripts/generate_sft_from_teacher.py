@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import sys
@@ -14,10 +15,13 @@ from typing import Any
 from tqdm import tqdm
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
+if TRAIN_OVERRIDE_DIR.exists():
+    sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from goldenglow.data.sft_teacher import (  # noqa: E402
-    SUPPORTED_TASK_TYPES,
+    ACCEPTED_TASK_TYPES,
     TeacherApiConfig,
     build_request_record,
     build_teacher_prompts,
@@ -25,6 +29,8 @@ from goldenglow.data.sft_teacher import (  # noqa: E402
     dedupe_samples,
     load_generation_config,
     load_story_documents,
+    normalize_task_mix,
+    normalize_task_type,
     parse_teacher_json,
     sample_evidence_documents,
     sample_worldbuilding_topic,
@@ -251,7 +257,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--only-task-type",
         type=str,
-        choices=sorted(SUPPORTED_TASK_TYPES),
+        choices=sorted(ACCEPTED_TASK_TYPES),
         default=None,
     )
     parser.add_argument("--device", type=str, default="cpu")
@@ -271,7 +277,7 @@ def main() -> None:
     config = load_generation_config(args.config)
     dataset_cfg = config["dataset"]
     source_cfg = config["source"]
-    task_mix = config["task_mix"]
+    task_mix = normalize_task_mix(config["task_mix"])
     worldbuilding_cfg = config.get("worldbuilding") or {}
 
     output_dir = PROJECT_ROOT / dataset_cfg["output_dir"]
@@ -315,6 +321,13 @@ def main() -> None:
         extra_headers=config["teacher_api"].get("extra_headers") or {},
     )
 
+    if not os.environ.get(teacher_api.api_key_env):
+        raise SystemExit(
+            f"Missing teacher API key env var: {teacher_api.api_key_env}\n"
+            f"Please export it first, for example:\n"
+            f"  export {teacher_api.api_key_env}=<your_key>"
+        )
+
     all_samples: list[dict] = []
     request_records: list[dict] = []
     target_counts = compute_target_counts(target_total, task_mix)
@@ -341,7 +354,7 @@ def main() -> None:
             break
 
         if args.only_task_type:
-            task_type = args.only_task_type
+            task_type = normalize_task_type(args.only_task_type)
         elif worldbuilding_queue:
             task_type = "worldbuilding_qa"
         else:

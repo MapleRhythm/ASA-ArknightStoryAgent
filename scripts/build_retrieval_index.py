@@ -3,11 +3,32 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
+TRAIN_PYTHON_OVERLAY_DIR = PROJECT_ROOT / ".python_packages" / "train"
+
+
+def should_use_train_overrides() -> bool:
+    override_flag = os.environ.get("GOLDENGLOW_USE_TRAIN_OVERRIDE")
+    if override_flag is not None:
+        return override_flag.lower() in {"1", "true", "yes", "on"}
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV", "").strip().lower()
+    if conda_env == "train":
+        return True
+    executable = Path(sys.executable).as_posix().lower()
+    return "/envs/train/" in executable or executable.endswith("/envs/train/bin/python")
+
+
+if should_use_train_overrides():
+    if TRAIN_PYTHON_OVERLAY_DIR.exists():
+        sys.path.insert(0, str(TRAIN_PYTHON_OVERLAY_DIR))
+    if TRAIN_OVERRIDE_DIR.exists():
+        sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 import faiss
@@ -27,7 +48,7 @@ from goldenglow.config import (
     STORY_ROOT,
     BuildConfig,
 )
-from goldenglow.data.story_parser import build_story_documents
+from goldenglow.data.story_parser import build_corpus_documents
 from goldenglow.retrieval.hybrid import tokenize_for_bm25
 
 
@@ -62,7 +83,7 @@ def main() -> None:
         embedding_batch_size=args.batch_size,
     )
 
-    documents = build_story_documents(
+    documents = build_corpus_documents(
         story_root=STORY_ROOT,
         excel_root=EXCEL_ROOT,
         max_chars=config.max_chars,

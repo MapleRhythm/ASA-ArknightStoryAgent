@@ -30,9 +30,9 @@
     "seed": 42
   },
   "task_mix": {
-    "intent_hypothesis_rag": 0.28,
-    "unknown_rag_negative": 0.12,
-    "tool_calling_rag": 0.12,
+    "user_question_hypothesis_generation": 0.18,
+    "follow_up_hypothesis_generation": 0.18,
+    "conclusion_generation": 0.16,
     "multi_turn_dialogue": 0.14,
     "canon_qa": 0.14,
     "worldbuilding_qa": 0.12,

@@ -16,6 +16,12 @@
 - 推理框架：`llama.cpp`
 - 检索调度与工具编排：原生 `Python`
 
+补充约束：
+
+- CPU / 兼容性优先的离线推理主路径仍然是 `llama.cpp`
+- `train` 环境下允许额外挂接 `vLLM` 作为 GPU 推理加速后端
+- 若 `vLLM` 与训练依赖冲突，优先通过仓库内 overlay 目录 `.python_packages/train` 安装，而不是破坏现有训练环境
+
 开发时不要擅自将核心方案替换为：
 
 - 远程 API 推理
@@ -44,23 +50,52 @@
 - `data/`：剧情与游戏数据
 - `data/ArknightsGameData/zh_CN/gamedata/story/`：剧情原文 `.txt`
 - `data/ArknightsGameData/zh_CN/gamedata/excel/`：章节、活动、角色等元数据 `.json`
+- `data/processed/sft_data/`：SFT 主数据集、补充中间能力数据集与合并后的训练数据
 - `model/qwen3.5-4b/`：Qwen 基座模型权重
-- `scripts/`：预留给原生 Python 脚本
+- `model/lora/`：LoRA 训练输出目录
+- `model/gguf/`：推理使用的 GGUF 模型
+- `indexes/arknights_story/`：检索索引、文档与 BM25 产物
+- `configs/`：运行时配置，例如 `runtime_inference.json`
+- `src/config/`：训练配置，例如 `llama_factory_config.yaml`
+- `scripts/`：原生 Python 脚本、训练脚本与评测脚本
+- `scripts/llama_factory/`：LLaMA-Factory 数据转换、训练与评测入口
+- `scripts/run_cpu_inference.py`：当前实际推理入口
+- `src/goldenglow/inference/cpu_pipeline.py`：当前在线推理主链路
+- `third_party/llama.cpp/`：本地推理依赖
 
 AI 在实现功能时，应优先围绕这些路径工作，不要假定仓库存在未出现的 Web 服务、数据库或前端。
+
+当前仓库的主流程已经具备以下可运行入口：
+
+- 检索索引构建：`scripts/build_retrieval_index.py`
+- 主 SFT 数据生成：`scripts/generate_sft_from_teacher.py`
+- 补充中间能力数据生成：`scripts/generate_prompt_supplement_from_teacher.py`
+- 数据集合并：`scripts/merge_sft_datasets.py`
+- LLaMA-Factory 训练：`scripts/llama_factory/run_train.sh`
+- CPU 全流程推理：`scripts/run_cpu_inference.py`
+- GPU 全流程推理：`scripts/run_gpu_inference.sh`
+- 检索延迟测试：`scripts/benchmark_retrieval_latency.py`
+
+其中主 SFT 生成与 supplement 生成在 tool 类样本上必须统一使用以下三种 `task_type`：
+
+- `user_question_hypothesis_generation`
+- `follow_up_hypothesis_generation`
+- `conclusion_generation`
 
 ## 3. 项目目标
 
 这个 Agent 需要完成以下链路：
 
 1. 接收用户问题
-2. 识别意图
-3. 结合多轮上下文生成一份“假设文档”
-4. 用假设文档驱动 RAG 检索
-5. 执行混合检索
-6. 使用交叉编码器重排候选片段
-7. 基于高相关证据生成剧情答案
-8. 在表达层面体现澄闪的语气
+2. 结合多轮对话上下文生成首份“假设文档”
+3. 用假设文档驱动首轮混合检索与重排
+4. 判断当前证据是否足够直接回答
+5. 若证据不足，则基于“原问题 + 多轮对话上下文 + 当前假设文档 + 当前证据 + 当前未解点 + 前几轮检索历史”生成补充检索假设文档
+6. 用新的补充检索假设文档执行下一轮检索，并继续判断是否还需要补充检索
+7. 将前几轮的检索上下文持续带入后续 planner / follow-up hypothesis 生成
+8. 整个检索循环默认最多执行 3 轮总检索
+9. 在证据足够时生成最终剧情答案
+10. 在表达层面体现澄闪的语气
 
 这里的“假设文档”不是最终答案，而是检索中间产物。它的职责是把自然语言问题拆解成更适合召回的结构化检索线索。
 
@@ -183,48 +218,71 @@ LoRA 的目标之一是注入澄闪的语气，但语气层必须服从事实层
 最关键的在线链路如下：
 
 1. 用户问题进入对话状态管理器
-2. 意图识别判断是否需要剧情检索、澄清、闲聊、拒答或继续追问
-3. 生成假设文档
-4. 用假设文档同时触发稠密检索与稀疏检索
-5. 用融合策略合并候选
-6. 对 Top-N 使用交叉编码器重排
-7. 组织证据上下文
-8. 让 Qwen 生成最终回答
+2. 基于用户问题与多轮对话上下文生成初始假设文档
+3. 用假设文档同时触发稠密检索与稀疏检索
+4. 用融合策略合并候选
+5. 对 Top-N 使用交叉编码器重排
+6. 让 retrieval planner 判断当前证据是否足够直接回答
+7. 若当前证据不足，则基于“原问题 + 多轮对话上下文 + 当前假设文档 + 当前证据 + 当前未解点 + 历史检索摘要”生成补充检索假设文档
+8. 用新的补充检索假设文档再次召回，并把前几轮检索历史继续注入下一轮 planner
+9. 整个检索过程默认最多执行 3 轮总检索；达到上限后不再继续扩展检索
+10. 组织最终证据上下文
+11. 让 Qwen 生成最终回答
 
 ## 9. 假设文档要求
 
 假设文档是本项目的关键中间结构。它应当显式包含：
 
 - 用户原问题
+- 意图类型
 - 多轮上下文中解析出的指代对象
-- 可能涉及的角色名、别名、组织、地点
-- 可能涉及的章节、活动、关卡、时间线
+- 可能涉及的角色名、组织、地点
 - 主题关键词
-- 同义改写与检索扩展短语
-- 需要排除的歧义项
 - 预期回答类型
 
-推荐输出为结构化 JSON，而不是自由文本。例如：
+当前实现中，假设文档优先使用精简 schema，不要求填充过多低价值字段。推荐输出为结构化 JSON，而不是自由文本。例如：
 
 ```json
 {
   "question": "缪尔赛思为什么会帮助博士？",
   "intent": "plot_reasoning",
   "entities": ["缪尔赛思", "博士"],
-  "possible_arcs": ["莱茵生命", "孤星"],
   "keywords": ["帮助", "动机", "合作", "原因"],
-  "aliases": {
-    "博士": ["Doctor"],
-    "缪尔赛思": ["Muelsyse"]
-  },
-  "constraints": {
-    "need_plot_evidence": true,
-    "avoid_fan_theory": true
-  }
+  "expected_answer_type": "原因/动机"
 }
 ```
 
 假设文档必须服务于检索，不要把它写成华丽提示词。
+
+允许的可选字段：
+
+- `aliases`
+- `dialogue_context`
+
+不建议默认强制要求的字段：
+
+- `possible_arcs`
+- `exclude_terms`
+
+原因是这些字段在 API 蒸馏时更容易引入猜测性噪声，不如优先保证 `entities`、`keywords` 与 `expected_answer_type` 的稳定性。
+
+当需要继续检索时，推荐使用联合决策输出，而不是把“是否继续检索”和“follow-up hypothesis”完全拆散。例如：
+
+```json
+{
+  "question": "烛煌的真实身份是什么？",
+  "next_action": "retrieve_more",
+  "missing_slots": ["太师是谁", "烛煌与太师的关系"],
+  "clarification_question": "",
+  "follow_up_hypothesis": {
+    "question": "烛煌的真实身份是什么？",
+    "intent": "plot_fact",
+    "entities": ["烛煌", "太师"],
+    "keywords": ["烛煌", "太师", "身世", "太师是谁", "烛煌 太师 什么关系"],
+    "expected_answer_type": "身份关系"
+  }
+}
+```
 
 ## 10. 检索策略
 
@@ -249,7 +307,22 @@ LoRA 的目标之一是注入澄闪的语气，但语气层必须服从事实层
 2. 用假设文档扩展后的 query 再检索一次
 3. 合并候选
 4. 重排
-5. 截取高可信证据送入生成
+5. 让 planner 输出 `next_action`
+6. 若 `next_action=retrieve_more`，则基于“原问题 + 对话上下文 + 当前假设文档 + 当前证据 + 未解点 + 历史检索摘要”生成补充检索 hypothesis，并执行下一轮检索
+7. 重复 5-6，并在每一轮把前几轮检索历史继续带入 planner / hypothesis 生成
+8. 当 planner 返回 `answer_directly` / `clarify_user` / `abstain` 时结束；若达到总检索轮次上限，也必须停止扩展检索
+9. 截取高可信证据送入生成
+
+当前运行时代码中的相关配置通过 `configs/runtime_inference.json` 控制，至少包括：
+
+- `retrieval.device`
+- `retrieval.enable_reranker`
+- `retrieval.dense_top_k`
+- `retrieval.sparse_top_k`
+- `retrieval.fusion_top_k`
+- `retrieval.rerank_top_k`
+- `retrieval.rerank_batch_size`
+- `inference.max_retrieval_rounds`
 
 ## 11. Function Calling 设计原则
 
@@ -288,6 +361,8 @@ LoRA 的目标之一是注入澄闪的语气，但语气层必须服从事实层
 - 最近一次明确问题的核心主题
 - 指代消解结果，例如“她”“那件事”“这里”
 - 用户是否在继续追问同一话题
+- 当前检索轮次与前几轮检索历史摘要
+- 前几轮检索中尚未解决的 `missing_slots`
 
 当用户提问模糊时：
 
@@ -365,6 +440,12 @@ LoRA 数据集应至少覆盖三类样本：
 - 高质量剧情知识样本
 - function calling / 意图识别 / 多轮对话样本
 
+在当前流程中，还应额外补充“中间能力”样本，至少覆盖以下三类：
+
+- `user_question_hypothesis_generation`
+- `follow_up_hypothesis_generation`
+- `conclusion_generation`
+
 SFT 数据集构建要求：
 
 - 监督微调（SFT）样本默认通过在线模型 API 蒸馏生成，不直接用人工随意编写问答替代
@@ -377,18 +458,64 @@ SFT 数据集构建要求：
 - 蒸馏样本落盘到 `data/processed/sft_data/`，并按 `style` / `knowledge` / `tool` 分类存储
 - 必须进行人工抽样校验，重点检查是否忠于剧情原文、是否引入幻觉、是否错误强化二创设定
 
+当前仓库中的数据生成流程分为两层：
+
+- 主数据集：`scripts/generate_sft_from_teacher.py`
+- 补充中间能力数据集：`scripts/generate_prompt_supplement_from_teacher.py`
+
+两层数据在 tool 标签上必须完全对齐，只允许使用：
+
+- `user_question_hypothesis_generation`
+- `follow_up_hypothesis_generation`
+- `conclusion_generation`
+
+补充数据集的职责不是替代主 SFT 数据，而是专门增强：
+
+- 是否继续检索
+- 是否要求用户澄清
+- 在需要继续检索时生成 follow-up hypothesis
+- 在多轮检索中利用“前几轮检索历史 + 当前未解点”生成新的补充检索 hypothesis
+
+补充数据集应尽量覆盖以下运行时形态：
+
+- 首轮检索后直接回答
+- 首轮检索证据不足，进入第 2 轮补充检索
+- 第 2 轮仍证据不足，带着前两轮检索历史进入第 3 轮补充检索
+- 达到最多 3 轮总检索后停止继续扩展
+
+当前默认建议直接运行 `scripts/generate_prompt_supplement_from_teacher.py`，该脚本在生成 supplement 后会自动调用合并逻辑产出主训练集；如只想单独生成 supplement，可显式加 `--skip-merge`。
+
+如需单独重跑合并，仍可直接使用：
+
+- `scripts/merge_sft_datasets.py`
+
+当前主训练数据集建议使用：
+
+- `data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2`
+
+补充数据集中的字段应尽量精简，避免把“答案结论”直接泄漏进 hypothesis 或 decision 样本。
+
 LoRA 训练执行要求：
 
 - LoRA 训练默认调用本地 `LLaMA-Factory`，不要替换为远程训练服务
 - 训练配置（数据路径、模板、超参数、输出目录）应以可复现方式落盘管理
+- 当前主训练入口为 `scripts/llama_factory/run_train.sh`
+- `scripts/transformers_peft/` 保留为兼容/调试路径，不是主训练链路
 
 `LLaMA-Factory` 配置与产物要求：
 
 - 训练配置文件默认放置在 `src/config/llama_factory_config.yaml`
+- 数据转换脚本默认使用 `scripts/llama_factory/prepare_sft_dataset.py`
 - 默认训练目标为单机多卡（当前 3x4090）；`CPU` 路径仅用于小样本调试与流程验证，不作为主训练路径
 - 配置需显式包含并版本化关键参数，例如：`model_name_or_path`、`finetuning_type=lora`、`lora_rank`、`lora_alpha`、`lora_dropout`、`per_device_train_batch_size`、`gradient_accumulation_steps`、`learning_rate`、`cutoff_len`、`num_train_epochs`
 - LoRA 权重输出目录统一为 `model/lora/`
 - 训练日志需完整保留 `LLaMA-Factory` 训练过程信息（如 loss、step、学习率、评估指标与时间戳），用于复现与调优
+
+当前默认训练产物约定：
+
+- 训练输入目录：`data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2`
+- LLaMA-Factory 数据目录：`data/processed/llama_factory/teacher_v2_plus_prompt_supplement_v2`
+- LoRA 输出目录：`model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b`
 
 训练时注意：
 
@@ -396,6 +523,9 @@ LoRA 训练执行要求：
 - 知识数据优先来源于整理后的剧情证据
 - 工具调用样本要强调 JSON 格式稳定性
 - 多轮样本要覆盖指代消解、纠错追问、范围缩小
+- 补充样本里，`clarify_user` 只用于真正的用户歧义，不要把“证据不足”误标成“需要澄清”
+- `retrieve_more` 样本应尽量显式给出 `missing_slots`
+- `follow_up_hypothesis` 只应包含服务检索的结构化线索，不应提前写入答案结论
 
 如果单一 LoRA 导致能力相互干扰，优先拆任务，不要强行把所有目标揉进一个退化的适配器。
 
@@ -433,14 +563,13 @@ tests/
 
 - `scripts/`：一次性脚本、索引构建、模型转换、数据预处理
 - `scripts/llama_factory/`：`LLaMA-Factory` 训练启动脚本、配置模板与本地多卡训练辅助脚本
+- `configs/runtime_inference.json`：实际使用时的检索候选数、reranker 开关与多轮检索安全上限
 - `data/processed/sft_data/`：在线 API 蒸馏并清洗后的 SFT 样本，按 `style` / `knowledge` / `tool` 分类管理
 - `src/config/llama_factory_config.yaml`：集中管理 `LLaMA-Factory` 训练参数，保证可复现
 - `src/data/`：剧情解析、清洗、切块
 - `src/retrieval/`：embedding、FAISS、BM25、融合
-- `src/rerank/`：交叉编码器重排
-- `src/dialogue/`：意图识别、状态管理、多轮对话
-- `src/llm/`：llama.cpp 调用封装、prompt、tool schema
-- `src/app/`：CLI、服务入口
+- `src/goldenglow/retrieval/`：embedding、FAISS、BM25、融合与 reranker
+- `src/goldenglow/inference/`：llama.cpp 调用封装、hypothesis / planner prompt、在线多轮检索与答案生成
 - `indexes/`：FAISS 索引与稀疏索引产物
 - `outputs/`：调试输出、评测结果、缓存
 

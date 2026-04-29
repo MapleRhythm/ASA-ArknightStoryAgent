@@ -32,10 +32,10 @@ class BuildConfig:
 
 @dataclass(slots=True)
 class QueryConfig:
-    dense_top_k: int = 40
-    sparse_top_k: int = 40
-    fusion_top_k: int = 30
-    rerank_top_k: int = 10
+    dense_top_k: int = 60
+    sparse_top_k: int = 60
+    fusion_top_k: int = 40
+    rerank_top_k: int = 15
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 0.8

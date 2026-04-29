@@ -1,0 +1,37 @@
+{
+  "teacher_api": {
+    "api_type": "responses",
+    "base_url": "https://api.svips.org",
+    "model": "MiniMax-M2.7-highspeed",
+    "api_key_env": "TEACHER_API_KEY",
+    "timeout_seconds": 120,
+    "temperature": 0.7,
+    "max_output_tokens": 4000,
+    "json_mode": true,
+    "extra_headers": {
+      "User-Agent": "codex-rs/1.0.7"
+    }
+  },
+  "source": {
+    "documents_path": "indexes/arknights_story/documents.jsonl",
+    "evidence_mode": "retrieval",
+    "max_evidence_docs_per_request": 3,
+    "retrieval_top_k": 3,
+    "seed_query_max_chars": 260
+  },
+  "dataset": {
+    "output_dir": "data/processed/sft_data/prompt_supplement_v2",
+    "target_total": 300,
+    "max_requests": 180,
+    "samples_per_request": 2,
+    "train_ratio": 0.9,
+    "val_ratio": 0.05,
+    "test_ratio": 0.05,
+    "seed": 42
+  },
+  "task_mix": {
+    "user_question_hypothesis_generation": 0.3,
+    "follow_up_hypothesis_generation": 0.35,
+    "conclusion_generation": 0.35
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "retrieval": {
+    "device": "cpu",
+    "enable_reranker": false,
+    "dense_top_k": 60,
+    "sparse_top_k": 60,
+    "fusion_top_k": 40,
+    "rerank_top_k": 15,
+    "rerank_batch_size": 4
+  },
+  "generator": {
+    "backend": "llama.cpp"
+  },
+  "inference": {
+    "max_retrieval_rounds": 3,
+    "prompt_evidence_top_k": 8,
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true
+  }
+}
