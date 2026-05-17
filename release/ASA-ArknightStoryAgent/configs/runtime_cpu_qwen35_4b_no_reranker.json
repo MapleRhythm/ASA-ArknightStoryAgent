@@ -1,0 +1,49 @@
+{
+  "retrieval": {
+    "device": "cpu",
+    "enable_reranker": false,
+    "dense_top_k": 80,
+    "sparse_top_k": 80,
+    "enable_minirag": true,
+    "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "fusion_top_k": 50,
+    "rerank_top_k": 20,
+    "rerank_batch_size": 4,
+    "enable_neighbor_expansion": false,
+    "neighbor_max_seed_docs": 24,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
+  },
+  "generator": {
+    "backend": "llama.cpp",
+    "ctx_size": 8192,
+    "max_tokens": 512,
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "repeat_penalty": 1.05,
+    "llama_cpp": {
+      "llama_cli_path": "third_party/llama.cpp/build/bin/llama-completion",
+      "gguf_model_path": "model/gguf/qwen3.5-4b-q4_k_m.gguf",
+      "lora_path": null,
+      "device": "cpu",
+      "gpu_layers": "0",
+      "batch_size": 512,
+      "ubatch_size": 128,
+      "flash_attn": "off"
+    }
+  },
+  "inference": {
+    "max_retrieval_rounds": 3,
+    "prompt_evidence_top_k": 8,
+    "enable_mmr": true,
+    "mmr_lambda": 0.72,
+    "enable_pyramid_order": true,
+    "enable_crag_refinement": false,
+    "crag_refine_top_sentences": 4,
+    "crag_refine_max_sentences": 24,
+    "self_consistency_samples": 1,
+    "self_consistency_temperature": 0.7,
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true
+  }
+}

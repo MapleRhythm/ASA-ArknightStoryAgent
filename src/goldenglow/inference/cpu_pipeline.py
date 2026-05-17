@@ -8,12 +8,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from goldenglow.config import QueryConfig
+from goldenglow.config import OPERATOR_ALIAS_MAP_PATH, QueryConfig
+from goldenglow.data.alias_map import load_operator_alias_map
 from goldenglow.retrieval.hybrid import ArknightsHybridRetriever
 
 
 QUESTION_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,8}|[A-Za-z][A-Za-z0-9_.\-]{1,31}")
 CHINESE_TOKEN_SPLIT_RE = re.compile(r"[的是和与及或为在把被让给从向对将]")
+LINE_SPLIT_RE = re.compile(r"[\n\r。！？；]+")
 COMMON_NON_ENTITY_WORDS = {
     "为什么",
     "为何",
@@ -72,6 +74,33 @@ RELATION_TERMS = {
     "学生",
     "弟子",
 }
+CAUSAL_ANSWER_HINTS = {
+    "为了",
+    "因为",
+    "因此",
+    "所以",
+    "目的",
+    "动机",
+    "原因",
+    "选择",
+    "放弃",
+    "离队",
+    "背叛",
+    "回归",
+    "必须",
+    "不能",
+    "才有",
+    "才是",
+    "只会",
+    "只为",
+    "机会",
+    "真相",
+    "活路",
+    "阻止",
+    "挽救",
+    "避免",
+    "毁灭",
+}
 TITLE_TERMS = {
     "太师",
     "真龙",
@@ -105,6 +134,8 @@ BRIDGE_STOP_WORDS = COMMON_NON_ENTITY_WORDS | {
 LLAMA_TIMING_LINE_RE = re.compile(r"^\[\s*Prompt:.*\]$", re.MULTILINE)
 INHERITANCE_RE = re.compile(r"([\u4e00-\u9fff]{2,8})的(后人|女儿|儿子|传人)")
 KINSHIP_RE = re.compile(r"(亲生父亲|父亲|母亲|家人|老师|师父|弟子|学生)")
+REAL_NAME_RE = re.compile(r"(?:原名|本名|真名)[为叫是：:\s]*([\u4e00-\u9fff]{2,8}(?:·[\u4e00-\u9fff]{1,8})?)")
+CONSPIRACY_ANCHOR_RE = re.compile(r"(?:撞破|发现|曝光|阻止)?([\u4e00-\u9fff]{2,4})城议员的阴谋")
 JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 DIALOGUE_ROLE_PREFIX_RE = re.compile(r"^(user|assistant)\s*:\s*(.*)$", re.IGNORECASE)
 HYPOTHESIS_INTENTS = {
@@ -117,29 +148,48 @@ HYPOTHESIS_INTENTS = {
     "persona_chat",
     "out_of_scope",
 }
+QUERY_TYPES = {
+    "fact",
+    "relation",
+    "causality",
+    "reasoning",
+    "reveal",
+    "mystery",
+    "answerability",
+}
 RETRIEVAL_ACTIONS = {
     "answer_directly",
     "retrieve_more",
     "clarify_user",
     "abstain",
 }
+RETRIEVAL_ACTIONS_ORDER = (
+    "answer_directly",
+    "retrieve_more",
+    "clarify_user",
+    "abstain",
+)
 INITIAL_HYPOTHESIS_TASK_TYPE = "user_question_hypothesis_generation"
 FOLLOW_UP_HYPOTHESIS_TASK_TYPE = "follow_up_hypothesis_generation"
 CONCLUSION_TASK_TYPE = "conclusion_generation"
 INITIAL_HYPOTHESIS_SCHEMA_FIELDS = (
     "question",
     "intent",
+    "query_type",
     "entities",
     "keywords",
     "expected_answer_type",
     "dialogue_context",
+    "reflect_tokens",
 )
 FOLLOW_UP_HYPOTHESIS_SCHEMA_FIELDS = (
     "question",
+    "query_type",
     "entities",
     "keywords",
     "expected_answer_type",
     "dialogue_context",
+    "reflect_tokens",
 )
 CONCLUSION_SCHEMA_FIELDS = (
     "question",
@@ -147,6 +197,8 @@ CONCLUSION_SCHEMA_FIELDS = (
     "answer",
     "missing_slots",
     "clarification_question",
+    "follow_up_hypothesis",
+    "reflect_tokens",
 )
 ROLE_LABEL_MAP = {
     "user": "用户",
@@ -197,14 +249,16 @@ PROMPT_HISTORY_MAX_ROUNDS = 2
 PROMPT_GENERATION_HISTORY_MAX_CHARS = 1200
 PROMPT_RETRIEVAL_HISTORY_MAX_CHARS = 1200
 PROMPT_FOLLOW_UP_EVIDENCE_MAX_TOTAL_CHARS = 2600
-PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS = 3200
+PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS = 5000
 PROMPT_EVIDENCE_MAX_CHARS_PER_DOC = 520
+MULTI_QUERY_MERGE_RRF_K = 60
 
 
 @dataclass(slots=True)
 class HypothesisDocument:
     question: str
     intent: str
+    query_type: str
     entities: list[str]
     keywords: list[str]
     expected_answer_type: str
@@ -229,6 +283,7 @@ class ConclusionResult:
     answer: str
     missing_slots: list[str]
     clarification_question: str
+    follow_up_hypothesis: HypothesisDocument | None
 
 
 class ModelOutputError(RuntimeError):
@@ -350,6 +405,10 @@ def _resolve_referential_question(question: str, entities: list[str]) -> str:
 
 
 def detect_intent(question: str) -> tuple[str, str]:
+    if any(token in question for token in ("是什么", "本质", "来历")) and any(
+        token in question for token in ("危机", "祸", "患", "威胁", "为什么", "为何")
+    ):
+        return "plot_reasoning", "概念定义/危机原因"
     if any(token in question for token in STORY_HINT_WORDS):
         return "event_summary", "共同经历"
     if any(token in question for token in ("关系", "什么关系", "关联")):
@@ -369,11 +428,36 @@ def detect_intent(question: str) -> tuple[str, str]:
     return "plot_fact", "综合剧情问答"
 
 
+def infer_query_type(question: str, intent: str, expected_answer_type: str) -> str:
+    if intent == "character_relation" or any(token in expected_answer_type for token in ("身份关系", "关系")):
+        return "relation"
+    if any(token in question for token in ("阴谋", "真相", "秘密", "识破", "揭穿", "曝光", "暴露", "幕后", "主使", "黑幕", "骗局", "诡计")):
+        return "reveal"
+    if any(token in question for token in ("谜", "怎么回事", "究竟", "到底")):
+        return "mystery"
+    if any(token in expected_answer_type for token in ("概念定义/危机原因", "answerability")):
+        return "answerability"
+    if intent == "plot_reasoning" or any(token in expected_answer_type for token in ("原因", "动机", "过程", "解释")):
+        return "causality" if any(token in question for token in ("为什么", "为何", "原因", "导致", "造成")) else "reasoning"
+    if intent in {"plot_fact", "timeline", "compare"}:
+        return "fact"
+    if any(token in expected_answer_type for token in ("事实", "时间线", "对比")):
+        return "fact"
+    return "reasoning"
+
+
 def extract_entities(question: str, dialogue_context: str = "") -> list[str]:
     question_entities = [token for token in _extract_content_tokens(question) if _is_entity_candidate(token)]
     if any(pronoun in question for pronoun in PRONOUN_REFERENCES):
         return _dedupe_keep_order(_extract_context_entities(dialogue_context) + question_entities)[:12]
     return _dedupe_keep_order(_extract_context_entities(dialogue_context) + question_entities)[:12]
+
+
+def _expand_entities_with_aliases(entities: list[str], existing_keywords: list[str]) -> list[str]:
+    alias_map = load_operator_alias_map(OPERATOR_ALIAS_MAP_PATH)
+    if not alias_map:
+        return []
+    return [alias for alias in alias_map.expand(entities) if alias not in existing_keywords]
 
 
 def build_hypothesis(question: str, dialogue_context: str = "") -> HypothesisDocument:
@@ -392,10 +476,28 @@ def build_hypothesis(question: str, dialogue_context: str = "") -> HypothesisDoc
     if any(token in question for token in STORY_HINT_WORDS):
         story_keywords = ["共同经历", "相遇", "同行", "冲突", "过往"]
         keywords = _dedupe_keep_order(keywords + story_keywords)[:20]
-
+    if answer_type == "概念定义/危机原因":
+        concept_reasoning_keywords = [
+            "本质",
+            "原本",
+            "一体",
+            "苏醒",
+            "消灭",
+            "代价",
+            "动乱",
+            "灭顶之灾",
+            "开战",
+            "平息",
+            "解决",
+        ]
+        keywords = _dedupe_keep_order(keywords + concept_reasoning_keywords)[:24]
+    alias_keywords = _expand_entities_with_aliases(entities, keywords)
+    if alias_keywords:
+        keywords = _dedupe_keep_order(keywords + alias_keywords)[:24]
     return HypothesisDocument(
         question=question,
         intent=intent,
+        query_type=infer_query_type(question, intent, answer_type),
         entities=entities,
         keywords=keywords,
         expected_answer_type=answer_type,
@@ -427,6 +529,8 @@ def build_hypothesis_prompt(question: str, dialogue_context: str = "") -> str:
             '- "question": 原问题字符串',
             '- "intent": 从以下集合中选择一个: '
             + ", ".join(sorted(HYPOTHESIS_INTENTS)),
+            '- "query_type": 从以下集合中选择一个: fact, relation, causality, reasoning, reveal, mystery, answerability',
+            "  - fact：事实细节；relation：人物关系；causality：事件前因后果；reasoning：剧情发展推理；reveal/mystery：真相、阴谋、身份揭示；answerability：同时需要定义与原因的可回答性问题",
             '- "entities": 角色名/组织/地点/事件等实体数组',
             '- "keywords": 用于检索的关键词数组，优先保留可能引出证据的词',
             '- "expected_answer_type": 例如 事实问答 / 原因动机 / 身份关系 / 时间线 / 过程解释',
@@ -440,7 +544,7 @@ def build_hypothesis_prompt(question: str, dialogue_context: str = "") -> str:
             "3. 如果问题是在追问“她们/他们之间有什么故事、经历、过往”，要把上下文中的人物名补全到 entities，并在 keywords 中加入“共同经历、相遇、同行、冲突、过往”等可检索短语。",
             "4. keywords 应该比 entities 更宽一些，包含同义改写和检索扩展短语。",
             "5. 不要虚构最终答案，只输出有助于召回的猜测性线索。",
-            "6. 输出必须是合法 JSON，且字段严格限制为 question、intent、entities、keywords、expected_answer_type、dialogue_context。",
+            "6. 输出必须是合法 JSON，且字段严格限制为 question、intent、query_type、entities、keywords、expected_answer_type、dialogue_context。",
             "7. 你的输出第一字符必须是 {",
             "8. entities 和 keywords 中禁止出现 她/他/她们/他们/这位/那位/user/assistant 等代词或对话标签，必须写完整名字。",
             "9. entities 里禁止出现问句残片或描述性短语，例如“她们之间有什么故”“什么要启动”“么关系”“事吗”这类都不能算实体。",
@@ -474,6 +578,7 @@ def build_follow_up_hypothesis_prompt(
     current_round: int,
     max_retrieval_rounds: int,
     prompt_evidence_top_k: int,
+    prompt_evidence: list[dict[str, Any]] | None = None,
 ) -> str:
     rendered_dialogue_context = _truncate_text(
         render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
@@ -520,7 +625,14 @@ def build_follow_up_hypothesis_prompt(
             "",
             "当前证据:",
             render_evidence_blocks(
-                evidence[:prompt_evidence_top_k],
+                prompt_evidence
+                if prompt_evidence is not None
+                else select_prompt_evidence(
+                    question,
+                    current_hypothesis,
+                    evidence,
+                    prompt_evidence_top_k=prompt_evidence_top_k,
+                ),
                 max_chars_per_doc=PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
                 max_total_chars=PROMPT_FOLLOW_UP_EVIDENCE_MAX_TOTAL_CHARS,
             ),
@@ -531,6 +643,7 @@ def build_follow_up_hypothesis_prompt(
             "字段要求:",
             '- "question": 原问题字符串',
             f'- `intent` 不需要重新生成，固定继承上一轮: "{current_hypothesis.intent}"',
+            '- "query_type": 继承或修正为以下集合之一: fact, relation, causality, reasoning, reveal, mystery, answerability',
             '- "entities": 应包含原锚点实体，以及证据中出现的关键桥接对象；最多 6 项，每项尽量不超过 8 个字，不要把完整查询句塞进 entities',
             '- "keywords": 第二轮召回关键词；最多 12 项，每项尽量不超过 12 个字，优先短语，不要输出冗长自然语言句子',
             '- "expected_answer_type": 例如 身份关系 / 原因动机 / 时间线 / 过程解释',
@@ -545,7 +658,7 @@ def build_follow_up_hypothesis_prompt(
             "5. 不要把剧情经历、地点、会面对象当作“身份答案”本身；补充检索要围绕身份标签、别名、关系锚点展开。",
             "6. 对于人物关系追问，优先输出短关键词，如“共同经历”“并肩作战”“约定”，不要扩写成整句。",
             "7. 不要把最终答案写死在 JSON 中，仍然以检索友好为目标。",
-            "8. 输出必须是合法 JSON，且字段严格限制为 question、entities、keywords、expected_answer_type、dialogue_context。",
+            "8. 输出必须是合法 JSON，且字段严格限制为 question, query_type, entities, keywords, expected_answer_type, dialogue_context。",
             "9. 你的输出第一字符必须是 {，最后一个字符必须是 }。",
             "10. entities 和 keywords 中禁止出现代词、空泛指称和对话标签，必须优先写完整角色名或明确称谓。",
         ]
@@ -569,6 +682,7 @@ def build_conclusion_prompt(
     current_round: int,
     max_retrieval_rounds: int,
     prompt_evidence_top_k: int,
+    prompt_evidence: list[dict[str, Any]] | None = None,
 ) -> str:
     rendered_dialogue_context = _truncate_text(
         render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
@@ -611,25 +725,39 @@ def build_conclusion_prompt(
             "",
             "当前证据:",
             render_evidence_blocks(
-                evidence[:prompt_evidence_top_k],
+                prompt_evidence
+                if prompt_evidence is not None
+                else select_prompt_evidence(
+                    question,
+                    current_hypothesis,
+                    evidence,
+                    prompt_evidence_top_k=prompt_evidence_top_k,
+                ),
                 max_chars_per_doc=PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
                 max_total_chars=PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
             ),
             "",
             "输出要求:",
-            '1. 必须输出 JSON，字段严格包含 "question"、"next_action"、"answer"、"missing_slots"、"clarification_question"。',
+            '1. 必须输出 JSON，字段严格包含 "question"、"next_action"、"answer"、"missing_slots"、"clarification_question"、"follow_up_hypothesis"。',
             '2. next_action 只能是 "answer_directly"、"retrieve_more"、"clarify_user"、"abstain"。',
-            '3. 当 next_action = "answer_directly" 或 "abstain" 时，answer 必须非空。',
-            '4. 当 next_action = "clarify_user" 时，clarification_question 必须非空，answer 可为空。',
-            '5. 当 next_action = "retrieve_more" 时，answer 必须为空字符串，missing_slots 应给出具体可检索缺口。',
-            "6. 如果现有证据已经足够，请选择 answer_directly，不要为了流程强行继续检索。",
-            "7. 如果问题本身歧义很大，请选择 clarify_user。",
-            "8. 如果继续检索仍然缺乏明确方向，或已接近轮次上限，可选择 abstain。",
-            "9. 如果问题属于“是谁 / 什么身份 / 来历 / 真相 / 关系”类，answer_directly 的第一句必须先直接回答核心判断，优先使用“X是Y”或“现有证据不足以确认X是谁/身份是什么”格式。",
-            "10. 如果证据只支持侧面经历、行动轨迹、见闻或计划，不能把这些内容当作“是谁”的答案；此时应选择 retrieve_more 或 abstain。",
-            "11. 禁止用“他去过哪里、见过谁、做过什么”替代核心身份判断。",
-            "12. 若答案只能确认到部分事实，也要先明确标注“已确认部分 / 无法确认部分”，不要把推测包装成确定事实。",
-            "13. 你的输出第一字符必须是 {",
+            '3. 当 next_action = "answer_directly" 或 "abstain" 时，answer 必须非空，follow_up_hypothesis 必须为 null。',
+            '4. 当 next_action = "clarify_user" 时，clarification_question 必须非空，follow_up_hypothesis 必须为 null。',
+            '5. 当 next_action = "retrieve_more" 时，answer 必须为空字符串，missing_slots 应给出具体可检索缺口，follow_up_hypothesis 必须为非空 JSON 对象。',
+            '6. follow_up_hypothesis 只能包含 "question"、"query_type"、"entities"、"keywords"、"expected_answer_type"、"dialogue_context"，不能包含 intent。',
+            "7. 如果现有证据已经足够，请选择 answer_directly，不要为了流程强行继续检索。",
+            "8. 如果问题本身歧义很大，请选择 clarify_user。",
+            "9. 如果继续检索仍然缺乏明确方向，或已接近轮次上限，可选择 abstain。",
+            "10. 如果问题属于“是谁 / 什么身份 / 来历 / 真相 / 关系”类，answer_directly 的第一句必须先直接回答核心判断，优先使用“X是Y”或“现有证据不足以确认X是谁/身份是什么”格式。",
+            "11. 如果证据只支持侧面经历、行动轨迹、见闻或计划，不能把这些内容当作“是谁”的答案；此时应选择 retrieve_more 或 abstain。",
+            "12. 禁止用“他去过哪里、见过谁、做过什么”替代核心身份判断。",
+            "13. 若答案只能确认到部分事实，也要先明确标注“已确认部分 / 无法确认部分”，不要把推测包装成确定事实。",
+            "14. 身份、种族、职业、阵营等标签必须由证据明确绑定到对应人物；不要把证据里属于其他人的标签转移给目标人物。",
+            "15. 如果证据中只出现了“黎博利/萨科塔/萨卡兹/菲林”等词，但没有明确说明该人物就是这个种族，禁止写成“该人物是某种族”。",
+            "16. 如果问题同时包含“是什么/本质”和“为什么成为危机/祸患/威胁”，answer 必须分两部分：先说明概念定义，再说明危机原因；每个原因都必须能在证据中找到对应表述。",
+            "17. 不要把后续解决方案、结局、个人情感线当成“成为危机的原因”，除非证据明确说明它导致危机。",
+            "18. 对概念定义/危机原因题，答案应保持最小充分：定义 1 句，危机原因 2-4 点；禁止把不同结局、肉鸽分支、设定传闻混写成确定主线事实。",
+            "19. 如果证据来自不同活动、结局或分支，必须使用“现有证据显示/在这些证据中”限定，不要写成唯一官方全貌。",
+            "20. 你的输出第一字符必须是 {",
         ]
     )
     return (
@@ -778,6 +906,7 @@ def enrich_hypothesis(
     return HypothesisDocument(
         question=hypothesis.question,
         intent=hypothesis.intent,
+        query_type=hypothesis.query_type,
         entities=_dedupe_keep_order(hypothesis.entities + extra_entities)[:12],
         keywords=_dedupe_keep_order(hypothesis.keywords + extra_keywords)[:20],
         expected_answer_type=hypothesis.expected_answer_type,
@@ -789,6 +918,7 @@ def merge_hypotheses(base: HypothesisDocument, follow_up: HypothesisDocument) ->
     return HypothesisDocument(
         question=base.question,
         intent=base.intent,
+        query_type=follow_up.query_type or base.query_type,
         entities=_dedupe_keep_order(base.entities + follow_up.entities)[:12],
         keywords=_dedupe_keep_order(base.keywords + follow_up.keywords)[:20],
         expected_answer_type=follow_up.expected_answer_type or base.expected_answer_type,
@@ -796,39 +926,60 @@ def merge_hypotheses(base: HypothesisDocument, follow_up: HypothesisDocument) ->
     )
 
 
-def build_fallback_follow_up_hypothesis(
-    question: str,
+def enrich_follow_up_with_evidence_terms(
     hypothesis: HypothesisDocument,
+    *,
+    question: str,
     evidence: list[dict[str, Any]],
     missing_slots: list[str],
 ) -> HypothesisDocument:
-    bridge_terms = extract_bridge_terms(question, hypothesis, evidence)
-    fallback_queries = build_follow_up_hypothesis_queries(question, hypothesis) + build_missing_slot_queries(
-        hypothesis,
-        missing_slots,
+    context_text = "\n".join(
+        [question, hypothesis.question, *missing_slots]
+        + [str(item["document"].get("clean_text") or "") for item in evidence[:4]]
     )
+    if "阴谋" not in context_text and "具体" not in context_text:
+        return hypothesis
 
-    if hypothesis.intent in {"character_relation", "event_summary"} or any(
-        token in question for token in STORY_HINT_WORDS
-    ):
-        fallback_queries.extend(["共同经历", "并肩作战", "过往", "约定", "同行"])
+    bridge_entities: list[str] = []
+    bridge_keywords: list[str] = []
+    for item in evidence[:4]:
+        text = str(item["document"].get("clean_text") or "")
+        for match in REAL_NAME_RE.finditer(text):
+            full_name = match.group(1).strip()
+            short_name = full_name.split("·", 1)[0].strip()
+            bridge_entities.extend([short_name, full_name])
+            bridge_keywords.extend([short_name, full_name])
+        for match in CONSPIRACY_ANCHOR_RE.finditer(text):
+            location = match.group(1).strip()
+            bridge_entities.extend([location, f"{location}城议员", "城议员"])
+            bridge_keywords.extend([location, f"{location}城议员", "城议员", "阴谋"])
 
-    fallback_queries = _dedupe_keep_order(fallback_queries)[:12]
-    enriched = enrich_hypothesis(hypothesis, bridge_terms, fallback_queries)
+    bridge_entities = _dedupe_keep_order(
+        [
+            term
+            for term in bridge_entities
+            if term and term not in hypothesis.entities and term not in COMMON_NON_ENTITY_WORDS
+        ]
+    )
+    bridge_keywords = _dedupe_keep_order(
+        [
+            term
+            for term in bridge_keywords
+            if term and term not in COMMON_NON_ENTITY_WORDS
+        ]
+    )
+    if not bridge_entities and not bridge_keywords:
+        return hypothesis
 
-    if hypothesis.intent in {"character_relation", "event_summary"} or any(
-        token in question for token in STORY_HINT_WORDS
-    ):
-        enriched = HypothesisDocument(
-            question=enriched.question,
-            intent=enriched.intent,
-            entities=enriched.entities[:8],
-            keywords=_dedupe_keep_order(enriched.keywords + ["共同经历", "并肩作战", "过往", "约定", "同行"])[:20],
-            expected_answer_type="共同经历" if hypothesis.intent == "event_summary" else enriched.expected_answer_type,
-            dialogue_context=enriched.dialogue_context,
-        )
-
-    return enriched
+    return HypothesisDocument(
+        question=hypothesis.question,
+        intent=hypothesis.intent,
+        query_type=hypothesis.query_type,
+        entities=_dedupe_keep_order(hypothesis.entities[:1] + bridge_entities + hypothesis.entities[1:])[:12],
+        keywords=_dedupe_keep_order(bridge_keywords + hypothesis.keywords)[:20],
+        expected_answer_type=hypothesis.expected_answer_type,
+        dialogue_context=hypothesis.dialogue_context,
+    )
 
 
 def build_follow_up_hypothesis_queries(
@@ -837,6 +988,17 @@ def build_follow_up_hypothesis_queries(
 ) -> list[str]:
     queries: list[str] = []
     primary_entity = hypothesis.entities[0] if hypothesis.entities else ""
+    if "阴谋" in hypothesis.keywords or "阴谋" in question:
+        bridge_entities = [
+            entity
+            for entity in hypothesis.entities[:6]
+            if entity != primary_entity and entity not in COMMON_NON_ENTITY_WORDS
+        ]
+        for entity in bridge_entities[:4]:
+            queries.append(f"{entity} 阴谋")
+        if any("卡拉顿" in term for term in hypothesis.entities + hypothesis.keywords):
+            for entity in bridge_entities[:3]:
+                queries.append(f"{entity} 卡拉顿 阴谋")
 
     if primary_entity and any(token in question for token in IDENTITY_HINT_WORDS):
         queries.extend(
@@ -872,9 +1034,16 @@ def build_missing_slot_queries(
     primary_entity = hypothesis.entities[0] if hypothesis.entities else ""
     queries: list[str] = []
     for slot in missing_slots[:6]:
-        queries.append(slot)
-        if primary_entity:
-            queries.append(f"{primary_entity} {slot}")
+        slot_parts = [
+            part.strip(" ：:，,。；;")
+            for part in re.split(r"[|/；;。]+", slot)
+            if part.strip(" ：:，,。；;")
+        ]
+        for slot_part in slot_parts[:3]:
+            compact_slot = _truncate_text(slot_part, 32)
+            queries.append(compact_slot)
+            if primary_entity:
+                queries.append(f"{primary_entity} {compact_slot}")
     deduped_queries: list[str] = []
     seen: set[str] = set()
     for query in queries:
@@ -886,17 +1055,57 @@ def build_missing_slot_queries(
     return deduped_queries[:8]
 
 
+def _hit_raw_score(item: dict[str, Any]) -> float:
+    for key in ("score", "dense_score", "sparse_score", "minirag_score", "fusion_score"):
+        value = item.get(key)
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
 def merge_ranked_hits(*ranked_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    seen: set[int] = set()
+    merged: dict[int, dict[str, Any]] = {}
     for ranked in ranked_lists:
-        for item in ranked:
+        for rank, item in enumerate(ranked):
             doc_index = int(item["doc_index"])
-            if doc_index in seen:
-                continue
-            seen.add(doc_index)
-            merged.append(item)
-    return merged
+            raw_score = _hit_raw_score(item)
+            payload = merged.setdefault(
+                doc_index,
+                {
+                    "doc_index": doc_index,
+                    "document": item["document"],
+                    "score": raw_score,
+                    "multi_query_rank_score": 0.0,
+                    "multi_query_match_count": 0,
+                    "best_query_rank": rank,
+                },
+            )
+            payload["score"] = max(float(payload.get("score") or 0.0), raw_score)
+            if item.get("minirag_score") is not None:
+                payload["minirag_score"] = max(
+                    float(payload.get("minirag_score") or 0.0),
+                    float(item["minirag_score"]),
+                )
+            payload["multi_query_rank_score"] = float(payload.get("multi_query_rank_score") or 0.0) + (
+                1.0 / (MULTI_QUERY_MERGE_RRF_K + rank + 1)
+            )
+            payload["multi_query_match_count"] = int(payload.get("multi_query_match_count") or 0) + 1
+            previous_best_rank = payload.get("best_query_rank")
+            payload["best_query_rank"] = min(
+                int(previous_best_rank) if previous_best_rank is not None else rank,
+                rank,
+            )
+
+    return sorted(
+        merged.values(),
+        key=lambda item: (
+            float(item.get("multi_query_rank_score") or 0.0),
+            int(item.get("multi_query_match_count") or 0),
+            -int(item.get("best_query_rank") or 0),
+            float(item.get("score") or 0.0),
+        ),
+        reverse=True,
+    )
 
 
 def rerank_hits(
@@ -906,9 +1115,19 @@ def rerank_hits(
     *,
     top_k: int,
     batch_size: int,
+    query_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     if not hits:
         return []
+    if hasattr(retriever, "rerank_with_evidence_chains"):
+        return retriever.rerank_with_evidence_chains(
+            rerank_query,
+            hits,
+            top_k=top_k,
+            batch_size=batch_size,
+            query_mode=query_mode,
+            fallback_to_document_rerank=True,
+        )
     if not retriever.reranker:
         return hits[:top_k]
     scores = retriever.reranker.score(
@@ -925,6 +1144,28 @@ def rerank_hits(
     return reranked[:top_k]
 
 
+def classify_retrieval_query_mode(hypothesis: HypothesisDocument) -> str:
+    if hypothesis.query_type in QUERY_TYPES:
+        return hypothesis.query_type
+    answer_type = hypothesis.expected_answer_type
+    question = hypothesis.question
+    if hypothesis.intent == "character_relation" or any(token in answer_type for token in ("身份关系", "关系")):
+        return "relation"
+    if any(token in question for token in ("阴谋", "真相", "秘密", "识破", "揭穿", "曝光", "暴露", "幕后", "主使", "黑幕", "骗局", "诡计")):
+        return "reveal"
+    if any(token in question for token in ("谜", "怎么回事", "究竟", "到底")):
+        return "mystery"
+    if hypothesis.intent == "plot_reasoning" or any(token in answer_type for token in ("原因", "动机", "过程", "解释")):
+        return "causality" if any(token in question for token in ("为什么", "为何", "原因", "导致", "造成")) else "reasoning"
+    if any(token in answer_type for token in ("概念定义/危机原因", "answerability")):
+        return "answerability"
+    if hypothesis.intent in {"plot_fact", "timeline", "compare"}:
+        return "fact"
+    if any(token in answer_type for token in ("事实", "时间线", "对比")):
+        return "fact"
+    return "reasoning"
+
+
 def render_evidence_blocks(
     evidence: list[dict[str, Any]],
     *,
@@ -933,9 +1174,23 @@ def render_evidence_blocks(
 ) -> str:
     blocks = []
     total_chars = 0
+    seen_chain_texts: set[str] = set()
+    seen_doc_ids: set[str] = set()
     for index, item in enumerate(evidence, start=1):
         doc = item["document"]
-        clean_text = str(doc["clean_text"])
+        chain_text = str(item.get("evidence_chain_text") or "").strip()
+        if chain_text:
+            if chain_text in seen_chain_texts:
+                continue
+            seen_chain_texts.add(chain_text)
+            clean_text = chain_text
+        else:
+            doc_id = str(doc.get("id") or "")
+            if doc_id and doc_id in seen_doc_ids:
+                continue
+            if doc_id:
+                seen_doc_ids.add(doc_id)
+            clean_text = str(doc["clean_text"])
         if max_chars_per_doc is not None:
             clean_text = _truncate_text(clean_text, max_chars_per_doc)
         block = [
@@ -946,6 +1201,7 @@ def render_evidence_blocks(
             f"stage_code: {doc.get('stage_code') or ''}",
             f"avg_tag: {doc.get('avg_tag') or ''}",
             f"source_path: {doc.get('source_path') or ''}",
+            f"chain_roles: {','.join(item.get('evidence_chain_roles') or [])}",
             "clean_text:",
             clean_text,
         ]
@@ -955,6 +1211,116 @@ def render_evidence_blocks(
         blocks.append(rendered_block)
         total_chars += len(rendered_block)
     return "\n\n".join(blocks)
+
+
+def _evidence_score(item: dict[str, Any]) -> float:
+    for key in (
+        "evidence_chain_score",
+        "evidence_chain_model_score",
+        "rerank_score",
+        "fusion_score",
+        "dense_score",
+        "sparse_score",
+        "score",
+    ):
+        value = item.get(key)
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
+def _text_similarity_tokens(text: str) -> set[str]:
+    normalized = re.sub(r"\s+", "", text.lower())
+    cjk_chars = [char for char in normalized if "\u4e00" <= char <= "\u9fff"]
+    cjk_bigrams = {
+        cjk_chars[index] + cjk_chars[index + 1]
+        for index in range(len(cjk_chars) - 1)
+    }
+    ascii_tokens = set(re.findall(r"[a-z0-9_]{2,}", normalized, flags=re.IGNORECASE))
+    return cjk_bigrams | ascii_tokens
+
+
+def _jaccard_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    union_size = len(left | right)
+    if union_size == 0:
+        return 0.0
+    return len(left & right) / union_size
+
+
+def select_prompt_evidence_mmr(
+    evidence: list[dict[str, Any]],
+    *,
+    prompt_evidence_top_k: int,
+    lambda_mult: float,
+) -> list[dict[str, Any]]:
+    if prompt_evidence_top_k <= 0 or not evidence:
+        return []
+    if len(evidence) <= prompt_evidence_top_k:
+        return evidence[:prompt_evidence_top_k]
+
+    candidates = evidence[:]
+    scores = [_evidence_score(item) for item in candidates]
+    score_min = min(scores)
+    score_max = max(scores)
+    score_span = score_max - score_min
+    normalized_scores = [
+        1.0 if score_span <= 1e-9 else (score - score_min) / score_span
+        for score in scores
+    ]
+    token_sets = [
+        _text_similarity_tokens(str(item.get("document", {}).get("clean_text") or ""))
+        for item in candidates
+    ]
+
+    selected_indices: list[int] = []
+    remaining_indices = set(range(len(candidates)))
+    while remaining_indices and len(selected_indices) < prompt_evidence_top_k:
+        best_index = None
+        best_score = float("-inf")
+        for index in remaining_indices:
+            diversity_penalty = 0.0
+            if selected_indices:
+                diversity_penalty = max(
+                    _jaccard_similarity(token_sets[index], token_sets[selected_index])
+                    for selected_index in selected_indices
+                )
+            mmr_score = lambda_mult * normalized_scores[index] - (1.0 - lambda_mult) * diversity_penalty
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_index = index
+        if best_index is None:
+            break
+        selected_indices.append(best_index)
+        remaining_indices.remove(best_index)
+
+    return [candidates[index] for index in selected_indices]
+
+
+def apply_pyramid_evidence_order(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(evidence) <= 2:
+        return evidence
+    return [evidence[0], *evidence[2:], evidence[1]]
+
+
+def split_evidence_strips(text: str, *, max_strips: int) -> list[str]:
+    strips = [
+        re.sub(r"\s+", " ", item).strip()
+        for item in LINE_SPLIT_RE.split(text)
+        if re.sub(r"\s+", " ", item).strip()
+    ]
+    return strips[:max_strips]
+
+
+def select_prompt_evidence(
+    question: str,
+    hypothesis: HypothesisDocument,
+    evidence: list[dict[str, Any]],
+    *,
+    prompt_evidence_top_k: int,
+) -> list[dict[str, Any]]:
+    return evidence[:prompt_evidence_top_k]
 
 
 def summarize_evidence_for_trace(
@@ -1090,29 +1456,17 @@ def build_unresolved_points(
     retrieval_trace: list[dict[str, Any]],
     previous_missing_slots: list[str],
 ) -> list[str]:
-    unresolved = list(previous_missing_slots)
-    primary_entity = hypothesis.entities[0] if hypothesis.entities else ""
-
-    if primary_entity and any(token in question for token in IDENTITY_HINT_WORDS):
-        unresolved.append(f"需要确认 {primary_entity} 的真实身份或身世来源")
-
-    for term in extract_bridge_terms(question, hypothesis, evidence)[:4]:
-        unresolved.append(f"需要确认与“{term}”相关的桥接关系")
-
-    if retrieval_trace:
-        last_step = retrieval_trace[-1]
-        last_queries = [
-            str(query).strip()
-            for query in last_step.get("queries") or []
-            if str(query).strip()
-        ]
-        if last_queries:
-            unresolved.append("需要在前轮检索基础上进一步缩小范围，避免重复使用相同查询")
-
-    return _dedupe_keep_order([item for item in unresolved if item.strip()])[:8]
+    return _dedupe_keep_order([item for item in previous_missing_slots if item.strip()])[:8]
 
 
-def build_answer_prompt(question: str, hypothesis: HypothesisDocument, evidence: list[dict[str, Any]]) -> str:
+def build_answer_prompt(
+    question: str,
+    hypothesis: HypothesisDocument,
+    evidence: list[dict[str, Any]],
+    *,
+    prompt_evidence_top_k: int,
+    prompt_evidence: list[dict[str, Any]] | None = None,
+) -> str:
     rendered_dialogue_context = render_dialogue_context_for_prompt(hypothesis.dialogue_context)
     system_prompt = "\n".join(
         [
@@ -1130,7 +1484,19 @@ def build_answer_prompt(question: str, hypothesis: HypothesisDocument, evidence:
             f"用户问题:\n{question}",
             "多轮问答上下文:\n" + rendered_dialogue_context,
             "假设文档(JSON):\n" + json.dumps(asdict(hypothesis), ensure_ascii=False, indent=2),
-            "检索证据:\n" + render_evidence_blocks(evidence),
+            "检索证据:\n"
+            + render_evidence_blocks(
+                prompt_evidence
+                if prompt_evidence is not None
+                else select_prompt_evidence(
+                    question,
+                    hypothesis,
+                    evidence,
+                    prompt_evidence_top_k=prompt_evidence_top_k,
+                ),
+                max_chars_per_doc=PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
+                max_total_chars=PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
+            ),
             "\n请直接回答用户问题，并在必要时区分：",
             "1. 明确剧情事实",
             "2. 基于多段证据的归纳",
@@ -1161,14 +1527,47 @@ def sanitize_generation_output(text: str, prompt: str) -> str:
     return output
 
 
+def repair_json_like_output(text: str) -> str:
+    candidate = text.lstrip()
+    if not candidate:
+        return text
+    if candidate.startswith('"'):
+        return "{" + candidate
+    if re.match(r'^[A-Za-z_][A-Za-z0-9_]*"\s*:', candidate):
+        return '{"' + candidate
+    if re.match(r'^"[A-Za-z_][A-Za-z0-9_]*"\s*:', candidate):
+        return "{" + candidate
+    return text
+
+
+def repair_common_json_syntax(text: str) -> str:
+    repaired = text
+    # Common 4B error: ["a",b", "c"] where the opening quote after comma is missing.
+    repaired = re.sub(
+        r'([,\[]\s*)([\u4e00-\u9fffA-Za-z_][^"\[\]\{\}:,\n\r]*?)"\s*(?=[,\]])',
+        r'\1"\2"',
+        repaired,
+    )
+    # Same issue for object values: "key":value", followed by comma or closing brace.
+    repaired = re.sub(
+        r'(:\s*)([\u4e00-\u9fffA-Za-z_][^"\[\]\{\}:,\n\r]*?)"\s*(?=[,\}])',
+        r'\1"\2"',
+        repaired,
+    )
+    # Missing value for optional nullable fields is safer as null than invalid JSON.
+    repaired = re.sub(r'(:\s*)(?=[,\}])', r'\1null', repaired)
+    return repaired
+
+
 def extract_json_object(text: str) -> dict[str, Any] | None:
     fenced_match = JSON_BLOCK_RE.search(text)
     candidate = fenced_match.group(1) if fenced_match else text.strip()
-    try:
-        parsed = json.loads(candidate)
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        pass
+    for candidate_variant in (candidate, repair_common_json_syntax(candidate)):
+        try:
+            parsed = json.loads(candidate_variant)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
 
     start = candidate.find("{")
     if start == -1:
@@ -1195,21 +1594,26 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
         elif char == "}":
             depth -= 1
             if depth == 0:
-                try:
-                    parsed = json.loads(candidate[start : index + 1])
-                except json.JSONDecodeError:
-                    return None
-                return parsed if isinstance(parsed, dict) else None
+                object_candidate = candidate[start : index + 1]
+                for candidate_variant in (object_candidate, repair_common_json_syntax(object_candidate)):
+                    try:
+                        parsed = json.loads(candidate_variant)
+                        return parsed if isinstance(parsed, dict) else None
+                    except json.JSONDecodeError:
+                        pass
+                return None
 
     # Tolerate truncated JSON that is otherwise structurally valid except for
     # missing closing braces at the end of generation.
     if depth > 0 and not in_string:
         repaired_candidate = candidate[start:] + ("}" * depth)
-        try:
-            parsed = json.loads(repaired_candidate)
-            return parsed if isinstance(parsed, dict) else None
-        except json.JSONDecodeError:
-            return None
+        for candidate_variant in (repaired_candidate, repair_common_json_syntax(repaired_candidate)):
+            try:
+                parsed = json.loads(candidate_variant)
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                pass
+        return None
     return None
 
 
@@ -1242,7 +1646,7 @@ def normalize_hypothesis_payload(
     extra_keys = set(payload) - allowed_keys
     if extra_keys:
         raise ModelOutputError(f"unexpected hypothesis fields: {sorted(extra_keys)}")
-    optional_missing_fields = {"dialogue_context"}
+    optional_missing_fields = {"dialogue_context", "query_type", "reflect_tokens"}
     if not is_follow_up:
         optional_missing_fields.update({"question", "intent"})
     missing_fields = [
@@ -1270,10 +1674,18 @@ def normalize_hypothesis_payload(
     expected_answer_type = str(payload.get("expected_answer_type", "")).strip() or inferred_answer_type
     if not expected_answer_type:
         raise ModelOutputError("hypothesis must contain expected_answer_type")
+    query_type = str(payload.get("query_type", "")).strip()
+    if query_type not in QUERY_TYPES:
+        query_type = infer_query_type(question, intent, expected_answer_type)
+
+    alias_keywords = _expand_entities_with_aliases(entities, keywords)
+    if alias_keywords:
+        keywords = _dedupe_keep_order(keywords + alias_keywords)[:24]
 
     return HypothesisDocument(
         question=question,
         intent=intent,
+        query_type=query_type,
         entities=entities,
         keywords=keywords,
         expected_answer_type=expected_answer_type,
@@ -1285,12 +1697,36 @@ def normalize_conclusion_payload(
     payload: dict[str, Any],
     *,
     question: str,
+    dialogue_context: str,
+    current_intent: str,
     max_round_reached: bool = False,
 ) -> ConclusionResult:
+    if set(payload).issubset(set(INITIAL_HYPOTHESIS_SCHEMA_FIELDS)) or set(payload).issubset(
+        set(FOLLOW_UP_HYPOTHESIS_SCHEMA_FIELDS) | {"intent"}
+    ):
+        follow_up_hypothesis = normalize_hypothesis_payload(
+            payload,
+            question=question,
+            dialogue_context=dialogue_context,
+            current_intent=current_intent,
+        )
+        next_action = "abstain" if max_round_reached else "retrieve_more"
+        answer = "现有检索证据不足以确认，且已达到检索轮次上限。" if max_round_reached else ""
+        return ConclusionResult(
+            next_action=next_action,
+            answer=answer,
+            missing_slots=["需要补充更直接的桥接证据"],
+            clarification_question="",
+            follow_up_hypothesis=None if max_round_reached else follow_up_hypothesis,
+        )
+
     extra_keys = set(payload) - set(CONCLUSION_SCHEMA_FIELDS)
     if extra_keys:
         raise ModelOutputError(f"unexpected conclusion fields: {sorted(extra_keys)}")
-    missing_fields = [field for field in CONCLUSION_SCHEMA_FIELDS if field not in payload]
+    optional_missing_fields = {"clarification_question", "follow_up_hypothesis", "reflect_tokens"}
+    missing_fields = [
+        field for field in CONCLUSION_SCHEMA_FIELDS if field not in payload and field not in optional_missing_fields
+    ]
     if missing_fields:
         raise ModelOutputError(f"missing conclusion fields: {missing_fields}")
     payload_question = str(payload.get("question", "")).strip()
@@ -1302,6 +1738,8 @@ def normalize_conclusion_payload(
     answer = str(payload.get("answer", "") or "").strip()
     missing_slots = _normalize_string_list(payload.get("missing_slots"), limit=8)
     clarification_question = str(payload.get("clarification_question", "")).strip()
+    follow_up_hypothesis_payload = payload.get("follow_up_hypothesis")
+    follow_up_hypothesis: HypothesisDocument | None = None
     if next_action in {"answer_directly", "abstain"} and not answer:
         raise ModelOutputError(f"{next_action} requires non-empty answer")
     if next_action == "clarify_user" and not clarification_question:
@@ -1311,15 +1749,57 @@ def normalize_conclusion_payload(
             raise ModelOutputError("retrieve_more requires empty answer")
         if not missing_slots:
             raise ModelOutputError("retrieve_more requires non-empty missing_slots")
+        if not isinstance(follow_up_hypothesis_payload, dict):
+            raise ModelOutputError("retrieve_more requires non-empty follow_up_hypothesis")
+        follow_up_hypothesis = normalize_hypothesis_payload(
+            follow_up_hypothesis_payload,
+            question=question,
+            dialogue_context=dialogue_context,
+            current_intent=current_intent,
+        )
         if max_round_reached:
             next_action = "abstain"
             answer = "现有检索证据不足以确认，且已达到检索轮次上限。"
+            follow_up_hypothesis = None
+    else:
+        if follow_up_hypothesis_payload not in (None, {}):
+            raise ModelOutputError(f"{next_action} requires follow_up_hypothesis to be null")
     return ConclusionResult(
         next_action=next_action,
         answer=answer,
         missing_slots=missing_slots,
         clarification_question=clarification_question,
+        follow_up_hypothesis=follow_up_hypothesis,
     )
+
+
+GROUNDING_LONG_TOKEN_MIN_LEN = 3
+GROUNDING_HIT_RATE_THRESHOLD = 0.5
+GROUNDING_MIN_MISSED_LONG_TOKENS = 2
+GROUNDING_EVIDENCE_POOL_TOP_K = 12
+
+
+def _grounding_extract_answer_tokens(answer: str, question: str) -> list[str]:
+    answer_tokens = [
+        token
+        for token in _extract_content_tokens(answer)
+        if _is_entity_candidate(token)
+        and token not in COMMON_NON_ENTITY_WORDS
+        and token not in NOISY_RETRIEVAL_TOKENS
+        and token not in PRONOUN_REFERENCES
+    ]
+    question_tokens = set(_extract_content_tokens(question))
+    return [token for token in answer_tokens if token not in question_tokens]
+
+
+def _grounding_evidence_pool(evidence: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for item in evidence[:GROUNDING_EVIDENCE_POOL_TOP_K]:
+        document = item.get("document") or {}
+        text = str(document.get("clean_text") or document.get("search_text") or "")
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
 
 
 def validate_conclusion_grounding(
@@ -1330,42 +1810,48 @@ def validate_conclusion_grounding(
     conclusion: ConclusionResult,
     max_round_reached: bool,
 ) -> ConclusionResult:
-    if conclusion.next_action != "answer_directly" or not conclusion.answer:
+    if conclusion.next_action != "answer_directly":
+        return conclusion
+    if not conclusion.answer:
         return conclusion
 
-    support_text_parts = [question, hypothesis.question, hypothesis.dialogue_context]
-    support_text_parts.extend(hypothesis.entities)
-    support_text_parts.extend(hypothesis.keywords)
-    support_text_parts.extend(str(item["document"].get("clean_text") or "") for item in evidence[:6])
-    support_text = "\n".join(part for part in support_text_parts if part).strip()
-    support_tokens = set(_extract_content_tokens(support_text))
+    answer_tokens = _grounding_extract_answer_tokens(conclusion.answer, question)
+    long_tokens = [token for token in answer_tokens if len(token) >= GROUNDING_LONG_TOKEN_MIN_LEN]
+    if not long_tokens:
+        return conclusion
 
-    answer_tokens = _extract_content_tokens(conclusion.answer)
-    unsupported_tokens = [
-        token
-        for token in answer_tokens
-        if token not in support_tokens and token not in IDENTITY_HINT_WORDS
-    ]
-    supported_tokens = [token for token in answer_tokens if token in support_tokens]
+    evidence_pool = _grounding_evidence_pool(evidence)
+    if not evidence_pool:
+        return conclusion
 
-    if len(unsupported_tokens) >= 3 and len(unsupported_tokens) > len(supported_tokens):
+    missing_tokens = [token for token in long_tokens if token not in evidence_pool]
+    hit_count = len(long_tokens) - len(missing_tokens)
+    hit_rate = hit_count / len(long_tokens) if long_tokens else 1.0
+
+    if (
+        hit_rate < GROUNDING_HIT_RATE_THRESHOLD
+        and len(missing_tokens) >= GROUNDING_MIN_MISSED_LONG_TOKENS
+    ):
+        downgraded_answer = (
+            "现有检索证据不足以确认（grounding 校验未通过：答案中出现 "
+            + "、".join(missing_tokens[:5])
+            + " 等表述无法在已检索证据中找到对应支撑）。"
+        )
         if max_round_reached:
             return ConclusionResult(
                 next_action="abstain",
-                answer="现有检索证据不足以确认，且已达到检索轮次上限。",
-                missing_slots=[],
+                answer=downgraded_answer,
+                missing_slots=conclusion.missing_slots or ["grounding 校验未通过的关键词"],
                 clarification_question="",
+                follow_up_hypothesis=None,
             )
         return ConclusionResult(
-            next_action="retrieve_more",
-            answer="",
-            missing_slots=_dedupe_keep_order(
-                conclusion.missing_slots
-                + [f"需要证据支持这些未落地说法：{', '.join(unsupported_tokens[:4])}"]
-            )[:8],
+            next_action="abstain",
+            answer=downgraded_answer,
+            missing_slots=conclusion.missing_slots or list(missing_tokens[:6]),
             clarification_question="",
+            follow_up_hypothesis=None,
         )
-
     return conclusion
 
 
@@ -1566,6 +2052,9 @@ class VllmRunner:
             "gguf_model_path": None,
             "base_model_path": str(self.base_model_path),
             "lora_path": str(self.lora_path) if self.lora_path else None,
+            "tokenizer_path": str(self.lora_path)
+            if self.lora_path and (self.lora_path / "tokenizer_config.json").exists()
+            else str(self.base_model_path),
             "trained_sft_artifact": "model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b",
             "trained_sft_artifact_type": "LoRA adapter",
             "recommended_runtime_model": str(self.base_model_path),
@@ -1603,8 +2092,14 @@ class VllmRunner:
             ) from exc
 
         try:
+            tokenizer_path = (
+                self.lora_path
+                if self.lora_path and (self.lora_path / "tokenizer_config.json").exists()
+                else self.base_model_path
+            )
             self._llm = LLM(
                 model=str(self.base_model_path),
+                tokenizer=str(tokenizer_path),
                 trust_remote_code=True,
                 enable_lora=self.lora_path is not None,
                 tensor_parallel_size=self.tensor_parallel_size,
@@ -1666,6 +2161,14 @@ class CPUInferencePipeline:
         query_config: QueryConfig | None = None,
         max_retrieval_rounds: int = 3,
         prompt_evidence_top_k: int = 8,
+        enable_mmr: bool = False,
+        mmr_lambda: float = 0.72,
+        enable_pyramid_order: bool = False,
+        enable_crag_refinement: bool = False,
+        crag_refine_top_sentences: int = 4,
+        crag_refine_max_sentences: int = 24,
+        self_consistency_samples: int = 1,
+        self_consistency_temperature: float = 0.7,
         max_follow_up_rounds: int | None = None,
         use_model_hypothesis: bool = True,
         use_model_conclusion_generation: bool = True,
@@ -1674,8 +2177,6 @@ class CPUInferencePipeline:
         self.retriever = retriever
         self.generator = generator
         self.query_config = query_config or QueryConfig()
-        if max_follow_up_rounds is not None:
-            max_retrieval_rounds = max_retrieval_rounds if max_retrieval_rounds != 3 else (max_follow_up_rounds + 1)
         self.max_retrieval_rounds = max(1, max_retrieval_rounds)
         if not use_model_hypothesis:
             raise ValueError("heuristic hypothesis generation is disabled; set use_model_hypothesis=true")
@@ -1686,6 +2187,90 @@ class CPUInferencePipeline:
         self.use_model_hypothesis = use_model_hypothesis
         self.use_model_conclusion_generation = use_model_conclusion_generation
         self.prompt_evidence_top_k = max(1, prompt_evidence_top_k)
+        self.enable_mmr = enable_mmr
+        self.mmr_lambda = min(1.0, max(0.0, mmr_lambda))
+        self.enable_pyramid_order = enable_pyramid_order
+        self.enable_crag_refinement = enable_crag_refinement
+        self.crag_refine_top_sentences = max(1, crag_refine_top_sentences)
+        self.crag_refine_max_sentences = max(self.crag_refine_top_sentences, crag_refine_max_sentences)
+        self.self_consistency_samples = max(1, self_consistency_samples)
+        self.self_consistency_temperature = max(0.0, self_consistency_temperature)
+
+    def prepare_prompt_evidence(
+        self,
+        question: str,
+        hypothesis: HypothesisDocument,
+        evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if self.enable_mmr:
+            selected = select_prompt_evidence_mmr(
+                evidence,
+                prompt_evidence_top_k=self.prompt_evidence_top_k,
+                lambda_mult=self.mmr_lambda,
+            )
+        else:
+            selected = select_prompt_evidence(
+                question,
+                hypothesis,
+                evidence,
+                prompt_evidence_top_k=self.prompt_evidence_top_k,
+            )
+        if self.enable_crag_refinement:
+            selected = self.refine_evidence_strips(question, hypothesis, selected)
+        if self.enable_pyramid_order:
+            selected = apply_pyramid_evidence_order(selected)
+        return selected
+
+    def refine_evidence_strips(
+        self,
+        question: str,
+        hypothesis: HypothesisDocument,
+        evidence: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        reranker = getattr(self.retriever, "reranker", None)
+        if reranker is None or not evidence:
+            return evidence
+
+        query = question
+        if hypothesis.keywords:
+            query = question + "\n检索线索: " + " ".join(hypothesis.keywords[:10])
+
+        refined: list[dict[str, Any]] = []
+        for item in evidence:
+            doc = item.get("document") or {}
+            clean_text = str(doc.get("clean_text") or "")
+            strips = split_evidence_strips(clean_text, max_strips=self.crag_refine_max_sentences)
+            if len(strips) <= self.crag_refine_top_sentences:
+                refined.append(item)
+                continue
+
+            scores = reranker.score(
+                query=query,
+                documents=strips,
+                batch_size=self.query_config.rerank_batch_size,
+            )
+            ranked = sorted(
+                enumerate(zip(strips, scores)),
+                key=lambda pair: float(pair[1][1]),
+                reverse=True,
+            )[: self.crag_refine_top_sentences]
+            selected_indices = sorted(index for index, _ in ranked)
+            selected_strips = [strips[index] for index in selected_indices]
+            refined_doc = dict(doc)
+            refined_doc["original_clean_text"] = clean_text
+            refined_doc["clean_text"] = "\n".join(selected_strips)
+            refined_doc["search_text"] = refined_doc["clean_text"]
+            refined_item = dict(item)
+            refined_item["document"] = refined_doc
+            refined_item["crag_refinement"] = {
+                "enabled": True,
+                "original_sentence_count": len(strips),
+                "kept_sentence_count": len(selected_strips),
+                "kept_sentence_indices": selected_indices,
+                "max_sentence_score": max(float(score) for score in scores) if scores else None,
+            }
+            refined.append(refined_item)
+        return refined
 
     def build_hypothesis(self, question: str, dialogue_context: str = "") -> HypothesisDocument:
         prompt = build_hypothesis_prompt(question, dialogue_context)
@@ -1696,8 +2281,7 @@ class CPUInferencePipeline:
             top_p=0.8,
             repeat_penalty=1.0,
         )
-        if raw_output.lstrip().startswith('"'):
-            raw_output = "{" + raw_output.lstrip()
+        raw_output = repair_json_like_output(raw_output)
         payload = extract_json_object(raw_output)
         if not payload:
             raise ModelOutputError(f"invalid hypothesis json: {raw_output}")
@@ -1734,6 +2318,7 @@ class CPUInferencePipeline:
             current_round=current_round,
             max_retrieval_rounds=self.max_retrieval_rounds,
             prompt_evidence_top_k=self.prompt_evidence_top_k,
+            prompt_evidence=self.prepare_prompt_evidence(question, current_hypothesis, evidence),
         )
         raw_output = self.generator.generate(
             prompt,
@@ -1742,23 +2327,17 @@ class CPUInferencePipeline:
             top_p=0.8,
             repeat_penalty=1.0,
         )
-        if raw_output.lstrip().startswith('"'):
-            raw_output = "{" + raw_output.lstrip()
+        raw_output = repair_json_like_output(raw_output)
         payload = extract_json_object(raw_output)
         if not payload:
-            return build_fallback_follow_up_hypothesis(
-                question=question,
-                hypothesis=current_hypothesis,
-                evidence=evidence,
-                missing_slots=previous_conclusion.missing_slots,
-            )
+            raise ModelOutputError(f"invalid follow-up hypothesis json: {raw_output}")
         follow_up_hypothesis = normalize_hypothesis_payload(
             payload,
             question=question,
             dialogue_context=current_hypothesis.dialogue_context,
             current_intent=current_hypothesis.intent,
         )
-        return merge_hypotheses(current_hypothesis, follow_up_hypothesis)
+        return follow_up_hypothesis
 
     def generate_conclusion(
         self,
@@ -1768,6 +2347,7 @@ class CPUInferencePipeline:
         retrieval_trace: list[dict[str, Any]],
         current_round: int,
     ) -> ConclusionResult:
+        prompt_evidence = self.prepare_prompt_evidence(question, current_hypothesis, evidence)
         prompt = build_conclusion_prompt(
             question,
             current_hypothesis,
@@ -1776,6 +2356,71 @@ class CPUInferencePipeline:
             current_round,
             self.max_retrieval_rounds,
             self.prompt_evidence_top_k,
+            prompt_evidence=prompt_evidence,
+        )
+        conclusions: list[ConclusionResult] = []
+        errors: list[Exception] = []
+        sample_count = self.self_consistency_samples
+        for _ in range(sample_count):
+            try:
+                raw_output = self.generator.generate(
+                    prompt,
+                    max_tokens=min(512, self.generator.max_tokens),
+                    temperature=self.self_consistency_temperature if sample_count > 1 else 0.1,
+                    top_p=0.9 if sample_count > 1 else 0.8,
+                    repeat_penalty=1.0,
+                )
+                raw_output = repair_json_like_output(raw_output)
+                payload = extract_json_object(raw_output)
+                if not payload:
+                    raise ModelOutputError(f"invalid conclusion json: {raw_output}")
+                conclusion = normalize_conclusion_payload(
+                    payload,
+                    question=question,
+                    dialogue_context=current_hypothesis.dialogue_context,
+                    current_intent=current_hypothesis.intent,
+                    max_round_reached=current_round >= self.max_retrieval_rounds,
+                )
+                conclusion = validate_conclusion_grounding(
+                    question=question,
+                    hypothesis=current_hypothesis,
+                    evidence=prompt_evidence,
+                    conclusion=conclusion,
+                    max_round_reached=current_round >= self.max_retrieval_rounds,
+                )
+                conclusions.append(conclusion)
+            except Exception as exc:
+                errors.append(exc)
+                if sample_count == 1:
+                    raise
+                continue
+
+        if not conclusions:
+            first_error = errors[0] if errors else ModelOutputError("no valid conclusion samples")
+            raise ModelOutputError("self-consistency produced no valid conclusion samples") from first_error
+
+        action_counts: dict[str, int] = {}
+        for conclusion in conclusions:
+            action_counts[conclusion.next_action] = action_counts.get(conclusion.next_action, 0) + 1
+        winning_action = max(
+            action_counts,
+            key=lambda action: (action_counts[action], -RETRIEVAL_ACTIONS_ORDER.index(action)),
+        )
+        return next(conclusion for conclusion in conclusions if conclusion.next_action == winning_action)
+
+    def generate_direct_answer(
+        self,
+        question: str,
+        current_hypothesis: HypothesisDocument,
+        evidence: list[dict[str, Any]],
+    ) -> ConclusionResult:
+        prompt_evidence = self.prepare_prompt_evidence(question, current_hypothesis, evidence)
+        prompt = build_answer_prompt(
+            question,
+            current_hypothesis,
+            evidence,
+            prompt_evidence_top_k=self.prompt_evidence_top_k,
+            prompt_evidence=prompt_evidence,
         )
         raw_output = self.generator.generate(
             prompt,
@@ -1784,36 +2429,39 @@ class CPUInferencePipeline:
             top_p=0.8,
             repeat_penalty=1.0,
         )
-        if raw_output.lstrip().startswith('"'):
-            raw_output = "{" + raw_output.lstrip()
-        payload = extract_json_object(raw_output)
-        if not payload:
-            raise ModelOutputError(f"invalid conclusion json: {raw_output}")
-        conclusion = normalize_conclusion_payload(
-            payload,
-            question=question,
-            max_round_reached=current_round >= self.max_retrieval_rounds,
+        answer = sanitize_generation_output(raw_output, prompt).strip()
+        if not answer:
+            answer = "现有检索证据不足以确认。"
+        conclusion = ConclusionResult(
+            next_action="answer_directly",
+            answer=answer,
+            missing_slots=[],
+            clarification_question="",
+            follow_up_hypothesis=None,
         )
-        return conclusion
+        return validate_conclusion_grounding(
+            question=question,
+            hypothesis=current_hypothesis,
+            evidence=prompt_evidence,
+            conclusion=conclusion,
+            max_round_reached=True,
+        )
 
     def _search_queries(
         self,
         queries: list[str],
-        dense_hits: list[dict[str, Any]],
-        sparse_hits: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        merged_dense = list(dense_hits)
-        merged_sparse = list(sparse_hits)
+        dense_ranked_lists: list[list[dict[str, Any]]] = []
+        sparse_ranked_lists: list[list[dict[str, Any]]] = []
         for query in queries:
-            merged_dense = merge_ranked_hits(
-                merged_dense,
-                self.retriever.dense_search(query, top_k=self.query_config.dense_top_k),
-            )
-            merged_sparse = merge_ranked_hits(
-                merged_sparse,
-                self.retriever.sparse_search(query, top_k=self.query_config.sparse_top_k),
-            )
-        return merged_dense, merged_sparse
+            dense_ranked_lists.append(self.retriever.dense_search(query, top_k=self.query_config.dense_top_k))
+            sparse_ranked_lists.append(self.retriever.sparse_search(query, top_k=self.query_config.sparse_top_k))
+            minirag_search = getattr(self.retriever, "minirag_search", None)
+            if minirag_search is not None:
+                minirag_hits = minirag_search(query, top_k=self.query_config.sparse_top_k)
+                if minirag_hits:
+                    sparse_ranked_lists.append(minirag_hits)
+        return merge_ranked_hits(*dense_ranked_lists), merge_ranked_hits(*sparse_ranked_lists)
 
     def _finalize_hits(
         self,
@@ -1831,6 +2479,8 @@ class CPUInferencePipeline:
             dense_weight=self.query_config.dense_weight,
             sparse_weight=self.query_config.sparse_weight,
         )
+        if self.query_config.enable_neighbor_expansion:
+            fused_hits = self._expand_fused_hits_with_neighbors(fused_hits)
 
         rerank_query = resolved_question
         if hypothesis.keywords:
@@ -1841,17 +2491,51 @@ class CPUInferencePipeline:
             fused_hits,
             top_k=self.query_config.rerank_top_k,
             batch_size=self.query_config.rerank_batch_size,
+            query_mode=classify_retrieval_query_mode(hypothesis),
         )
+
+    def _expand_fused_hits_with_neighbors(self, fused_hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        collect_neighbors = getattr(self.retriever, "_collect_story_and_stage_neighbors", None)
+        if not fused_hits or collect_neighbors is None:
+            return fused_hits
+
+        expanded_by_doc_index: dict[int, dict[str, Any]] = {
+            int(item["doc_index"]): item
+            for item in fused_hits
+        }
+        neighbor_doc_indices = collect_neighbors(
+            fused_hits,
+            max_seed_docs=min(self.query_config.neighbor_max_seed_docs, len(fused_hits)),
+            story_window=self.query_config.neighbor_story_window,
+            activity_story_sort_window=self.query_config.neighbor_activity_story_sort_window,
+        )
+        max_candidates = max(
+            self.query_config.reranker_candidate_top_k,
+            self.query_config.fusion_top_k,
+            self.query_config.rerank_top_k,
+        )
+        for doc_index in neighbor_doc_indices:
+            if doc_index in expanded_by_doc_index:
+                continue
+            expanded_by_doc_index[doc_index] = {
+                "doc_index": doc_index,
+                "document": self.retriever.documents[doc_index],
+                "dense_score": None,
+                "sparse_score": None,
+                "fusion_score": 0.0,
+                "supplemental_source": "neighbor",
+            }
+            if len(expanded_by_doc_index) >= max_candidates:
+                break
+        return list(expanded_by_doc_index.values())
 
     def _retrieve_round(
         self,
         question: str,
         hypothesis: HypothesisDocument,
         queries: list[str],
-        dense_hits: list[dict[str, Any]],
-        sparse_hits: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        dense_hits, sparse_hits = self._search_queries(queries, dense_hits, sparse_hits)
+        dense_hits, sparse_hits = self._search_queries(queries)
         evidence = self._finalize_hits(question, hypothesis, dense_hits, sparse_hits)
         return dense_hits, sparse_hits, evidence
 
@@ -1864,8 +2548,6 @@ class CPUInferencePipeline:
         if progress_callback:
             progress_callback(INITIAL_HYPOTHESIS_TASK_TYPE)
         current_hypothesis = self.build_hypothesis(question, dialogue_context)
-        dense_hits: list[dict[str, Any]] = []
-        sparse_hits: list[dict[str, Any]] = []
         retrieval_trace: list[dict[str, Any]] = []
         evidence: list[dict[str, Any]] = []
         final_answer = ""
@@ -1883,8 +2565,6 @@ class CPUInferencePipeline:
                 question,
                 current_hypothesis,
                 pending_queries,
-                dense_hits,
-                sparse_hits,
             )
 
             step_record: dict[str, Any] = {
@@ -1926,26 +2606,23 @@ class CPUInferencePipeline:
                 final_answer = conclusion.answer or "现有检索证据不足以确认。"
                 break
 
-            if progress_callback:
-                progress_callback(FOLLOW_UP_HYPOTHESIS_TASK_TYPE)
-            current_hypothesis = self.build_follow_up_hypothesis(
-                question,
-                current_hypothesis,
-                evidence,
-                retrieval_trace,
-                conclusion,
-                round_index + 1,
-            )
+            if conclusion.follow_up_hypothesis is not None:
+                current_hypothesis = merge_hypotheses(current_hypothesis, conclusion.follow_up_hypothesis)
+            else:
+                if progress_callback:
+                    progress_callback(FOLLOW_UP_HYPOTHESIS_TASK_TYPE)
+                current_hypothesis = self.build_follow_up_hypothesis(
+                    question,
+                    current_hypothesis,
+                    evidence,
+                    retrieval_trace,
+                    conclusion,
+                    round_index + 1,
+                )
             step_record["follow_up_hypothesis_task_type"] = FOLLOW_UP_HYPOTHESIS_TASK_TYPE
             step_record["follow_up_hypothesis"] = asdict(current_hypothesis)
 
-            follow_up_queries = _dedupe_keep_order(
-                build_follow_up_hypothesis_queries(question, current_hypothesis)
-                + build_missing_slot_queries(current_hypothesis, conclusion.missing_slots)
-            )[:10]
-            if not follow_up_queries:
-                raise ModelOutputError("follow-up hypothesis produced no retrieval queries")
-            pending_queries = follow_up_queries + [build_retrieval_query(current_hypothesis)]
+            pending_queries = [build_retrieval_query(current_hypothesis)]
             step_record["next_round_queries"] = pending_queries
             current_hypothesis_task_type = FOLLOW_UP_HYPOTHESIS_TASK_TYPE
 
@@ -1972,8 +2649,13 @@ class CPUInferencePipeline:
                     "source_path": doc.get("source_path"),
                     "fusion_score": item.get("fusion_score"),
                     "rerank_score": item.get("rerank_score"),
+                    "evidence_chain_score": item.get("evidence_chain_score"),
+                    "evidence_chain_model_score": item.get("evidence_chain_model_score"),
+                    "evidence_chain_roles": item.get("evidence_chain_roles"),
+                    "evidence_chain_text": item.get("evidence_chain_text"),
                     "dense_score": item.get("dense_score"),
                     "sparse_score": item.get("sparse_score"),
+                    "minirag_score": item.get("minirag_score"),
                     "clean_text": doc["clean_text"],
                 }
             )
@@ -1982,7 +2664,22 @@ class CPUInferencePipeline:
             question=question,
             intent=current_hypothesis.intent,
             hypothesis=asdict(current_hypothesis),
-            model_runtime=self.generator.describe_runtime(),
+            model_runtime={
+                **self.generator.describe_runtime(),
+                "prompt_evidence_strategy": {
+                    "top_k": self.prompt_evidence_top_k,
+                    "mmr_enabled": self.enable_mmr,
+                    "mmr_lambda": self.mmr_lambda,
+                    "pyramid_order_enabled": self.enable_pyramid_order,
+                    "crag_refinement_enabled": self.enable_crag_refinement,
+                    "crag_refine_top_sentences": self.crag_refine_top_sentences,
+                    "crag_refine_max_sentences": self.crag_refine_max_sentences,
+                },
+                "conclusion_self_consistency": {
+                    "samples": self.self_consistency_samples,
+                    "temperature": self.self_consistency_temperature,
+                },
+            },
             retrieval_query=retrieval_query,
             retrieval_trace=retrieval_trace,
             evidence=simplified_evidence,

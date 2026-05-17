@@ -45,10 +45,11 @@ from goldenglow.config import (
     EXCEL_ROOT,
     FAISS_INDEX_PATH,
     INDEX_ROOT,
+    OPERATOR_ALIAS_MAP_PATH,
     STORY_ROOT,
     BuildConfig,
 )
-from goldenglow.data.story_parser import build_corpus_documents
+from goldenglow.data.story_parser import build_corpus_documents, build_operator_alias_lookup
 from goldenglow.retrieval.hybrid import tokenize_for_bm25
 
 
@@ -89,6 +90,7 @@ def main() -> None:
         max_chars=config.max_chars,
         overlap_segments=config.overlap_segments,
     )
+    operator_alias_map = build_operator_alias_lookup(EXCEL_ROOT)
     if not documents:
         raise RuntimeError("No story documents were parsed from the source data.")
 
@@ -96,6 +98,10 @@ def main() -> None:
     CHUNKS_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
     save_jsonl(DOCUMENTS_PATH, documents)
     save_jsonl(CHUNKS_DEBUG_PATH, documents[:200])
+    OPERATOR_ALIAS_MAP_PATH.write_text(
+        json.dumps(operator_alias_map, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     embedding_model = SentenceTransformer(str(args.embedding_model), device=args.device)
     search_texts = [document["search_text"] for document in documents]
@@ -122,6 +128,7 @@ def main() -> None:
         "embedding_model": str(args.embedding_model),
         "max_chars": config.max_chars,
         "overlap_segments": config.overlap_segments,
+        "operator_aliases": len(operator_alias_map),
     }
     CORPUS_METADATA_PATH.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),

@@ -1,6 +1,6 @@
 # ASA-ArknightStoryAgent
 
-一个面向《明日方舟》剧情问答的本地 Agent 项目。核心目标不是泛知识聊天，而是基于剧情证据进行中文问答，并在表达层面注入较轻的“澄闪”风格。
+一个面向《明日方舟》剧情问答的本地 Agent 项目。核心目标不是泛知识聊天，而是基于剧情证据进行中文问答，并保持自然、克制的中文表达。
 
 当前主链路：
 
@@ -41,9 +41,9 @@
   数据生成、索引构建、推理、评测脚本
 - `scripts/llama_factory/`
   LLaMA-Factory 训练与评测入口
-- `src/goldenglow/retrieval/`
+- `src/<主代码包>/retrieval/`
   检索与重排实现
-- `src/goldenglow/inference/`
+- `src/<主代码包>/inference/`
   推理主链路
 - `configs/`
   运行时配置

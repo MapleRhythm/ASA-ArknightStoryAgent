@@ -4,9 +4,15 @@
     "enable_reranker": false,
     "dense_top_k": 60,
     "sparse_top_k": 60,
+    "enable_minirag": true,
+    "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
     "fusion_top_k": 40,
     "rerank_top_k": 15,
-    "rerank_batch_size": 4
+    "rerank_batch_size": 4,
+    "enable_neighbor_expansion": false,
+    "neighbor_max_seed_docs": 24,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
   },
   "generator": {
     "backend": "llama.cpp"
@@ -14,6 +20,14 @@
   "inference": {
     "max_retrieval_rounds": 3,
     "prompt_evidence_top_k": 8,
+    "enable_mmr": true,
+    "mmr_lambda": 0.72,
+    "enable_pyramid_order": true,
+    "enable_crag_refinement": false,
+    "crag_refine_top_sentences": 4,
+    "crag_refine_max_sentences": 24,
+    "self_consistency_samples": 1,
+    "self_consistency_temperature": 0.7,
     "use_model_hypothesis": true,
     "use_model_conclusion_generation": true
   }

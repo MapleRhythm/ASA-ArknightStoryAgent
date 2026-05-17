@@ -1,0 +1,44 @@
+{
+  "retrieval": {
+    "device": "cuda",
+    "enable_reranker": true,
+    "reranker_model_path": "model/reranker/bge-reranker-v2-m3-evidence-chain-answerability",
+    "dense_top_k": 120,
+    "sparse_top_k": 120,
+    "enable_minirag": true,
+    "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "fusion_top_k": 80,
+    "rerank_top_k": 32,
+    "rerank_batch_size": 16,
+    "reranker_max_length": 1024,
+    "enable_neighbor_expansion": false,
+    "neighbor_max_seed_docs": 24,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
+  },
+  "generator": {
+    "backend": "responses_api",
+    "api_base_url": "https://ark.cn-beijing.volces.com/api/v3/responses",
+    "api_key_env": "ARK_API_KEY",
+    "model": "doubao-seed-2-0-mini-260428",
+    "timeout": 120,
+    "max_tokens": 4096,
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "response_format_json": false
+  },
+  "inference": {
+    "max_retrieval_rounds": 3,
+    "prompt_evidence_top_k": 12,
+    "enable_mmr": true,
+    "mmr_lambda": 0.72,
+    "enable_pyramid_order": true,
+    "enable_crag_refinement": true,
+    "crag_refine_top_sentences": 4,
+    "crag_refine_max_sentences": 24,
+    "self_consistency_samples": 5,
+    "self_consistency_temperature": 0.7,
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true
+  }
+}

@@ -9,6 +9,7 @@ import re
 import sys
 import time
 from collections import Counter
+from concurrent.futures import Future, ThreadPoolExecutor, wait, FIRST_COMPLETED
 from pathlib import Path
 from typing import Any
 
@@ -243,6 +244,80 @@ def save_category_splits(
         save_jsonl(category_dir / "test.jsonl", category_splits["test"])
 
 
+def run_teacher_api_job(job: dict[str, Any], teacher_api: TeacherApiConfig) -> dict[str, Any]:
+    started = time.time()
+    raw_text = None
+    try:
+        raw_text, _raw_payload = call_teacher_api(
+            teacher_api,
+            system_prompt=job["system_prompt"],
+            user_prompt=job["user_prompt"],
+        )
+        api_seconds = time.time() - started
+        parsed = parse_teacher_json(raw_text)
+        normalized = validate_and_normalize_samples(
+            parsed,
+            expected_task_type=job["task_type"],
+            evidence_docs=job["evidence_docs"],
+            worldbuilding_topic=job["worldbuilding_topic"],
+            request_id=job["request_id"],
+        )
+        latency = time.time() - started
+        request_record = build_request_record(
+            request_id=job["request_id"],
+            task_type=job["task_type"],
+            evidence_docs=job["evidence_docs"],
+            worldbuilding_topic=job["worldbuilding_topic"],
+            evidence_mode=job["evidence_mode"],
+            retrieval_query=job["retrieval_query"],
+            retrieval_seed_doc_id=job["retrieval_seed_doc_id"],
+            system_prompt=job["system_prompt"],
+            user_prompt=job["user_prompt"],
+            raw_text=raw_text,
+            parsed_ok=True,
+            accepted_samples=len(normalized),
+            latency_seconds=latency,
+        )
+        return {
+            **job,
+            "parsed_ok": True,
+            "accepted_samples": len(normalized),
+            "normalized_samples": normalized,
+            "request_record": request_record,
+            "api_seconds": api_seconds,
+            "latency_seconds": latency,
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        latency = time.time() - started
+        request_record = build_request_record(
+            request_id=job["request_id"],
+            task_type=job["task_type"],
+            evidence_docs=job["evidence_docs"],
+            worldbuilding_topic=job["worldbuilding_topic"],
+            evidence_mode=job["evidence_mode"],
+            retrieval_query=job["retrieval_query"],
+            retrieval_seed_doc_id=job["retrieval_seed_doc_id"],
+            system_prompt=job["system_prompt"],
+            user_prompt=job["user_prompt"],
+            raw_text=raw_text,
+            parsed_ok=False,
+            accepted_samples=0,
+            latency_seconds=latency,
+            error=str(exc),
+        )
+        return {
+            **job,
+            "parsed_ok": False,
+            "accepted_samples": 0,
+            "normalized_samples": [],
+            "request_record": request_record,
+            "api_seconds": 0.0,
+            "latency_seconds": latency,
+            "error": str(exc),
+        }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate grounded SFT data by calling a teacher-model API."
@@ -268,6 +343,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--no-reranker", action="store_true")
+    parser.add_argument("--parallel", type=int, default=1, help="Number of concurrent teacher API requests.")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -289,8 +365,8 @@ def main() -> None:
     existing_samples = [] if args.dry_run else load_jsonl_if_exists(output_dir / "all.jsonl")
     request_offset = next_request_index(prompt_dir, existing_request_records)
 
-    target_total = args.target_total or int(dataset_cfg["target_total"])
-    max_requests = args.max_requests or int(dataset_cfg["max_requests"])
+    target_total = args.target_total if args.target_total is not None else int(dataset_cfg["target_total"])
+    max_requests = args.max_requests if args.max_requests is not None else int(dataset_cfg["max_requests"])
     samples_per_request = int(dataset_cfg["samples_per_request"])
     seed = int(dataset_cfg["seed"])
     evidence_mode = args.evidence_mode or source_cfg.get("evidence_mode", "retrieval")
@@ -338,20 +414,17 @@ def main() -> None:
         unit="req",
     )
 
-    for request_index in range(max_requests):
+    def build_request_job(request_index: int) -> dict[str, Any] | None:
+        nonlocal retriever, worldbuilding_queue
         request_started = time.time()
         retrieval_seconds = 0.0
-        api_seconds = 0.0
-        accepted_samples = 0
-        parsed_ok = False
-        request_error: str | None = None
         current_counts = Counter(sample["task_type"] for sample in all_samples)
         if (
             not args.only_task_type
             and len(all_samples) >= target_total
             and quotas_satisfied(current_counts, target_counts)
         ):
-            break
+            return None
 
         if args.only_task_type:
             task_type = normalize_task_type(args.only_task_type)
@@ -421,106 +494,144 @@ def main() -> None:
             json.dumps(prompt_record, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        return {
+            "request_id": request_id,
+            "request_index": request_index,
+            "request_started": request_started,
+            "task_type": task_type,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "evidence_docs": evidence_docs,
+            "worldbuilding_topic": worldbuilding_topic,
+            "evidence_mode": evidence_mode if task_type != "worldbuilding_qa" else "topic",
+            "retrieval_query": retrieval_query,
+            "retrieval_seed_doc_id": retrieval_seed_doc_id,
+            "retrieval_seconds": retrieval_seconds,
+        }
 
-        if args.dry_run:
-            request_records.append(
-                build_request_record(
-                    request_id=request_id,
-                    task_type=task_type,
-                    evidence_docs=evidence_docs,
-                    worldbuilding_topic=worldbuilding_topic,
-                    evidence_mode=evidence_mode if task_type != "worldbuilding_qa" else "topic",
-                    retrieval_query=retrieval_query,
-                    retrieval_seed_doc_id=retrieval_seed_doc_id,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    raw_text=None,
-                    parsed_ok=False,
-                    accepted_samples=0,
-                    latency_seconds=0.0,
-                    error=None,
+    if args.parallel > 1 and not args.dry_run:
+        max_workers = max(1, args.parallel)
+        next_request_index_to_submit = 0
+        inflight: dict[Future, dict[str, Any]] = {}
+
+        def submit_next(executor: ThreadPoolExecutor) -> bool:
+            nonlocal next_request_index_to_submit
+            if next_request_index_to_submit >= max_requests:
+                return False
+            job = build_request_job(next_request_index_to_submit)
+            next_request_index_to_submit += 1
+            if job is None:
+                return False
+            future = executor.submit(run_teacher_api_job, job, teacher_api)
+            inflight[future] = job
+            return True
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for _ in range(min(max_workers, max_requests)):
+                if not submit_next(executor):
+                    break
+
+            while inflight:
+                done, _pending = wait(inflight, return_when=FIRST_COMPLETED)
+                for future in done:
+                    job = inflight.pop(future)
+                    try:
+                        result = future.result()
+                    except Exception as exc:  # noqa: BLE001
+                        result = {
+                            **job,
+                            "parsed_ok": False,
+                            "accepted_samples": 0,
+                            "normalized_samples": [],
+                            "request_record": build_request_record(
+                                request_id=job["request_id"],
+                                task_type=job["task_type"],
+                                evidence_docs=job["evidence_docs"],
+                                worldbuilding_topic=job["worldbuilding_topic"],
+                                evidence_mode=job["evidence_mode"],
+                                retrieval_query=job["retrieval_query"],
+                                retrieval_seed_doc_id=job["retrieval_seed_doc_id"],
+                                system_prompt=job["system_prompt"],
+                                user_prompt=job["user_prompt"],
+                                raw_text=None,
+                                parsed_ok=False,
+                                accepted_samples=0,
+                                latency_seconds=0.0,
+                                error=str(exc),
+                            ),
+                            "api_seconds": 0.0,
+                            "latency_seconds": 0.0,
+                            "error": str(exc),
+                        }
+
+                    normalized = result.get("normalized_samples") or []
+                    all_samples.extend(normalized)
+                    request_records.append(result["request_record"])
+                    progress.update(1)
+                    progress.set_postfix(
+                        task=result["task_type"],
+                        ok=result["parsed_ok"],
+                        accepted=f"{len(all_samples)}/{target_total}",
+                        last=result["accepted_samples"],
+                        evidence=len(result["evidence_docs"]),
+                        retrieval=f"{result['retrieval_seconds']:.2f}s",
+                        api=f"{result['api_seconds']:.2f}s",
+                        elapsed=f"{time.time() - result['request_started']:.2f}s",
+                        failed=sum(1 for item in request_records if not item["parsed_ok"]),
+                        parallel=max_workers,
+                    )
+
+                    if len(all_samples) < target_total or args.only_task_type:
+                        submit_next(executor)
+    else:
+        for request_index in range(max_requests):
+            job = build_request_job(request_index)
+            if job is None:
+                break
+
+            if args.dry_run:
+                request_records.append(
+                    build_request_record(
+                        request_id=job["request_id"],
+                        task_type=job["task_type"],
+                        evidence_docs=job["evidence_docs"],
+                        worldbuilding_topic=job["worldbuilding_topic"],
+                        evidence_mode=job["evidence_mode"],
+                        retrieval_query=job["retrieval_query"],
+                        retrieval_seed_doc_id=job["retrieval_seed_doc_id"],
+                        system_prompt=job["system_prompt"],
+                        user_prompt=job["user_prompt"],
+                        raw_text=None,
+                        parsed_ok=False,
+                        accepted_samples=0,
+                        latency_seconds=0.0,
+                        error=None,
+                    )
                 )
-            )
+                progress.update(1)
+                progress.set_postfix(
+                    task=job["task_type"],
+                    prompts=len(request_records),
+                    evidence=len(job["evidence_docs"]),
+                    retrieval=f"{job['retrieval_seconds']:.2f}s",
+                )
+                continue
+
+            result = run_teacher_api_job(job, teacher_api)
+            all_samples.extend(result.get("normalized_samples") or [])
+            request_records.append(result["request_record"])
             progress.update(1)
             progress.set_postfix(
-                task=task_type,
-                prompts=len(request_records),
-                evidence=len(evidence_docs),
-                retrieval=f"{retrieval_seconds:.2f}s",
+                task=result["task_type"],
+                ok=result["parsed_ok"],
+                accepted=f"{len(all_samples)}/{target_total}",
+                last=result["accepted_samples"],
+                evidence=len(result["evidence_docs"]),
+                retrieval=f"{result['retrieval_seconds']:.2f}s",
+                api=f"{result['api_seconds']:.2f}s",
+                elapsed=f"{time.time() - result['request_started']:.2f}s",
+                failed=sum(1 for item in request_records if not item["parsed_ok"]),
             )
-            continue
-
-        started = time.time()
-        raw_text = None
-        try:
-            raw_text, _raw_payload = call_teacher_api(
-                teacher_api,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-            )
-            api_seconds = time.time() - started
-            parsed = parse_teacher_json(raw_text)
-            normalized = validate_and_normalize_samples(
-                parsed,
-                expected_task_type=task_type,
-                evidence_docs=evidence_docs,
-                worldbuilding_topic=worldbuilding_topic,
-                request_id=request_id,
-            )
-            all_samples.extend(normalized)
-            accepted_samples = len(normalized)
-            parsed_ok = True
-            latency = time.time() - started
-            request_records.append(
-                build_request_record(
-                    request_id=request_id,
-                    task_type=task_type,
-                    evidence_docs=evidence_docs,
-                    worldbuilding_topic=worldbuilding_topic,
-                    evidence_mode=evidence_mode if task_type != "worldbuilding_qa" else "topic",
-                    retrieval_query=retrieval_query,
-                    retrieval_seed_doc_id=retrieval_seed_doc_id,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    raw_text=raw_text,
-                    parsed_ok=True,
-                    accepted_samples=accepted_samples,
-                    latency_seconds=latency,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            request_error = str(exc)
-            latency = time.time() - started
-            request_records.append(
-                build_request_record(
-                    request_id=request_id,
-                    task_type=task_type,
-                    evidence_docs=evidence_docs,
-                    worldbuilding_topic=worldbuilding_topic,
-                    evidence_mode=evidence_mode if task_type != "worldbuilding_qa" else "topic",
-                    retrieval_query=retrieval_query,
-                    retrieval_seed_doc_id=retrieval_seed_doc_id,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    raw_text=raw_text,
-                    parsed_ok=False,
-                    accepted_samples=0,
-                    latency_seconds=latency,
-                    error=request_error,
-                )
-            )
-        progress.update(1)
-        progress.set_postfix(
-            task=task_type,
-            ok=parsed_ok,
-            accepted=f"{len(all_samples)}/{target_total}",
-            last=accepted_samples,
-            evidence=len(evidence_docs),
-            retrieval=f"{retrieval_seconds:.2f}s",
-            api=f"{api_seconds:.2f}s",
-            elapsed=f"{time.time() - request_started:.2f}s",
-            failed=sum(1 for item in request_records if not item["parsed_ok"]),
-        )
 
     progress.close()
 

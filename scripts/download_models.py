@@ -16,7 +16,7 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 from huggingface_hub import snapshot_download
 
-from goldenglow.config import EMBEDDING_MODEL_DIR, RERANKER_MODEL_DIR
+from goldenglow.config import BASE_RERANKER_MODEL_DIR, EMBEDDING_MODEL_DIR
 
 
 EMBEDDING_ALLOW_PATTERNS = [
@@ -105,12 +105,12 @@ def main() -> None:
     if not args.skip_reranker:
         download_snapshot(
             "BAAI/bge-reranker-v2-m3",
-            RERANKER_MODEL_DIR,
+            BASE_RERANKER_MODEL_DIR,
             allow_patterns=RERANKER_SMALL_FILES,
         )
         download_large_file(
             "BAAI/bge-reranker-v2-m3",
-            RERANKER_MODEL_DIR,
+            BASE_RERANKER_MODEL_DIR,
             "model.safetensors",
         )
 

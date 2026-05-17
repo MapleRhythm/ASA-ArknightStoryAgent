@@ -1,0 +1,12 @@
+unset PYTHONPATH
+export CUDA_VISIBLE_DEVICES=1,2
+export PYTHON_BIN=/home/zhb/miniconda3/envs/train/bin/python
+export TRAIN_GPUS=1,2
+export SOURCE_DIR=/home/zhb/ASA-ArknightStoryAgent/data/processed/sft_data/teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed
+export SOURCE_BASENAME=teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed
+export GENERATED_CONFIG_PATH=/home/zhb/ASA-ArknightStoryAgent/outputs/.cache/llama_factory_teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed.yaml
+export WANDB_RUN_NAME=teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed_qwen35_4b_train
+export OVERWRITE_OUTPUT_DIR=true
+export LORA_OUTPUT_DIR=/home/zhb/ASA-ArknightStoryAgent/model/lora/teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed_qwen35_4b
+
+bash /home/zhb/ASA-ArknightStoryAgent/scripts/llama_factory/run_train.sh

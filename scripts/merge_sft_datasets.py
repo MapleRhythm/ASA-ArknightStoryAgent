@@ -55,6 +55,7 @@ CONCLUSION_SCHEMA_FIELDS = (
     "answer",
     "missing_slots",
     "clarification_question",
+    "follow_up_hypothesis",
 )
 CORE_JSON_TASK_TYPES = {
     INITIAL_HYPOTHESIS_TASK_TYPE,
@@ -261,6 +262,7 @@ def _normalize_conclusion_payload(payload: dict[str, Any]) -> dict[str, Any] | N
     answer = str(payload.get("answer") or "").strip()
     missing_slots = _normalize_string_list(payload.get("missing_slots"), limit=8)
     clarification_question = str(payload.get("clarification_question") or "").strip()
+    follow_up_hypothesis = payload.get("follow_up_hypothesis")
 
     if not question or next_action not in RETRIEVAL_ACTIONS:
         return None
@@ -271,15 +273,23 @@ def _normalize_conclusion_payload(payload: dict[str, Any]) -> dict[str, Any] | N
     if next_action == "retrieve_more":
         if answer or not missing_slots:
             return None
+        if not isinstance(follow_up_hypothesis, dict):
+            return None
+        normalized_follow_up = _normalize_follow_up_hypothesis_payload(follow_up_hypothesis)
+        if normalized_follow_up is None:
+            return None
+        follow_up_hypothesis = normalized_follow_up
     else:
         if next_action != "clarify_user":
             clarification_question = ""
+        follow_up_hypothesis = None
     return {
         "question": question,
         "next_action": next_action,
         "answer": answer,
         "missing_slots": missing_slots,
         "clarification_question": clarification_question,
+        "follow_up_hypothesis": follow_up_hypothesis,
     }
 
 

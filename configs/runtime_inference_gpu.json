@@ -2,11 +2,19 @@
   "retrieval": {
     "device": "cuda",
     "enable_reranker": true,
-    "dense_top_k": 80,
-    "sparse_top_k": 80,
-    "fusion_top_k": 50,
-    "rerank_top_k": 20,
-    "rerank_batch_size": 8
+    "reranker_model_path": "model/reranker/bge-reranker-v2-m3-evidence-chain-answerability",
+    "dense_top_k": 120,
+    "sparse_top_k": 120,
+    "enable_minirag": true,
+    "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "fusion_top_k": 80,
+    "rerank_top_k": 32,
+    "rerank_batch_size": 4,
+    "reranker_max_length": 1024,
+    "enable_neighbor_expansion": false,
+    "neighbor_max_seed_docs": 24,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
   },
   "generator": {
     "backend": "vllm",
@@ -24,16 +32,24 @@
     },
     "vllm": {
       "base_model_path": "model/qwen3.5-4b",
-      "lora_path": "model/lora/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/checkpoint-381",
+      "lora_path": "model/lora/teacher_v2_plus_prompt_supplement_merged_v1_run6_fixed_qwen35_4b",
       "tensor_parallel_size": 1,
-      "gpu_memory_utilization": 0.8,
+      "gpu_memory_utilization": 0.62,
       "max_model_len": 8192,
       "dtype": "auto"
     }
   },
   "inference": {
     "max_retrieval_rounds": 3,
-    "prompt_evidence_top_k": 8,
+    "prompt_evidence_top_k": 12,
+    "enable_mmr": true,
+    "mmr_lambda": 0.72,
+    "enable_pyramid_order": true,
+    "enable_crag_refinement": true,
+    "crag_refine_top_sentences": 4,
+    "crag_refine_max_sentences": 24,
+    "self_consistency_samples": 5,
+    "self_consistency_temperature": 0.7,
     "use_model_hypothesis": true,
     "use_model_conclusion_generation": true
   }

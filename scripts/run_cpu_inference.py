@@ -38,6 +38,7 @@ from goldenglow.config import (  # noqa: E402
     DOCUMENTS_PATH,
     EMBEDDING_MODEL_DIR,
     FAISS_INDEX_PATH,
+    MINIRAG_GRAPH_PATH,
     QueryConfig,
     RERANKER_MODEL_DIR,
 )
@@ -78,6 +79,27 @@ def resolve_path_value(cli_value, config_section: dict, key: str, default: Path 
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return path
+
+
+def validate_vllm_lora_path(lora_path: Path | None) -> None:
+    if lora_path is None:
+        return
+    if (lora_path / "adapter_config.json").exists():
+        return
+    child_adapters = sorted(
+        child
+        for child in lora_path.glob("*")
+        if child.is_dir() and (child / "adapter_config.json").exists()
+    ) if lora_path.is_dir() else []
+    hint = ""
+    if child_adapters:
+        hint = "\nCandidate adapter dirs:\n" + "\n".join(f"  {child}" for child in child_adapters[:8])
+    raise SystemExit(
+        "Invalid vLLM LoRA path: "
+        f"{lora_path}. Pass a specific adapter directory containing adapter_config.json, "
+        "not the parent model/lora directory."
+        + hint
+    )
 
 
 def detect_visible_gpu_count() -> int:
@@ -161,6 +183,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fusion-top-k", type=int, default=None)
     parser.add_argument("--rerank-top-k", type=int, default=None)
     parser.add_argument("--rerank-batch-size", type=int, default=None)
+    parser.add_argument("--enable-minirag", dest="enable_minirag", action="store_true", default=None)
+    parser.add_argument("--disable-minirag", dest="enable_minirag", action="store_false")
+    parser.add_argument("--minirag-index", type=Path, default=None)
+    parser.add_argument("--enable-mmr", dest="enable_mmr", action="store_true", default=None)
+    parser.add_argument("--disable-mmr", dest="enable_mmr", action="store_false")
+    parser.add_argument("--mmr-lambda", type=float, default=None)
+    parser.add_argument("--enable-pyramid-order", dest="enable_pyramid_order", action="store_true", default=None)
+    parser.add_argument("--disable-pyramid-order", dest="enable_pyramid_order", action="store_false")
+    parser.add_argument("--enable-crag-refinement", dest="enable_crag_refinement", action="store_true", default=None)
+    parser.add_argument("--disable-crag-refinement", dest="enable_crag_refinement", action="store_false")
+    parser.add_argument("--crag-refine-top-sentences", type=int, default=None)
+    parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
+    parser.add_argument("--self-consistency-samples", type=int, default=None)
+    parser.add_argument("--self-consistency-temperature", type=float, default=None)
     parser.add_argument(
         "--build-index-if-missing",
         action="store_true",
@@ -219,13 +255,16 @@ def main() -> None:
     rerank_batch_size = int(
         resolve_config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8)
     )
+    enable_neighbor_expansion = bool(retrieval_cfg.get("enable_neighbor_expansion", False))
+    neighbor_max_seed_docs = int(retrieval_cfg.get("neighbor_max_seed_docs", 24))
+    neighbor_story_window = int(retrieval_cfg.get("neighbor_story_window", 2))
+    neighbor_activity_story_sort_window = int(
+        retrieval_cfg.get("neighbor_activity_story_sort_window", 1)
+    )
+    reranker_max_length = int(retrieval_cfg.get("reranker_max_length", 1024))
     max_retrieval_rounds = inference_cfg.get("max_retrieval_rounds")
     if max_retrieval_rounds is None:
-        legacy_follow_up_rounds = inference_cfg.get("max_follow_up_rounds")
-        if legacy_follow_up_rounds is None:
-            max_retrieval_rounds = 3
-        else:
-            max_retrieval_rounds = int(legacy_follow_up_rounds) + 1
+        max_retrieval_rounds = 3
     max_retrieval_rounds = int(max_retrieval_rounds)
     prompt_evidence_top_k = int(inference_cfg.get("prompt_evidence_top_k", 8))
     use_model_hypothesis = bool(inference_cfg.get("use_model_hypothesis", True))
@@ -234,6 +273,26 @@ def main() -> None:
             "use_model_conclusion_generation",
             inference_cfg.get("use_model_retrieval_planner", True),
         )
+    )
+    enable_mmr = bool(resolve_config_value(args.enable_mmr, inference_cfg, "enable_mmr", False))
+    mmr_lambda = float(resolve_config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72))
+    enable_pyramid_order = bool(
+        resolve_config_value(args.enable_pyramid_order, inference_cfg, "enable_pyramid_order", False)
+    )
+    enable_crag_refinement = bool(
+        resolve_config_value(args.enable_crag_refinement, inference_cfg, "enable_crag_refinement", False)
+    )
+    crag_refine_top_sentences = int(
+        resolve_config_value(args.crag_refine_top_sentences, inference_cfg, "crag_refine_top_sentences", 4)
+    )
+    crag_refine_max_sentences = int(
+        resolve_config_value(args.crag_refine_max_sentences, inference_cfg, "crag_refine_max_sentences", 24)
+    )
+    self_consistency_samples = int(
+        resolve_config_value(args.self_consistency_samples, inference_cfg, "self_consistency_samples", 1)
+    )
+    self_consistency_temperature = float(
+        resolve_config_value(args.self_consistency_temperature, inference_cfg, "self_consistency_temperature", 0.7)
     )
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True))
     if args.no_reranker:
@@ -244,11 +303,38 @@ def main() -> None:
     top_p = float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9))
     repeat_penalty = float(resolve_config_value(args.repeat_penalty, generator_cfg, "repeat_penalty", 1.05))
 
-    reranker_model = args.reranker_model
-    if reranker_model is None and enable_reranker:
-        reranker_model = RERANKER_MODEL_DIR
+    reranker_model = None
+    if enable_reranker:
+        configured_reranker = retrieval_cfg.get("reranker_model_path") or retrieval_cfg.get("reranker_model")
+        reranker_model = resolve_path_value(
+            args.reranker_model,
+            retrieval_cfg,
+            "reranker_model_path" if retrieval_cfg.get("reranker_model_path") else "reranker_model",
+            RERANKER_MODEL_DIR if configured_reranker is None else configured_reranker,
+        )
+        if reranker_model is None or not (reranker_model / "config.json").exists():
+            raise SystemExit(
+                "Invalid reranker model path: "
+                f"{reranker_model or '<empty>'}. "
+                "Pass a directory containing config.json, for example "
+                "model/reranker/bge-reranker-v2-m3-evidence-chain-answerability."
+            )
     if not enable_reranker:
         reranker_model = None
+    enable_minirag = bool(resolve_config_value(args.enable_minirag, retrieval_cfg, "enable_minirag", False))
+    minirag_index_path = None
+    if enable_minirag:
+        minirag_index_path = resolve_path_value(
+            args.minirag_index,
+            retrieval_cfg,
+            "minirag_index_path",
+            MINIRAG_GRAPH_PATH,
+        )
+        if minirag_index_path is None or not minirag_index_path.exists():
+            raise SystemExit(
+                "MiniRAG index is enabled but missing. Build it with "
+                "`python scripts/build_minirag_index.py` or disable retrieval.enable_minirag."
+            )
 
     from goldenglow.inference import CPUInferencePipeline  # noqa: E402
     from goldenglow.inference.cpu_pipeline import LlamaCppRunner, VllmRunner  # noqa: E402
@@ -257,6 +343,8 @@ def main() -> None:
     retriever = ArknightsHybridRetriever.from_paths(
         embedding_model_path=args.embedding_model,
         reranker_model_path=reranker_model,
+        reranker_max_length=reranker_max_length,
+        minirag_index_path=minirag_index_path,
         device=device,
     )
     if backend == "vllm":
@@ -267,6 +355,7 @@ def main() -> None:
             "lora_path",
             DEFAULT_VLLM_LORA_PATH if DEFAULT_VLLM_LORA_PATH.exists() else None,
         )
+        validate_vllm_lora_path(lora_path)
         tensor_parallel_size = int(
             resolve_config_value(args.tensor_parallel_size, vllm_cfg, "tensor_parallel_size", detect_visible_gpu_count())
         )
@@ -319,10 +408,22 @@ def main() -> None:
             sparse_top_k=sparse_top_k,
             fusion_top_k=fusion_top_k,
             rerank_top_k=rerank_top_k,
+            enable_neighbor_expansion=enable_neighbor_expansion,
+            neighbor_max_seed_docs=neighbor_max_seed_docs,
+            neighbor_story_window=neighbor_story_window,
+            neighbor_activity_story_sort_window=neighbor_activity_story_sort_window,
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
         prompt_evidence_top_k=prompt_evidence_top_k,
+        enable_mmr=enable_mmr,
+        mmr_lambda=mmr_lambda,
+        enable_pyramid_order=enable_pyramid_order,
+        enable_crag_refinement=enable_crag_refinement,
+        crag_refine_top_sentences=crag_refine_top_sentences,
+        crag_refine_max_sentences=crag_refine_max_sentences,
+        self_consistency_samples=self_consistency_samples,
+        self_consistency_temperature=self_consistency_temperature,
         use_model_hypothesis=use_model_hypothesis,
         use_model_conclusion_generation=use_model_conclusion_generation,
     )

@@ -1,0 +1,1470 @@
+T1: 增强 reranker 的 chain 内部结构感知
+
+  当前做法：chain 文本连起来输入 reranker，打一个分。链内顺序靠 shuffled_order 负例学。
+
+  问题：shuffled_order 与 gold 的差异只是前/后调换，语义几乎相同。reranker
+  容易靠表面词匹配区分，忽略因果结构。
+
+  优化：在 listwise 训练时，给每条 chain 加上 chain structure metadata 作为额外输入：
+  # 在 reranker 的 input 里增加：
+  {
+    "query": "...",
+    "chain": "[E11] ... [E13] ... [E14] ...",
+    "chain_metadata": {
+      "chain_length": 3,
+      "has_action": true,      # 是否有 action/motive evidence
+      "has_outcome": true,     # 是否有 outcome evidence
+      "has_context": false,    # 是否含纯背景
+      "causal_order": "action→conclusion",  # 顺序类型
+      "evidence_types": ["motive", "outcome", "bridge"]  # 每节的类型
+    }
+  }
+
+  这让 reranker 学到"action→outcome→conclusion 链"比"outcome→action→conclusion"更好，而不只是"这三个
+  evidence 凑一起挺好"。
+
+  数据：从 answer_focus 字段里提取每个 E-ID 的语义类型（motive/outcome/context/bridge），用 Claude
+  教师自动标注（教师本来就知道哪些 E 是动机、哪些是结果），不需要人工。
+
+  实现：修改 evidence_chain_dataset.py 的 build_reranker_listwise_record，在 candidate 里增加
+  chain_structure 字段。reranker 输入模板改成：
+  [QUERY] {query}
+  [CHAIN_LENGTH] {chain_length}
+  [CHAIN_STRUCTURE] {causal_order}
+  [EVIDENCE_TYPES] {evidence_types}
+  [CHAIN] {chain_text}
+
+  T2: 给 4B 的 conclusion 加"证据缺口感知"训练
+
+  当前做法：conclusion prompt 里写 19 条软规则，模型靠猜。
+
+  问题：教师在生成 conclusion 时，evidence 是否完整是不可观测的。教师可能生成"answer_directly"但 evidence
+  其实不够，4B 学到了错误的 abstain 行为。
+
+  优化：用自动证据缺失检测给 conclusion 样本打标签：
+  def judge_conclusion_quality(question, answer, evidence_texts, gold_chain_text):
+      # 如果 answer 中的 key claim 词在 evidence 里命中率 < 0.6 → 标记为 "abstain_should"
+      # 如果 answer 只覆盖了 partial chain（缺少 motive 或 outcome）→ 标记为 "answer_directly_but_partial"
+      # 如果 answer 正确且完整 → 标记为 "answer_directly_good"
+
+  用 Claude 教师跑这个判断，给 SFT conclusion 数据加 meta.conclusion_quality 字段。然后在 system prompt
+  里明确告诉 4B：
+
+  你是 conclusion_synthesizer。
+  如果当前证据存在以下情况，必须输出 abstain：
+  1. 证据中的 action/motive 和 outcome 缺失任一
+  2. 答案中的关键实体在证据中出现率 < 60%
+  3. 证据为纯背景，无角色对话或具体事件
+
+  如果满足以下条件才可 answer_directly：
+  - 证据覆盖了 answer 的所有关键 claim
+  - 证据包含至少一个动机/原因类 statement
+  - 没有未解决的指代歧义
+
+  这比"19 条软规则"更可执行，且有数据支撑。
+
+  T3: 4B 的 retrieval decision 加"主动澄清"能力
+
+  当前数据问题：从 SFT 数据看，clarify_user 样本比例偏低。大多 retrieval_decision 是 retrieve_more 或
+  answer_directly，clarify_user 少。
+
+  优化：在生成 SFT 数据时，专门注入"歧义触发"样本：
+  - 问题含代词（他/她/它/这位/那位）且对话上下文不足以消歧
+  - 问题涉及多个同名实体（戈尔丁女士出现多次）
+  - 问题涉及隐喻或双关
+
+  让教师在 evidence 里故意不放消歧证据，迫使 4B 学会主动要求澄清，而不是硬答或反复检索。
+
+  T4: hypothesis_generation 的关键词质量
+
+  从 SFT 数据看，keywords 经常是问句词的重复（如 "帮助阿斯卡纶","进城"），缺乏实体消歧词和关系桥接词。
+
+  优化：在 hypothesis_generation 的 system prompt 里加规则：
+  keywords 必须包含：
+  1. 问句中的核心实体（已在 entities 中）
+  2. 该实体的**下位概念词**（比如问"凯尔希"→"凯尔希医生/Rhodes Island 医疗总监"）
+  3. 该实体所属的**上位类词**（比如问"凯尔希"→"罗德岛高层/医疗组织"）
+  4. 如果问动机/原因，还要包含"原因/动机/目的/背景"类词
+
+  这些词直接进入 BM25 和 dense query，决定了是否能召回到正确文档。
+
+  T5: 双向 reranker（用 retrieval recall 信号做 SFT 数据过滤）
+
+  当前缺失：没有用召回评估的结果反向过滤 SFT 训练数据。
+
+  具体做法：
+  1. 用当前的 evaluate_retrieval_recall.py，对每条 SFT 样本的 question，在 inference pipeline
+  里跑一遍，看召回是否命中 gold
+  2. 如果 recall@5 = 0（前 5 个结果里 gold 完全不见），说明这条 SFT 样本的 evidence 本身就不可达
+  3. 标记这些样本，从 SFT 数据里剔除或降权
+
+  这样 4B 不会学到"evidence X 能回答问题 Y"但 inference 时 X 永远召不回来。
+
+  T6: Teacher prompt 的 evidence selection 优化（上游水源）
+
+  这是最重要的但改动最大。教师生成 SFT 数据时，evidence 是怎么选出来的？
+
+  从 sft_teacher_generation.json 看：
+  "evidence_mode": "retrieval",
+  "retrieval_top_k": 3,
+  "max_evidence_docs_per_request": 3
+
+  教师只见到 3 个 top-k 检索文档。如果这些文档恰好不包含关键 chain
+  evidence，教师就会生成"看似合理但实际错误"的 hypothesis/conclusion。
+
+  优化：把 retrieval_top_k 从 3 增加到 6-10，让教师见到更多候选文档，由教师自己判断哪些组成有效
+  chain。这样生成的 hypothesis 里的 keywords 更有覆盖性。
+
+  ---
+  优先级与预期收益
+
+  优先级: P0
+  方案: T2: conclusion 加 evidence缺口感知
+  改动范围: sft_teacher.py + prompt + system prompt
+  预期收益: 直接减少推理乱答
+  ────────────────────────────────────────
+  优先级: P0
+  方案: T1: reranker 加 chain structure metadata
+  改动范围: evidence_chain_dataset.py + reranker input template
+  预期收益: 提升 reasoning/reveal 类 recall
+  ────────────────────────────────────────
+  优先级: P1
+  方案: T3: clarify_user 样本增强
+  改动范围: sft_teacher.py + decision prompt
+  预期收益: 减少无意义检索轮次
+  ────────────────────────────────────────
+  优先级: P1
+  方案: T5: recall 信号过滤 SFT 数据
+  改动范围: evaluate_retrieval_recall.py + 后处理
+  预期收益: 提升 SFT 数据质量
+  ────────────────────────────────────────
+  优先级: P2
+  方案: T4: hypothesis keywords 质量规则
+  改动范围: sft_teacher.py system prompt
+  预期收益: 改善事实题召回
+  ────────────────────────────────────────
+  优先级: P2
+  方案: T6: 扩大 teacher evidence 候选
+  改动范围: sft_teacher_generation.json
+  预期收益: 上游水源净化
+
+  建议先做 T2 + T1，这两个直接影响推理乱答和召回差的根因，且改动集中在数据生成侧和 reranker
+  训练侧，不需要改 inference 链路。
+A1. GraphRAG / LightRAG（强烈推荐，长期高 ROI）
+  
+  微软 GraphRAG（2024）思路：用 LLM 抽取实体-关系-社区，构建多层级知识图谱，问答时做"局部子图 →
+  全局摘要"两路融合。本项目天然适配：
+  - 角色、组织、地点、活动都是命名实体
+  - "凯尔希、阿米娅、特蕾西娅"间的关系图在剧情里反复出现
+  - 召回时按"实体 → 关系链 → 故事 chunk"三层定位，事实题（r@1 16%）直接受益
+  
+  适配做法：
+  - 用 Minimax 教师从每段剧情抽取 (head, relation, tail, source_chunk_id) 三元组
+  - 建立 NetworkX 图 + 实体倒排索引（已有 operator_aliases.json 是雏形）
+  - 问"X 是 Y 什么人" → 图查询直接返回 (X, relation, Y) + 证据 chunk
+  - 用 LightRAG（HKU 开源，2024-10）轻量实现：单文件 ~2000 行，比 GraphRAG 简 10×
+  
+  预期：fact/relation 类 recall@1 可从 16-26% 提升到 40%+
+  
+  A2. HippoRAG / HippoRAG 2（OSU，2024）
+
+  仿海马体记忆机制：PageRank over knowledge graph。每个 query 用 LLM 抽实体 → 在图上做个性化 PageRank →
+  高分节点对应的 chunk 进入候选。
+  - 比 GraphRAG 更适合多跳问题（你的 reasoning/reveal/causality 占 65%）
+  - 论文报告多跳 QA recall 提升 20pp 
+
+  A3. MiniRAG（HKU，2025-01）
+  
+  你提到的方案。专为小模型设计：
+  - 用异构图把 chunk 和实体放同一张图（chunk-node + entity-node）
+  - 召回时按图传播；不需要大模型做实体抽取（关键，你的 4B 抽取质量有限）
+  - 在 1.5B 模型上比传统 RAG 提升 10-20pp
+
+  与本项目契合度：4B 模型偏小，正是 MiniRAG 的目标场景；现成的 documents.jsonl 可直接做 chunk-node。
+
+  A4. ColBERTv2 / late interaction
+
+  传统 dense retriever 把 query 压成一个向量，丢细节。ColBERT 做 token-level 匹配：
+  - 每个 query token 与每个 doc token 做最大内积
+  - 对"凯尔希、太师、身份"这种多锚点 query 友好
+  - 已有开源中文权重（如 bge-colbert）
+
+  成本：替换 dense retrieval 那条线；索引比 FAISS 大 ~10×（53k chunk → 大约 8GB）
+
+  A5. Hierarchical Chunking + Auto-Merging（LlamaIndex 范式）
+
+  - 父 chunk = 整段对话/场景（2000 字）
+  - 子 chunk = 单句/单回合（150 字）
+  - 检索小 chunk，召回时返回父 chunk
+  - 对剧情连续性敏感的 reasoning/reveal 题特别有用
+
+  成本：改 story_parser.py，索引翻倍
+  
+  A6. Query Rewriting + HyDE 已部分在做
+
+  hypothesis_generation 本质就是 query rewriting + HyDE。可加：
+  - 多查询并行（Multi-Query RAG）：4B 生成 3 个不同侧重的 query，分别召回再融合
+  - Step-back prompting（DeepMind）：先把 query 抽象成上层问题（"凯尔希的种族" →
+  "凯尔希这个人物有什么基本属性"），再下钻
+
+  ---
+  第二类：RAG 推理控制范式（强项目契合）
+  
+  B1. CRAG (Corrective RAG)（推荐，立刻可做）
+  
+  ICLR 2024。核心：在生成前用一个轻量评估器判断证据质量，分三档：
+  - Correct（>阈值）：直接用
+  - Ambiguous（中间）：refine（拆分、过滤）
+  - Incorrect（<阈值）：fallback to web/external
+
+  与本项目契合：
+  - 你的 reranker 评分本身就是 evidence quality 信号
+  - conclusion 的 retrieve_more/abstain 决策就是 CRAG 的输出
+  - 缺的是显式的"重写 query 再查"环节
+  - 把 retrieve_more 路径改成"先用 4B 重写 query，再二次召回"，是 CRAG 思路的最小落地
+  
+  预期：推理乱答率显著降低，因为弱证据被显式过滤而不是被模型硬答
+  
+  B2. Self-RAG（华盛顿大学，NeurIPS 2024 best paper）
+
+  模型用特殊 token 自标注：[Retrieve] [Relevant] [Supported] [Useful]。
+  - 训练数据需要这些 reflective token
+  - 4B 模型在生成时主动判断"我现在需要检索吗"、"这段证据相关吗"
+  - 完美匹配你的 hypothesis/retrieval_decision/conclusion 三阶段流程
+
+  做法：把 Minimax 教师生成的 SFT 数据加上反思 token 标注，重训 4B。
+
+  成本：教师 prompt 改造 + 一轮 SFT。这是最贴本项目的范式。
+
+  B3. DRAG (Differentiable RAG) / RA-DIT
+
+  Meta 2023。端到端联合训练检索器和生成器：
+  - 用生成器的 loss 反传给检索器
+  - 让 dense embedder 学会"被生成器喜欢"的召回偏好
+  
+  适配难度高：需要把 retriever 也作为可训练模块。短期内不推荐，除非愿意花 ~2 周改架构。
+  
+  B4. FLARE (Forward-Looking Active Retrieval)
+  
+  CMU 2023。生成时如果遇到低置信 token，中途触发检索：
+  - 模型生成"凯尔希原本是..."，下一个 token 概率分布很平 → 触发检索
+  - 拿回来证据再续写
+  
+  适合需要事实补全的场景。本项目的"多轮 retrieve_more"已是粗粒度版本，FLARE 是 token 级。
+  
+  B5. IRCoT (Interleaving Retrieval with CoT)
+  
+  ACL 2023。让 CoT 的每一步都触发检索，而不是先 CoT 完再生成答案。
+  - 你的当前流程是"一轮检索 → 出 conclusion"
+  - IRCoT 是"出一句 reasoning → 检索一次 → 出下一句 reasoning → ..."
+  - 对 reveal/causality 类多跳问题收益大
+
+  ---
+  第三类：训练范式增强
+  
+  C1. DPO / KTO 偏好对齐 reranker 和生成器（推荐）
+
+  SFT 只学"教师怎么答"，DPO 学"哪些答案更好"。具体：
+  - Reranker DPO：你的 listwise 数据天然是偏好对（gold > shuffled_order > background_only），可以从
+  pairwise 升级到 DPO loss
+  - Generator DPO：教师生成两个 conclusion（一个 grounded、一个 hallucinate），让 4B 学会偏好 grounded
+
+  预期：直接降低 hallucination；reranker 排序更稳
+
+  C2. Process Reward Model (PRM)（OpenAI，o1 路线）
+  
+  不只是评估最终答案，而是评估每一步：
+  - step1: hypothesis 生成质量
+  - step2: 检索是否到位
+  - step3: conclusion 决策是否正确
+  - step4: answer 是否 grounded
+  
+  教师同时生成"好步骤/坏步骤"对，用 PRM 给每个中间产物打分。
+  成本：高，但对 agent-style 多步推理收益最大。
+
+  C3. 知识蒸馏：Minimax → 4B 的 thought distillation
+  
+  你现在的蒸馏是"output 蒸馏"（直接学教师的 JSON 输出）。可以升级：
+  - Reasoning Distillation：教师 prompt 加 "先输出推理过程，再输出 JSON"，把推理过程也作为训练目标
+  - Soft Label Distillation：教师给每个候选 action 的概率分布（answer_directly: 0.6, retrieve_more: 0.3,
+  abstain: 0.1），4B 用 KL loss 拟合
+  - Specialized Distillation：四个任务各蒸馏一个 LoRA
+  adapter（hypothesis-LoRA、conclusion-LoRA、...），推理时动态切换
+
+  C4. Curriculum Learning
+
+  按难度分级训练：
+  - easy: fact 类
+  - medium: relation/causality
+  - hard: reveal/mystery/answerability + 多跳
+  
+  教师生成时已经有 difficulty 字段，未充分利用。改训练 loader 按 epoch 渐进采样。
+
+  C5. Contrastive evidence chain learning
+
+  针对你的 reranker：
+  - 现在只学"gold > negative"
+  - 加 InfoNCE：在一个 batch 内做 all-pairs 对比，让 gold 同时拉远所有 negative
+  
+  ---
+  第四类：推理时增强（零训练成本）
+  
+  D1. Self-Consistency（最便宜）
+
+  同一个 query 跑 N 次（温度 0.7），投票选 next_action。
+  - 推理乱答的本质是单次采样不稳定
+  - 5 次投票能消除 80% 的随机错误
+  - 成本：推理变慢 5×（可以只对 conclusion 阶段做）
+
+  D2. Reranker Ensemble
+
+  - BGE-reranker（你已有的）
+  - Cohere rerank-multilingual（API）
+  - 自训的 evidence chain reranker
+  三个分数加权融合。短期最快。
+
+  D3. Lost-in-the-middle 缓解
+
+  研究表明 LLM 对 context 中间部分敏感度低。当前你给 4B 的 evidence 是"按 rerank score
+  排"。改成"金字塔结构"：
+  - top1 evidence 放最前
+  - top2 放最后
+  - top3+ 放中间
+  - 答题时 4B 更易抓到关键证据
+  
+  D4. MMR (Maximum Marginal Relevance) 选 evidence
+  
+  当前 prompt_evidence_top_k=12 是直接取 rerank top-12。改用 MMR：
+  - 平衡 relevance（与 query 相关）和 diversity（与已选 evidence 不重复）
+  - 避免 12 个 chunk 都讲同一句话的不同变体
+  - 对 chain reasoning 类问题特别有用
+
+  ---
+  第五类：数据范式增强
+  
+  E1. Synthetic Question Generation from KG
+
+  基于 A1 的 KG，自动生成训练 query：
+  - 三元组 (凯尔希, 是, 罗德岛医疗总监) → "凯尔希是什么职位"
+  - 长链 (A→B→C) → "为什么 A 导致 C"
+
+  绕开"教师 prompt 决定 query 分布"的瓶颈。
+  
+  E2. Active Learning loop
+  
+  用 evaluate_retrieval_recall.py 的失败样本回流：
+  - recall@5=0 的 query 自动送回教师，让教师重新生成 hypothesis 和 chain
+  - 这些 hard 样本进 SFT v3
+  
+  E3. Negative Sample Mining
+  
+  现在的 negative 是教师"想象"出来的。改成：
+  - 用当前 retriever 召回 top-20
+  - 从 top-20 里挑非 gold 的作为 hard negative
+  - 这是 in-domain hard negative，比合成 negative 强很多
+
+  E4. Multi-modal evidence（远期）
+  
+  明日方舟有语音、立绘、PV，剧情解读时玩家会综合考虑。如果未来要扩展，可以引入：
+  - 语音文本（你已有 charword_table）
+  - 角色立绘描述（VLM 描述生成）
+  - 场景图（场景间转移关系）
+
+  ---
+  推荐落地路线图
+  
+  按 ROI / 改动成本 排序：
+
+  阶段: Sprint 1（1 周）
+  方案: D1 Self-Consistency + D3 lost-in-middle + D4 MMR
+  预期收益: 推理乱答 −20%，无需重训
+  工期: 2 天
+  风险: 低
+  ────────────────────────────────────────
+  阶段:
+  方案: B1 CRAG-lite：retrieve_more 路径接 query rewrite 二次召回
+  预期收益: 多轮检索更智能
+  工期: 3 天
+  风险: 低
+  ────────────────────────────────────────
+  阶段:
+  方案: E3 Hard negative mining
+  预期收益: reranker 训练数据质量 +30%
+  工期: 2 天
+  风险: 低
+  ────────────────────────────────────────
+  阶段: Sprint 2（2 周）
+  方案: A3 MiniRAG 异构图召回
+  预期收益: fact/relation r@1: 16→35%+
+  工期: 1 周
+  风险: 中（需重建索引）
+  ────────────────────────────────────────
+  阶段:
+  方案: C1 DPO for reranker
+  预期收益: listwise 排序更稳
+  工期: 1 周
+  风险: 中
+  ────────────────────────────────────────
+  阶段:
+  方案: B2 Self-RAG 反思 token
+  预期收益: 4B 学会主动判断证据质量
+  工期: 1 周（数据）
+  风险: 中
+  ────────────────────────────────────────
+  阶段: Sprint 3（1 月+）
+  方案: A1 GraphRAG 完整图谱
+  预期收益: 多跳推理 r@10: 51→70%+
+  工期: 2-3 周
+  风险: 高
+  ────────────────────────────────────────
+  阶段:
+  方案: C2 PRM 步骤奖励模型
+  预期收益: agent-style 决策准确率 +15%
+  工期: 2 周
+  风险: 高
+  ────────────────────────────────────────
+  阶段:
+  方案: E1 KG-based synthetic QA
+  预期收益: 训练数据扩 10×
+  工期: 1 周
+  风险: 中
+
+  ---
+  关于你提到的 4 个方案，我的具体看法
+
+  方案: MiniRAG 异构图
+  适配度: ⭐⭐⭐⭐⭐ 强匹配
+  落地建议: Sprint 2 做。4B 是它的目标场景，无需大改架构
+  ────────────────────────────────────────
+  方案: CRAG
+  适配度: ⭐⭐⭐⭐⭐ 强匹配
+  落地建议: Sprint 1 做。本质就是给 retrieve_more 加 query rewrite，工作量 3 天
+  ────────────────────────────────────────
+  方案: DRAG
+  适配度: ⭐⭐ 弱匹配
+  落地建议: 不推荐。端到端联合训练对小项目过重，且 ColBERT-style 检索器替换风险大。除非有专人投入 1 个月+
+  ────────────────────────────────────────
+  方案: 知识蒸馏
+  适配度: ⭐⭐⭐⭐ 强匹配
+  落地建议: 你已经在做（Minimax → 4B），可升级到 C3 的 reasoning distillation + soft label distillation
+  
+  ---
+  一句话总结
+  
+  最强组合 = MiniRAG（A3）+ CRAG（B1）+ Self-RAG（B2）+ DPO reranker（C1）+ 推理时 
+  MMR/Self-Consistency（D1/D4）
+
+  这五个互相正交，各自独立可上线，叠加效果最大。如果只能选一个：做 MiniRAG——它直接打的是你最痛的点（事实题
+  r@1 16%），且天然契合 4B 小模型场景。
+
+  要不要我针对其中某一个出详细实施 plan？
+你说对了一半，但不完整。让我把 CRAG 拆开对照一下：
+
+  CRAG 的完整定义（ICLR 2024）
+     
+  Query → Retrieve → 【Evaluator】判证据质量 → 三种分支：
+                         ├ Correct   → 直接生成
+                         ├ Ambiguous → 【Knowledge Refinement】拆解 + 过滤 + 重组证据
+                         └ Incorrect → 【Knowledge Search】查 Web/外部知识
+                              ↑
+                         【Query Rewriting】 把 query 改写成更易召回的形式
+
+  四个核心组件：
+  1. Retrieval Evaluator（评分器）—— 判证据 correct/ambiguous/incorrect
+  2. Knowledge Refinement（证据精炼）—— 把召回到的长 chunk 拆成 strip → 单独打分 → 过滤掉 noise strip →
+  重组
+  3. Query Rewriting（查询重写）—— evaluator 判定证据不够时，触发重写
+  4. External Search（外部搜索）—— 重写后的 query 去找新知识源
+
+  你项目里有什么、缺什么
+
+  CRAG 组件: Retrieval Evaluator
+  你的项目对应: BGE-reranker 输出分数 + 4B conclusion 的 next_action 判断
+  完成度: ✅ 有（且更精细：四档而非三档）
+  ────────────────────────────────────────
+  CRAG 组件: Knowledge Refinement
+  你的项目对应: ❌ 没有。你 prompt 直接喂整段 chunk
+  完成度: ❌ 缺
+  ────────────────────────────────────────
+  CRAG 组件: Query Rewriting
+  你的项目对应: 4B 生成 follow_up_hypothesis（keywords/entities）
+  完成度: ⚠️  半有（只改 keywords，不改自然语言 query；且只在 retrieve_more 后触发，不是 evaluator 触发）
+  ────────────────────────────────────────
+  CRAG 组件: External Search
+  你的项目对应: ❌ 没有（也不需要——剧情 corpus 是封闭世界）
+  完成度: ➖ 不适用
+  
+  关键差异：你不是 CRAG，是 "Multi-round RAG with self-judged hypothesis refinement"
+  
+  你的 4B 做的是整轮重新检索（hypothesis → query → retrieve → conclusion 全跑一遍）；CRAG 做的是对已召回的
+   chunk 做内部精炼（不重跑检索，而是把 chunk 切碎重组）。
+
+  举个对比：
+
+  场景: 召回到 12 个 chunk，其中 8 个是背景、4 个含答案
+  你的做法: conclusion 看完 12 个 → 决定 retrieve_more → 改 keywords 重查
+  CRAG 做法: evaluator 给 12 个 chunk 单独打分 → 砍掉 8 个低分 → 把 4 个高分 chunk
+    进一步切成句子，再砍噪声句 → 重组送生成器
+  ────────────────────────────────────────
+  场景: 召回完全错（top-12 都是无关章节）
+  你的做法: retrieve_more + 改 hypothesis
+  CRAG 做法: rewrite query + 外部搜索
+
+  所以"CRAG-lite"在你项目里要补的是什么
+  
+  我之前 Sprint 1 提到的 "CRAG-lite" 其实是这几件事：
+  
+  1. Knowledge Refinement（你完全缺） — 收益最大
+  
+  - 把 rerank top-12 的每个 chunk 按句子切（你已有 LINE_SPLIT_RE）
+  - 每个句子用 reranker 单独打分（reranker 可批量推理，开销不大）
+  - 把每个 chunk 内的低分句子砍掉，只保留 top-3 句
+  - 重组成"精炼证据包"再喂给 4B
+  - 预期：4B 的 context 噪声减少 60%+，hallucination 直接下降
+  
+  2. Query Rewriting 的真正自然语言重写（你只做了一半）
+
+  你现在 follow_up 只改 entities/keywords，原始 question 不变。CRAG 是：
+  - 把 "凯尔希是谁" 重写成 "凯尔希在罗德岛担任什么职位？她的种族和身世背景如何？"
+  - 重写后的 query 进 dense retrieval 时语义更丰富
+  - 做法：让 4B 在 follow_up_hypothesis 里多输出一个 rewritten_question 字段
+
+  3. Evaluator 显式三档化（你是隐式的）
+
+  你的 reranker 输出连续分数，conclusion 输出离散 next_action，中间没有显式的 evidence 质量分档。改成：
+  - 计算 top-k rerank score 的均值/方差
+  - 高均值 + 低方差 → confident
+  - 高均值 + 高方差 → mixed（需要 refinement）
+  - 低均值 → poor（需要 rewrite + 重查）
+  - 这个三档信号同时输入 conclusion prompt，让 4B 决策更可解释
+  
+  总结
+
+  你不是"已经有 CRAG"，而是"有 CRAG 的两个组件中的简化版"：
+  - ✅ Evaluator：reranker score + conclusion 决策
+  - ⚠️  Query Rewriting：只改关键词，没改自然语言
+  - ❌ Knowledge Refinement：完全没有
+  - ➖ External Search：不需要
+  
+  真正能拿到 CRAG 收益的关键缺口是 Knowledge Refinement——chunk 级别的句子精炼。这也是我之前那张表里把它放
+  Sprint 1（3 天工期）的原因，因为：
+  - 不改训练
+  - 不改索引
+  - 只在 inference pipeline 加一步 reranker.score()
+  - 立刻可见效
+  
+  要不要我把"CRAG-lite Knowledge Refinement"出个具体 plan？
+
+
+二、核心问题清单（按严重程度排序）
+
+  🔴 P0-1：SFT 训练数据与线上 inference 输入分布严重 mismatch
+  
+  维度: conclusion evidence 数量
+  训练数据: median=1, 73% 样本只有 1 条 evidence, 7.5% 是 0 条
+  线上实际: prompt_evidence_top_k=12
+  ────────────────────────────────────────
+  维度: conclusion evidence 字符数
+  训练数据: median=215
+  线上实际: 12 × 520 = 6240
+  ────────────────────────────────────────
+  维度: hypothesis 输入
+  训练数据: 全部 711 条 不带证据, 91% 不带上下文
+  线上实际: 多轮场景频繁带上下文
+  
+  后果：4B 在训练时学的是"看 1 段证据出 conclusion"；线上喂 12 段证据时，能力反而下降——这是典型的
+  context-length distribution shift，也是召回 r@10 上去后生成不跟着改善的根因之一。
+  
+  🔴 P0-2：conclusion 训练里 clarify_user 几乎不存在（7 / 1089 = 0.6%）
+  
+  实测：训练集 1089 条 conclusion 里，问题含代词的有 97 条，但没有一条走
+  clarify_user。教师在生成时倾向于"硬答 + retrieve_more"，没有教模型识别"问题本身有歧义"。
+  
+  后果：线上代词题、重名题、模糊题（"她"、"那位先生"、"魔王"），模型只会硬查 → 硬答 → 乱答。
+  
+  🔴 P0-3：retrieval action 分布严重失衡
+  
+  retrieve_more : 768 (70.5%)
+  answer_directly: 295 (27.1%)
+  abstain        :  20 ( 1.8%)
+  clarify_user   :   7 ( 0.6%)
+  
+  abstain 太少（1.8%）。教师默认 strategy 是"凡是不会就 retrieve_more 一下"，导致 4B
+  没学会"证据真的不足时应该停"。线上推理乱答 = 模型已经 retrieve_more 过几轮还没找到 → 在最后一轮被迫
+  answer_directly → hallucinate。
+
+  🟠 P1-1：教师只见 top-3 chunk，evidence 视野太窄
+
+  "max_evidence_docs_per_request": 3,
+  "retrieval_top_k": 3
+  
+  教师在生成 conclusion 训练样本时，看到的就 3 段。如果 top-3 不含答案：
+  - 教师只能根据 top-3 推断 → 生成的 conclusion 用了 top-3 的具体表述
+  - 这套样本被 4B 学到后，4B 学到"看到这种证据就这样答"，而不是"证据不足要 abstain"
+  
+  线上推理给 12 段，多了 9 段噪声，模型反而被噪声带偏。
+
+  🟠 P1-2：hypothesis 的 keywords 充斥问句词噪声
+
+  380 / 1500 个 hypothesis 样本的 keywords 含 什么/为什么/关系/身份/原因 这种无召回价值的词。例如：
+
+  "keywords": ["寻澜", "选中干员2", "语音台词", "说了什么"]
+  
+  "说了什么"和"语音台词"重复，且"说了什么"是疑问短语，BM25 命中无意义。4B 学完后线上也输出这种
+  keywords，BM25 召回被严重稀释。
+  
+  🟠 P1-3：hypothesis entity 普遍只 1 个（53%）
+
+  entity 数量分布: 1: 416 (53%), 2: 186 (23%), 5: 39, 4: 29, ...
+  
+  教师对多实体桥接题（"A 和 B 是什么关系"）也只抽 1 个实体。线上 relation 类 r@1 16%，根因之一。
+  
+  🟠 P1-4：style/knowledge 类样本 46 条带"根据证据/检索结果"的暴露词
+
+  教师 prompt 里写了"最终 assistant 不要出现'根据检索到的剧情证据'"，但仍有 46 条违反。4B
+  学完会把检索过程的元语言带到最终回答里，破坏沉浸感。
+  
+  🟠 P1-5：abstain 样本质量低且容易学坏
+  
+  抽样发现 abstain 样本里有：
+  Q: 进驻设施是什么身份？
+  A: 当前证据仅包含通用的干员进驻设施语音片段...
+  
+  这是个伪 abstain——问题本身没问题（问"进驻设施"对应谁），但教师选的 evidence 凑巧是无关语音 → 教师只能
+  abstain。4B 学到的是"看到语音片段就 abstain"，泛化错误。
+  
+  🟡 P2-1：reranker negative score 区分度不够
+
+  shuffled_order  median=0.95  ← 与 gold(1.0) 只差 0.05
+  partial_answer  median=0.50  max=0.95  ← 上界与 gold 重叠
+  misleading_chain max=0.95
+
+  shuffled_order median 0.95 意味着教师认为"换个顺序也几乎一样好"。这跟你想要"模型学到因果顺序"的目标矛盾—
+  —梯度太小，模型学不到顺序敏感性。
+
+  🟡 P2-2：reranker 负样本不是 in-domain hard negative
+
+  当前 background_only / answer_adjacent 都是教师在剧情原文里挑的，不是从实际 retriever top-20
+  里挑的。线上真实的 hard negative（你 retriever 实际会返回但其实不对的 chunk）反而没进训练。
+  
+  🟡 P2-3：reranker gold chain 里有 26 个长度=1 的样本
+  
+  gold chain len: {3: 343, 4: 179, 2: 167, 5: 48, 1: 26, ...}
+  
+  长度=1 = 单 evidence 就能答的事实题。这跟 prompt 里要求"causality/reasoning/reveal/mystery/answerability
+   最少 3 段"冲突，是教师没遵守约束的产物。reranker 学到"短链也可以是
+  gold"后，线上对长链推理题的判分会偏低。
+  
+  🟡 P2-4：数据生成无 in-context 反馈回路
+
+  没有任何机制让"线上失败的 query"回流到下一批教师生成。evaluate_retrieval_recall.py 输出的 missed query
+  直接丢了。
+  
+  ---
+  三、修复方案（按 ROI 排序）
+
+  Sprint A：让训练分布对齐线上分布（最大杠杆，1-2 周）
+  
+  A1. conclusion 训练数据扩 evidence 数量到 8-12 段
+
+  改 configs/sft_teacher_generation.json：
+  "max_evidence_docs_per_request": 12,
+  "retrieval_top_k": 12
+  让教师看到 12 段（与线上一致）做 conclusion。预期 conclusion 的 grounded 程度大幅提升。
+  
+  A2. hypothesis 训练样本必须带多轮上下文与第二轮证据
+  
+  当前 91% hypothesis 样本不带上下文 → 4B 在追问场景下能力缺失。强制：
+  - 30% initial hypothesis 样本带 1-2 轮假对话
+  - follow_up hypothesis 必须带首轮检索的 evidence（已部分做了）
+
+  A3. 注入显式 clarify_user 样本
+
+  专门在教师 prompt 加歧义触发器：
+  - 问题含代词且上下文不足 → 必须 clarify
+  - 问题含同名实体（"戈尔丁"、"魔王"、"博士"）→ 必须 clarify
+  - 期望 clarify_user 训练样本占比从 0.6% → 12-15%
+
+  A4. 增加 abstain 高质量样本
+  
+  教师在生成时：
+  - 30% 概率"故意"给一组与问题不相关的 evidence → 让教师生成 abstain
+  - 让 4B 学会"看到 evidence 与问题实体不重叠时 abstain"
+  - abstain 比例从 1.8% → 10%+
+  
+  Sprint B：修 hypothesis 数据质量（1 周）
+  
+  B1. keywords 强制规则
+  
+  教师 prompt 里加：
+  keywords 黑名单：禁止包含 ["什么", "为什么", "如何", "怎么", "原因", "关系", "身份", "来历", "经过",
+  "情况", "故事", "情节", "内容", "台词"] 中的任何词
+  keywords 白名单：必须包含至少 2 个候选源
+     - 主实体 + 别名
+     - 同剧情活动名 / 章节代码
+     - 上位类别词（"罗德岛干员"、"萨卡兹族"等）
+  
+  B2. entities ≥ 2 强制（除非问题真的只锚定 1 个实体）
+  
+  教师 prompt 里：
+  如果问题中能识别出第二个实体（人物/组织/地点），entities 必须包含；
+  如果只识别出 1 个实体，必须从 evidence 中补 1 个共现高频的桥接实体。
+
+  B3. 把已有 alias_map 注入教师生成 prompt
+
+  当前 indexes/arknights_story/operator_aliases.json 教师完全没用。让教师在抽 entity 时主动展开别名到
+  keywords，省得线上靠后处理补。
+
+  Sprint C：reranker 数据强度提升（1 周）
+
+  C1. 用线上 retriever 挖 hard negative（in-domain）
+  
+  新增 scripts/mine_hard_negatives_from_retriever.py：
+  - 对每条已生成的 gold query，跑 retriever.search(query, top_k=30)
+  - 从 top-30 里挑非 gold 的 chunk 组合 → 作为 hard negative chain
+  - 这些 negative 是 retriever 真的会返回的，比合成 negative 真实
+  
+  C2. 调整 score 范围让梯度足够大
+  
+  教师 prompt 里硬约束：
+  - gold: 1.0
+  - shuffled_order: 0.55-0.70（当前 0.95 太接近 gold）
+  - partial_answer: 0.40-0.55（当前上界 0.95 与 gold 重叠）
+  - background_only: 0.05-0.20
+  - 三档差 ≥ 0.15
+  
+  C3. 清理违反 chain length 约束的样本
+
+  - 删除 causality/reasoning/reveal/mystery/answerability 类型里 gold chain 长度 < 3 的样本（当前 26 条）
+  - 或者强制让教师补 setup evidence
+  
+  C4. 训练时按 chain_structure 加权
+
+  我之前在 T1 加的 chain_structure 字段没真正进损失函数。建议：
+  - causal_order = "outcome_before_motive" 的 negative 在 pairwise loss 上 weight × 1.5（更强惩罚反序）
+  - has_action=False and has_outcome=False 的 negative weight × 1.3（更强惩罚纯背景）
+
+  Sprint D：数据反馈回路（持续）
+
+  D1. 失败回流
+
+  evaluate_retrieval_recall.py 跑完后：
+  - recall@5=0 的 query 写到 outputs/retrieval_eval/missed_queries.jsonl
+  - generate_sft_from_teacher.py 加 --seed-queries missed_queries.jsonl 参数
+  - 这些 hard query 优先送教师扩样本
+  
+  D2. 自动质量检测
+  
+  新增 scripts/audit_sft_data.py，在生成后立即跑：
+  - conclusion clarify_user 比例 < 8% → 警告
+  - hypothesis 含问句词 keywords 比例 > 15% → 警告
+  - abstain 比例 < 8% → 警告
+  - canon_qa 含暴露词 > 5% → 警告
+  - 不通过则阻断 merge 流程
+  
+  Sprint E：新数据类型（中期）
+  
+  E1. 显式 Chain-of-Thought reasoning 蒸馏
+  
+  当前 4B 学的是直接出 JSON，没学推理过程。改造教师 prompt：
+  请按以下格式输出（两段）：
+  [REASONING]
+  1. 我注意到 evidence 1 描述...
+  2. evidence 2 提到...
+  3. 因此 next_action 应为...
+  [/REASONING]
+  [OUTPUT]
+  {合法 JSON}
+  [/OUTPUT]
+  SFT 时 reasoning 段也参与 loss，但推理时只取 OUTPUT。
+  
+  E2. self-rag 反思 token 数据
+  
+  给 conclusion 样本注入 [Retrieve] [Relevant] [Supported] [Useful] token，让 4B
+  学会主动判断证据是否充分。
+
+  E3. 实体-关系三元组提取数据
+  
+  为后续 GraphRAG / MiniRAG 做准备。让教师同时输出 (head, relation, tail, source_evidence_id)
+  三元组，攒一段时间就能起一张知识图谱。
+  
+  ---
+  四、最痛三件事 → 立刻做的事
+
+  排序: 1
+  改动: A1 把 conclusion 训练 evidence 数量从 1 提到 12
+  工期: 改 1 个 config + 重跑教师
+  预期效果: conclusion grounding 大幅提升，直接降低乱答
+  ────────────────────────────────────────
+  排序: 2
+  改动: A3 + A4 注入 clarify_user 与 abstain 高质量样本到 12%+
+  工期: 改教师 prompt + 重跑 1500 条
+  预期效果: 代词题/无证据题不再硬答
+  ────────────────────────────────────────
+  排序: 3
+  改动: B1 + B2 修 hypothesis keywords/entities 质量规则
+  工期: 改教师 prompt + 重跑 hypothesis 部分
+  预期效果: 直接改善召回（事实题/关系题 recall）
+
+  要不要我现在就把 A1 + A3 + A4 的 config 与教师 prompt 改动落到代码里？这三件事不需要重训
+  reranker，只需要重跑教师生成 ~2000 条样本，回报最快。
+❯ 接下来按照之前的方法帮我修复数据生成脚本                                                                
+
+● 先把 task list 收拾一下，再开始干。
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ 数据是通过另一个ai的api生成的，你只需要修复数据生成逻辑和prompt就行了                                   
+
+● 明白。我只改"数据生成逻辑 + 教师 prompt"，不重新跑数据生成（那需要 Minimax API 与教师
+  key）。改完做语法校验和静态检查（dry-run 验证 prompt 渲染），不实际调 API。
+
+  Read 1 file (ctrl+o to expand)
+
+● D1: 把 evidence 数量从 3 → 12
+
+  把 max_output_tokens 也调大（4000 不够教师在 12 段证据下生成完整的 conclusion 推理）。
+
+● Update(configs/sft_teacher_generation.json)
+  ⎿  Added 4 lines, removed 4 lines
+       4      "base_url": "https://api.svips.org",
+       5      "model": "MiniMax-M2.7-highspeed",
+       6      "api_key_env": "TEACHER_API_KEY",
+       7 -    "timeout_seconds": 120,                                                              
+       7 +    "timeout_seconds": 180,                                                              
+       8      "temperature": 0.8,
+       9 -    "max_output_tokens": 4000,                                                           
+       9 +    "max_output_tokens": 6000,                                                           
+      10      "json_mode": true,
+      11      "extra_headers": {
+      12        "User-Agent": "codex-rs/1.0.7"
+     ...
+      15    "source": {
+      16      "documents_path": "indexes/arknights_story/documents.jsonl",
+      17      "evidence_mode": "retrieval",
+      18 -    "max_evidence_docs_per_request": 3,                                                  
+      19 -    "retrieval_top_k": 3,                                                                
+      18 +    "max_evidence_docs_per_request": 12,                                                 
+      19 +    "retrieval_top_k": 12,                                                               
+      20      "seed_query_max_chars": 260
+      21    },
+      22    "dataset": {
+
+● Bash(/home/zhb/miniconda3/envs/train/bin/python -m json.tool configs/sft_teacher_generation.json
+      >/dev/null && echo "JSON OK")
+  ⎿  JSON OK
+
+● 现在改教师 prompt 让 conclusion 显式利用更多证据。先读 conclusion bundle 完整内容：
+
+  Read 1 file (ctrl+o to expand)
+
+● 现在做 D2：彻底重写 conclusion prompt 让教师产生平衡的 4 种 action，且每种 action 都有清晰的判定规则。
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 59 lines, removed 10 lines
+      860      return system_prompt, user_prompt
+      861  
+      862  
+      863 +CONCLUSION_DECISION_RUBRIC = """\                                                       
+      864 +四种 next_action 的判定规则（必须严格遵守，每种都要有训练样本）：                       
+      865 +                                                                                        
+      866 +【answer_directly】（推荐占比约 30%）                                                   
+      867 +- 触发条件：证据包中至少存在 1 段 evidence 的 clean_text 明确含有问题核心实体，         
+      868 +  且能用 1-3 句话直接给出答案；不存在指代歧义；不需要补充其他子问题。                   
+      869 +- answer 字段：先给结论（"X 是 Y" / "原因是…"），再 1-2 句简短补充证据要点。            
+      870 +- answer 必须忠于证据：如果证据只说"疑似/暗示/有人认为"，answer 也要保留不确定性，禁止把
+          +推测写成确定事实。                                                                      
+      871 +- 答案中出现的关键实体、关系词、动作词，必须都能在证据 clean_text 中找到字面或近义对应。
+      872 +                                                                                        
+      873 +【retrieve_more】（推荐占比约 40%）                                                     
+      874 +- 触发条件：证据与问题主题相关，但缺少关键桥接信息：缺人物身份、缺动机、缺结果、缺时间、
+      875 +  缺关键道具、缺事件起因，且这些缺口是可以被后续检索补上的（有明确实体可查）。          
+      876 +- answer 必须为空字符串。                                                               
+      877 +- missing_slots：必须是 2-5 个具体的可检索语义缺口短语，例如「太师的真实身份」「烛煌的师
+          +承关系」；                                                                              
+      878 +  禁止写"更多信息""相关背景""详细资料"这种空泛短语。                                    
+      879 +- 每个 missing_slot 必须以具体实体或具体事件命名，能直接转化成下一轮检索 query。        
+      880 +                                                                                        
+      881 +【clarify_user】（推荐占比约 15%，**必须主动构造**）                                    
+      882 +- 触发条件（任一即可）：                                                                
+      883 +  1. 用户问题里含代词（她/他/她们/他们/它/这位/那位/这个人/那个人/这件事/那件事），     
+      884 +     且多轮上下文不足以唯一确定指代对象。                                               
+      885 +  2. 用户问题含同名/重名实体（如"博士"、"魔王"、"戈尔丁"、"陈"等可能指多人）。          
+      886 +  3. 用户问题范围过宽（问"她的故事"但未限定哪一段经历）或语义有多种合理解读。           
+      887 +- clarification_question 必须列出 2-4 个候选解读供用户选择，禁止只说"请澄清"。          
+      888 +- answer 必须为空字符串；missing_slots 必须为空数组。                                   
+      889 +                                                                                        
+      890 +【abstain】（推荐占比约 15%，**必须主动构造**）                                         
+      891 +- 触发条件：证据与问题核心实体几乎完全不相关（证据中没有出现问题中的核心实体或其等价别名
+          +），                                                                                    
+      892 +  或多轮重试后仍无任何桥接线索，或问题超出剧情可知范围。                                
+      893 +- answer 字段：必须明确说"现有检索证据不足以确认…"，并说明缺失的关键事实是什么，        
+      894 +  禁止用"根据证据""根据剧情"这种暴露过程的说法。                                        
+      895 +- missing_slots 可为空数组，clarification_question 必须为空。                           
+      896 +- 不要把"伪 abstain"当成真 abstain：如果证据明显含答案，但你只是没好好读，不能 abstain。
+      897 +"""                                                                                     
+      898 +                                                                                        
+      899 +                                                                                        
+      900  def build_conclusion_prompt_bundle(
+      901      *,
+      902      evidence_docs: list[dict[str, Any]],
+     ...
+      906          "你是一个严格的中文教师模型数据合成器。"
+      907          "你的任务是生成专门训练《明日方舟》剧情问答 Agent 结论生成步骤的高质量 SFT 样本
+           。"
+      908          "当前只生成“结论生成”样本。"
+      909 +        "你必须主动覆盖 4 种 next_action（answer_directly / retrieve_more / clarify_user
+          + / abstain），"                                                                         
+      910 +        "禁止全部偏向 retrieve_more。"                                                  
+      911          "assistant 输出必须是严格 JSON，不要输出任何额外说明。"
+      912      )
+      913      message_example = [
+     ...
+      960          "3. assistant 的 content 必须是单个 JSON 对象，不要带 markdown 代码块，不要输出
+           解释。",
+      961          "4. assistant JSON 必须严格使用：question、next_action、answer、missing_slots、c
+           larification_question。",
+      962          "5. next_action 只能是 `answer_directly`、`retrieve_more`、`clarify_user`、`abst
+           ain`。",
+      924 -        "6. user prompt 必须包含：用户问题、多轮上下文、当前假设文档(JSON)、当前证据；当
+          -前假设文档不能是空对象 {}。",                                                           
+      925 -        "7. conclusion prompt 必须显式带出当前检索轮次与历史检索上下文。",              
+      926 -        "8. `answer_directly` 或 `abstain` 时，answer 必须非空。",                      
+      927 -        "9. `clarify_user` 时 clarification_question 必须非空。",                       
+      928 -        "10. `retrieve_more` 时 answer 必须为空字符串，missing_slots 必须为具体可检索缺 
+          -口。",                                                                                  
+      929 -        "11. 结论生成样本必须显式体现“基于当前证据是否足够作答”的判断。",               
+      930 -        "12. 所有文本使用中文，不要编造英文别名或 Dr. 前缀。",                          
+      931 -        "13. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",                
+      963 +        f"6. 本次必须生成 {samples_per_request} 条样本，**4 种 next_action 都要有**：尽 
+          +量按 answer_directly ≈ 30%、retrieve_more ≈ 40%、clarify_user ≈ 15%、abstain ≈ 15% 的比 
+          +例覆盖（单次只生成 1 条则按需挑选最贴合证据的类型，但整体多次调用必须均衡）。",         
+      964 +        "7. user prompt 必须包含：用户问题、多轮上下文、当前假设文档(JSON)、当前证据；当
+          +前假设文档不能是空对象 {}。",                                                           
+      965 +        "8. conclusion prompt 必须显式带出当前检索轮次与历史检索上下文。",              
+      966 +        "9. user prompt 中的“当前证据”必须使用证据包中**至少 6 段、最多全部 12 段** evid
+          +ence；不要只摘 1-2 段；保留 `[证据 N]` 与 clean_text 块结构，让线上输入分布与训练对齐。"
+          +,                                                                                       
+      967 +        "10. 若要构造 clarify_user 样本，必须主动在用户问题里写入代词（她/他/这位 等）或
+          +同名实体（如\"博士\"、\"戈尔丁\"、\"魔王\"、\"陈\"等），并把多轮上下文留空或刻意只给少量
+          +信息使指代无法唯一确定。",                                                              
+      968 +        "11. 若要构造 abstain 样本，必须挑选证据中**核心实体与用户问题完全不重叠**的子集
+          +（例如证据是另一活动的片段、或只剩进驻设施语音之类的无关片段），让结论无法成立。",      
+      969 +        "12. answer_directly / abstain 的 answer 文本绝对不允许出现\"根据证据\"\"根据剧 
+          +情\"\"根据检索\"\"基于证据\"\"从证据中\"\"根据上面\"等暴露检索过程的措辞。",            
+      970 +        "13. answer_directly 时 answer 中出现的所有关键实体名、关系词、地点、事件，都必 
+          +须能在“当前证据”原文中找到字面对应或显著近义；不允许只在 hypothesis.keywords 中出现却不 
+          +在证据中的内容。",                                                                      
+      971 +        "14. retrieve_more 时 missing_slots 必须列出 2-5 个具体可检索缺口；禁止使用\"更 
+          +多信息\"\"相关背景\"\"详细资料\"\"完整剧情\"等空泛词。",                                
+      972 +        "15. clarify_user 时 clarification_question 必须列出 2-4 个候选解读，例如 \"您指
+          +的是 A、B 还是 C？\"；不允许只说\"请澄清\"。",                                          
+      973 +        "16. abstain 时 answer 第一句必须是 \"现有检索证据不足以确认…\" 模板的变体；必须
+          +显式指出**缺哪个关键事实**，禁止笼统说\"不知道\"。",                                    
+      974 +        "17. 结论生成样本必须显式体现“基于当前证据是否足够作答”的判断；不要随意把 answer
+          +_directly 与 retrieve_more 互换。",                                                     
+      975 +        "18. 所有文本使用中文，不要编造英文别名或 Dr. 前缀。",                          
+      976 +        "19. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",                
+      977      ]
+      978      user_prompt = (
+      979          f"请基于下面证据生成 {samples_per_request} 条“结论生成”训练样本。\n\n"
+     ...
+      983          + _schema_block(build_conclusion_schema_example())
+      984          + "\n\n字段含义说明:\n"
+      985          + build_conclusion_field_explanations()
+      941 -        + "\n\n要求：\n"                                                                
+      986 +        + "\n\n"                                                                        
+      987 +        + CONCLUSION_DECISION_RUBRIC                                                    
+      988 +        + "\n要求：\n"                                                                  
+      989          + "\n".join(requirements)
+      990          + "\n\n返回格式示例：\n"
+      991          + json.dumps(schema_text, ensure_ascii=False, indent=2)
+      945 -        + "\n\n证据包：\n"                                                              
+      992 +        + "\n\n证据包（共 "                                                             
+      993 +        + str(len(evidence_docs))                                                       
+      994 +        + " 段；user prompt 必须把其中至少 6 段写入“当前证据”字段以贴近线上分布）：\n"  
+      995          + format_evidence_pack(evidence_docs)
+      996      )
+      997      return system_prompt, user_prompt
+
+● D3：修 hypothesis prompt（黑名单 + 多实体 + alias 展开）
+
+  先看 follow_up 那段：
+
+  Read 1 file (ctrl+o to expand)
+
+● 我先抽出一个共享的 HYPOTHESIS_KEYWORD_RUBRIC 常量，然后在两个 bundle 里都引用。教师 prompt 里再注入
+  alias map 的实体提示。
+
+  Read 1 file (ctrl+o to expand)
+
+● 现在加共享 rubric 常量和 alias 工具函数。先看 alias_map 怎么导入的：
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● alias_map 没导入。我加上 import + 共享 rubric + 一个生成"实体-别名提示"的函数，给两个 hypothesis bundle
+  用。
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 2 lines, removed 1 line
+      12  from pathlib import Path
+      13  from typing import Any
+      14  
+      15 -from goldenglow.config import DOCUMENTS_PATH, EXCEL_ROOT, STORY_ROOT                     
+      15 +from goldenglow.config import DOCUMENTS_PATH, EXCEL_ROOT, OPERATOR_ALIAS_MAP_PATH, STORY_
+         +ROOT                                                                                     
+      16 +from goldenglow.data.alias_map import load_operator_alias_map                            
+      17  from goldenglow.data.story_parser import build_corpus_documents
+      18  
+      19  
+
+● 现在加共享的 rubric 与 alias 提示工具函数，放在 format_evidence_pack 后面：
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 63 lines
+      547      return "\n\n".join(blocks)
+      548  
+      549  
+      550 +HYPOTHESIS_KEYWORD_BLACKLIST = (                                                        
+      551 +    "什么", "为什么", "为何", "怎么", "如何", "原因", "动机", "目的",                   
+      552 +    "关系", "身份", "来历", "真相", "故事", "经历", "情况", "情节",                     
+      553 +    "内容", "台词", "说了什么", "做了什么", "发生", "时候",                             
+      554 +)                                                                                       
+      555 +                                                                                        
+      556 +HYPOTHESIS_QUALITY_RUBRIC = """\                                                        
+      557 +keywords 与 entities 的硬性约束（违反任一条该样本就要被丢弃）：                         
+      558 +                                                                                        
+      559 +【entities 约束】                                                                       
+      560 +- 第一个元素必须是问题的主实体（人物/组织/地点/事件名），不允许是代词或描述性短语。     
+      561 +- 至少包含 1 个主实体；当问题涉及"X 与 Y 的关系/共同经历/对话"等多实体情景时，          
+      562 +  entities 必须 ≥ 2，并把所有相关实体都列出（如"凯尔希、阿米娅"而非只写"凯尔希"）。     
+      563 +- 若问题中只识别出 1 个实体（典型场景：问某干员的台词/语音/经历），entities 可以只 1 个 
+          +，                                                                                      
+      564 +  但 keywords 必须从证据中补 1 个共现高频的桥接实体或活动名。                           
+      565 +- 禁止把代词（她/他/她们/他们/这位/那位/这个人/那个人）写入 entities。                  
+      566 +- 禁止把"她们之间有什么故"、"什么要启动"、"么关系"这类问句残片当作实体。                
+      567 +                                                                                        
+      568 +【keywords 约束】                                                                       
+      569 +- 必须包含主实体本身。                                                                  
+      570 +- **黑名单（禁止出现以下整词）**：什么、为什么、为何、怎么、如何、原因、动机、目的、关系
+          +、身份、                                                                                
+      571 +  来历、真相、故事、经历、情况、情节、内容、台词、说了什么、做了什么、发生、时候。      
+      572 +  这些是问句词，对检索没有锚定价值。                                                    
+      573 +- 长度 < 2 的 token 必须丢弃；纯英文 token 长度 < 3 也要丢弃。                          
+      574 +- 推荐结构：[主实体, 别名1, 别名2, 同活动名/章节名, 上位类别词, 桥接实体, 关键事件词]， 
+      575 +  至少 5 个、最多 12 个。                                                               
+      576 +- 不要重复堆叠近义词（如已经有"语音"就不要再写"台词内容"）。                            
+      577 +                                                                                        
+      578 +【别名展开】                                                                            
+      579 +- 若主实体在下面的"已知干员别名"列表中出现，必须把 1-3 个高质量别名加入 keywords，      
+      580 +  例如「凯尔希 → 凯尔希医生」「W → 维什戴尔」「阿米娅 → 兔兔」。                        
+      581 +- 列表里没出现的实体，不要凭空编造别名。                                                
+      582 +"""                                                                                     
+      583 +                                                                                        
+      584 +                                                                                        
+      585 +def format_alias_hints(evidence_docs: list[dict], *, limit: int = 12) -> str:           
+      586 +    """Build a deterministic "candidate aliases" hint block for the teacher prompt."""  
+      587 +    try:                                                                                
+      588 +        alias_map = load_operator_alias_map(OPERATOR_ALIAS_MAP_PATH)                    
+      589 +    except Exception:  # pragma: no cover - defensive                                   
+      590 +        alias_map = None                                                                
+      591 +    if not alias_map:                                                                   
+      592 +        return "（未加载到别名表，本次不提示别名）"                                     
+      593 +    candidates = extract_primary_entity_candidates(evidence_docs, limit=limit)          
+      594 +    lines: list[str] = []                                                               
+      595 +    seen: set[str] = set()                                                              
+      596 +    for ent in candidates:                                                              
+      597 +        aliases = alias_map.lookup(ent)                                                 
+      598 +        if not aliases:                                                                 
+      599 +            continue                                                                    
+      600 +        key = ent.strip()                                                               
+      601 +        if key in seen:                                                                 
+      602 +            continue                                                                    
+      603 +        seen.add(key)                                                                   
+      604 +        shown = "、".join(aliases[:4])                                                  
+      605 +        lines.append(f"- {ent} → {shown}")                                              
+      606 +        if len(lines) >= limit:                                                         
+      607 +            break                                                                       
+      608 +    if not lines:                                                                       
+      609 +        return "（证据中未匹配到已知干员别名）"                                         
+      610 +    return "\n".join(lines)                                                             
+      611 +                                                                                        
+      612 +                                                                                        
+      613  def extract_primary_entity_candidates(
+      614      evidence_docs: list[dict],
+      615      *,
+  ⎿  Please run /login · API Error: 403 insufficient balance
+
+✻ Brewed for 5m 34s
+
+❯ 继续                                                                                                    
+
+● 现在把 hypothesis 两个 bundle 接入新 rubric 和 alias hints。
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 9 lines, removed 4 lines
+      810          "10. 所有文本使用中文。",
+      811          "11. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",
+      812          "12. 每条样本都必须围绕 1 到 2 个主实体构造问题；assistant JSON 的 `entities` 第
+           一个元素必须是主实体。",
+      813 -        "13. `keywords` 必须包含主实体，不要生成不带锚点实体的宽泛检索词。",            
+      813 +        "13. `keywords` 必须包含主实体，且必须遵守下方“keywords 与 entities 的硬性约束” 
+          +（黑名单 + 别名展开）。",                                                               
+      814 +        "14. 本批次中至少 30% 的样本必须在 user prompt 的“多轮上下文”里写入 1-2 轮真实的
+          +假对话（user/assistant 各一条），让训练分布覆盖多轮追问场景；其余可保留“无”。",         
+      815 +        "15. 当样本是多实体关系/共同经历类问题时，assistant JSON 的 entities 必须 ≥ 2。"
+          +,                                                                                       
+      816      ]
+      817      user_prompt = (
+      818          f"请基于下面证据生成 {samples_per_request} 条“初始假设文档生成”训练样本。\n\n"
+      819          "建议主实体候选（优先围绕这些角色/称谓出题）:\n"
+      820          + ("、".join(primary_entity_candidates) if primary_entity_candidates else "无")
+      819 -        + "\n\n"                                                                        
+      820 -        "当前项目唯一合法的初始 hypothesis schema:\n"                                   
+      821 +        + "\n\n已知干员别名（请在 keywords 中适度展开 1-3 个）:\n"                      
+      822 +        + format_alias_hints(evidence_docs)                                             
+      823 +        + "\n\n当前项目唯一合法的初始 hypothesis schema:\n"                             
+      824          + _schema_block(build_latest_hypothesis_schema_example())
+      825          + "\n\n字段含义说明:\n"
+      826          + build_initial_hypothesis_field_explanations()
+      824 -        + "\n\n要求：\n"                                                                
+      827 +        + "\n\n"                                                                        
+      828 +        + HYPOTHESIS_QUALITY_RUBRIC                                                     
+      829 +        + "\n要求：\n"                                                                  
+      830          + "\n".join(requirements)
+      831          + "\n\n返回格式示例：\n"
+      832          + json.dumps(schema_text, ensure_ascii=False, indent=2)
+
+● Follow-up bundle 同步改：
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 13 lines, removed 7 lines
+      903          "7. user prompt 里的 `当前假设文档(JSON)` 必须严格使用初始 hypothesis schema。",
+      904          '8. 不要在 user prompt 或 assistant JSON 中使用 `character_name`、`appearances`
+           、`known_info`、`relationship_hints`、`bridging_objects`、`constraints`、`aliases` 等旧
+           字段或衍生字段。',
+      905          "9. assistant JSON 应只生成更强的检索线索，不直接回答问题。",
+      906 -        "10. assistant JSON 的 keywords 应体现缩小范围后的二次检索查询。",              
+      906 +        "10. assistant JSON 的 keywords 应体现缩小范围后的二次检索查询，并遵守下方“keywo
+          +rds 与 entities 的硬性约束”。",                                                         
+      907          "11. 顶层返回格式必须是一个 JSON 对象，且只有 `samples` 字段。",
+      908 -        "12. follow-up hypothesis 必须保留上一轮主实体；assistant JSON 的 `entities` 第 
+          -一个元素必须仍然是主实体。",                                                            
+      909 -        "13. `keywords` 必须保留主实体，并在其基础上补充桥接词，不要丢失锚点实体。",    
+      908 +        "12. follow-up hypothesis 必须保留上一轮主实体；assistant JSON 的 `entities` 第 
+          +一个元素必须仍然是主实体；如果证据揭示了新的桥接实体（关键人物/组织/称谓），必须把它加入
+          + entities，使 entities ≥ 2。",                                                          
+      909 +        "13. `keywords` 必须保留主实体，并在其基础上补充：(a) 证据中出现的桥接实体或称谓
+          +；(b) 上一轮 missing_slots 里的关键短语；(c) 1-2 个干员别名（若主实体在“已知干员别名”列 
+          +表中）。",                                                                              
+      910 +        "14. user prompt 的“当前证据”字段必须使用证据包中至少 6 段证据，保留 `[证据 N]` 
+          +结构以贴近线上多轮分布。",                                                              
+      911      ]
+      912      user_prompt = (
+      913          f"请基于下面证据生成 {samples_per_request} 条“多轮补充假设文档生成”训练样本。\n\
+           n"
+      914          "建议主实体候选（优先围绕这些角色/称谓缩小检索范围）:\n"
+      915          + ("、".join(primary_entity_candidates) if primary_entity_candidates else "无")
+      915 -        + "\n\n"                                                                        
+      916 -        "当前项目唯一合法的初始 hypothesis schema:\n"                                   
+      916 +        + "\n\n已知干员别名（请在 keywords 中适度展开 1-3 个）:\n"                      
+      917 +        + format_alias_hints(evidence_docs)                                             
+      918 +        + "\n\n当前项目唯一合法的初始 hypothesis schema:\n"                             
+      919          + _schema_block(build_latest_hypothesis_schema_example())
+      920          + "\n\n当前项目唯一合法的 follow-up hypothesis schema:\n"
+      921          + _schema_block(build_follow_up_hypothesis_schema_example())
+      922          + "\n\n字段含义说明:\n"
+      923          + build_follow_up_hypothesis_field_explanations()
+      922 -        + "\n\n要求：\n"                                                                
+      924 +        + "\n\n"                                                                        
+      925 +        + HYPOTHESIS_QUALITY_RUBRIC                                                     
+      926 +        + "\n要求：\n"                                                                  
+      927          + "\n".join(requirements)
+      928          + "\n\n返回格式示例：\n"
+      929          + json.dumps(schema_text, ensure_ascii=False, indent=2)
+      926 -        + "\n\n证据包：\n"                                                              
+      930 +        + "\n\n证据包（共 "                                                             
+      931 +        + str(len(evidence_docs))                                                       
+      932 +        + " 段；user prompt 必须把其中至少 6 段写入“当前证据”字段以贴近线上分布）：\n"  
+      933          + format_evidence_pack(evidence_docs)
+      934      )
+      935      return system_prompt, user_prompt
+
+● 现在还有一个关键的事——_normalize_initial_hypothesis_assistant_payload 和
+  _normalize_follow_up_hypothesis_assistant_payload 是清洗 assistant JSON 的关键关，需要把"keywords 黑名单
+   + 多实体强制"在 normalize 阶段也兜底，避免教师不听话时坏样本进训练集。
+
+  Read 1 file (ctrl+o to expand)
+
+● 在 _is_noisy_term 旁加 _is_blacklisted_keyword，然后让 _normalize_string_list 接受可选过滤器：
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 26 lines
+      288      )
+      289  
+      290  
+      291 +# Hypothesis keyword 黑名单：纯问句词没有检索锚定价值，过滤掉                           
+      292 +_HYPOTHESIS_KEYWORD_BLACKLIST = frozenset(                                              
+      293 +    {                                                                                   
+      294 +        "什么", "为什么", "为何", "怎么", "如何", "原因", "动机", "目的",               
+      295 +        "关系", "身份", "来历", "真相", "故事", "经历", "情况", "情节",                 
+      296 +        "内容", "台词", "说了什么", "做了什么", "发生", "时候", "经过",                 
+      297 +        "讲了什么", "讲什么",                                                           
+      298 +    }                                                                                   
+      299 +)                                                                                       
+      300 +                                                                                        
+      301 +                                                                                        
+      302 +def _is_blacklisted_hypothesis_keyword(value: str) -> bool:                             
+      303 +    token = value.strip()                                                               
+      304 +    if not token:                                                                       
+      305 +        return True                                                                     
+      306 +    if token in _HYPOTHESIS_KEYWORD_BLACKLIST:                                          
+      307 +        return True                                                                     
+      308 +    # 单字中文（除主实体外信息量低）                                                    
+      309 +    if len(token) == 1 and "一" <= token <= "鿿":                                       
+      310 +        return True                                                                     
+      311 +    # 纯英文且 < 3 个字符                                                               
+      312 +    if token.isascii() and len(token) < 3:                                              
+      313 +        return True                                                                     
+      314 +    return False                                                                        
+      315 +                                                                                        
+      316 +                                                                                        
+      317  def _normalize_string_list(value: Any, *, limit: int) -> list[str]:
+      318      if value is None:
+      319          return []
+
+● 现在让 hypothesis assistant payload 校验函数应用这些规则，并兜底过滤：
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 10 lines, removed 4 lines
+      417          return None
+      418      question = str(payload.get("question") or "").strip()
+      419      intent = _normalize_intent(payload.get("intent"))
+      420 -    entities = _normalize_string_list(payload.get("entities"), limit=12)                
+      421 -    keywords = _normalize_string_list(payload.get("keywords"), limit=20)                
+      420 +    entities = _filter_hypothesis_entities(_normalize_string_list(payload.get("entities"
+          +), limit=12))                                                                           
+      421 +    keywords = _filter_hypothesis_keywords(                                             
+      422 +        _normalize_string_list(payload.get("keywords"), limit=20),                      
+      423 +        entities=entities,                                                              
+      424 +    )                                                                                   
+      425      expected_answer_type = _extract_expected_answer_type(payload)
+      426      dialogue_context = str(payload.get("dialogue_context") or "").strip()
+      427  
+     ...
+      445      if extra_keys:
+      446          return None
+      447      question = str(payload.get("question") or "").strip()
+      445 -    entities = _normalize_string_list(payload.get("entities"), limit=12)                
+      446 -    keywords = _normalize_string_list(payload.get("keywords"), limit=20)                
+      448 +    entities = _filter_hypothesis_entities(_normalize_string_list(payload.get("entities"
+          +), limit=12))                                                                           
+      449 +    keywords = _filter_hypothesis_keywords(                                             
+      450 +        _normalize_string_list(payload.get("keywords"), limit=20),                      
+      451 +        entities=entities,                                                              
+      452 +    )                                                                                   
+      453      expected_answer_type = _extract_expected_answer_type(payload)
+      454      dialogue_context = str(payload.get("dialogue_context") or "").strip()
+      455  
+
+● _normalize_hypothesis_tool_payload 也需要同步：
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 5 lines, removed 2 lines
+      365  def _normalize_hypothesis_tool_payload(payload: dict[str, Any]) -> dict[str, Any] | None
+           :
+      366      question = str(payload.get("question") or "").strip()
+      367      intent = _normalize_intent(payload.get("intent"))
+      368 -    entities = _normalize_string_list(payload.get("entities"), limit=12)                
+      369 -    keywords = _normalize_string_list(payload.get("keywords"), limit=20)                
+      368 +    entities = _filter_hypothesis_entities(_normalize_string_list(payload.get("entities"
+          +), limit=12))                                                                           
+      369 +    keywords = _filter_hypothesis_keywords(                                             
+      370 +        _normalize_string_list(payload.get("keywords"), limit=20),                      
+      371 +        entities=entities,                                                              
+      372 +    )                                                                                   
+      373      expected_answer_type = _extract_expected_answer_type(payload)
+      374      dialogue_context = str(payload.get("dialogue_context") or "").strip()
+      375  
+
+● 现在加 _filter_hypothesis_entities / _filter_hypothesis_keywords 实现，紧挨
+  _is_blacklisted_hypothesis_keyword：
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 49 lines
+      314      return False
+      315  
+      316  
+      317 +# Pronouns / 问句残片：禁止出现在 entities                                              
+      318 +_ENTITY_PRONOUN_BLACKLIST = frozenset(                                                  
+      319 +    {                                                                                   
+      320 +        "她", "他", "它", "她们", "他们", "它们",                                       
+      321 +        "这位", "那位", "这个人", "那个人", "这件事", "那件事",                         
+      322 +        "我", "你", "我们", "你们", "自己",                                             
+      323 +    }                                                                                   
+      324 +)                                                                                       
+      325 +                                                                                        
+      326 +                                                                                        
+      327 +def _is_invalid_entity(value: str) -> bool:                                             
+      328 +    token = value.strip()                                                               
+      329 +    if not token or len(token) > 12:                                                    
+      330 +        return True                                                                     
+      331 +    if token in _ENTITY_PRONOUN_BLACKLIST:                                              
+      332 +        return True                                                                     
+      333 +    # 问句残片：包含问句词                                                              
+      334 +    if any(qw in token for qw in ("什么", "为什么", "怎么", "如何", "为何", "哪")):     
+      335 +        return True                                                                     
+      336 +    # 描述性短语而非命名实体（含动词/虚词）                                             
+      337 +    if any(suffix in token for suffix in ("吗", "呢", "啊", "吧", "了", "的", "之间", " 
+          +之后", "之前")):                                                                        
+      338 +        return True                                                                     
+      339 +    return False                                                                        
+      340 +                                                                                        
+      341 +                                                                                        
+      342 +def _filter_hypothesis_entities(entities: list[str]) -> list[str]:                      
+      343 +    """Drop pronouns, question fragments, descriptive phrases."""                       
+      344 +    return _dedupe_keep_order([e for e in entities if not _is_invalid_entity(e)])[:12]  
+      345 +                                                                                        
+      346 +                                                                                        
+      347 +def _filter_hypothesis_keywords(                                                        
+      348 +    keywords: list[str],                                                                
+      349 +    *,                                                                                  
+      350 +    entities: list[str],                                                                
+      351 +) -> list[str]:                                                                         
+      352 +    """Drop blacklisted question words & noise; ensure main entity is present."""       
+      353 +    cleaned = [                                                                         
+      354 +        kw                                                                              
+      355 +        for kw in keywords                                                              
+      356 +        if not _is_blacklisted_hypothesis_keyword(kw)                                   
+      357 +    ]                                                                                   
+      358 +    # 确保主实体在 keywords 中（线上检索需要锚定）                                      
+      359 +    if entities:                                                                        
+      360 +        main_entity = entities[0]                                                       
+      361 +        if main_entity and main_entity not in cleaned:                                  
+      362 +            cleaned = [main_entity, *cleaned]                                           
+      363 +    return _dedupe_keep_order(cleaned)[:20]                                             
+      364 +                                                                                        
+      365 +                                                                                        
+      366  def _normalize_string_list(value: Any, *, limit: int) -> list[str]:
+      367      if value is None:
+      368          return []
+
+● 现在改 conclusion normalize，让它对 retrieve_more 的 generic missing_slots 与 answer 暴露词做兜底过滤：
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 49 lines, removed 1 line
+      517      }
+      518  
+      519  
+      520 +_GENERIC_MISSING_SLOTS = frozenset(                                                     
+      521 +    {                                                                                   
+      522 +        "更多信息", "更多细节", "背景信息", "相关信息", "详细背景",                     
+      523 +        "详细资料", "完整剧情", "相关内容", "其他信息", "更多内容",                     
+      524 +        "详细信息", "更多背景",                                                         
+      525 +    }                                                                                   
+      526 +)                                                                                       
+      527 +                                                                                        
+      528 +_ANSWER_EXPOSURE_MARKERS = (                                                            
+      529 +    "根据证据", "根据剧情", "根据检索", "基于证据", "基于检索",                         
+      530 +    "从证据中", "根据上面", "根据以上", "检索到的", "根据剧情证据",                     
+      531 +    "根据剧情片段",                                                                     
+      532 +)                                                                                       
+      533 +                                                                                        
+      534 +                                                                                        
+      535 +def _filter_missing_slots(slots: list[str]) -> list[str]:                               
+      536 +    """Drop generic / non-actionable slots like 更多信息."""                            
+      537 +    cleaned: list[str] = []                                                             
+      538 +    for slot in slots:                                                                  
+      539 +        token = slot.strip()                                                            
+      540 +        if not token or token in _GENERIC_MISSING_SLOTS:                                
+      541 +            continue                                                                    
+      542 +        # 太短的也丢                                                                    
+      543 +        if len(token) < 4:                                                              
+      544 +            continue                                                                    
+      545 +        cleaned.append(token)                                                           
+      546 +    return cleaned[:8]                                                                  
+      547 +                                                                                        
+      548 +                                                                                        
+      549  def _normalize_conclusion_assistant_payload(payload: dict[str, Any]) -> dict[str, Any] |
+            None:
+      550      if any(field not in payload for field in CONCLUSION_SCHEMA_FIELDS):
+      551          return None
+     ...
+      565      if next_action == "clarify_user" and not clarification_question:
+      566          return None
+      567      if next_action == "retrieve_more":
+      539 -        if answer or not missing_slots:                                                 
+      568 +        if answer:                                                                      
+      569              return None
+      570 +        missing_slots = _filter_missing_slots(missing_slots)                            
+      571 +        # retrieve_more 必须有具体可检索缺口                                            
+      572 +        if not missing_slots:                                                           
+      573 +            return None                                                                 
+      574      else:
+      575          missing_slots = []
+      576          if next_action != "clarify_user":
+      577              clarification_question = ""
+      578  
+      579 +    # answer_directly / abstain：禁止暴露检索过程                                       
+      580 +    if next_action in {"answer_directly", "abstain"} and any(                           
+      581 +        marker in answer for marker in _ANSWER_EXPOSURE_MARKERS                         
+      582 +    ):                                                                                  
+      583 +        return None                                                                     
+      584 +                                                                                        
+      585 +    # clarify_user：clarification_question 必须列出候选解读                             
+      586 +    if next_action == "clarify_user":                                                   
+      587 +        # 最低限度地要求长度 ≥ 10 且包含至少 1 个候选分隔符                             
+      588 +        if len(clarification_question) < 10:                                            
+      589 +            return None                                                                 
+      590 +        has_options = any(sep in clarification_question for sep in ("？", "?", "、", "还
+          +是", "/", "："))                                                                        
+      591 +        if not has_options:                                                             
+      592 +            return None                                                                 
+      593 +                                                                                        
+      594      return {
+      595          "question": question,
+      596          "next_action": next_action,
+
+● 还差最后一处：style/knowledge 类（canon_qa / persona_grounded_qa / multi_turn_dialogue）的暴露词。看一下
+   validate_and_normalize_samples 里这条路径：
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● _final_answer_hides_retrieval 只在 _validate_tool_chain_messages 末尾被调（看 1655 行），但 canon_qa /
+  persona_grounded_qa / multi_turn_dialogue 这些不走那条 tool chain
+  路径——所以它们的暴露词没被过滤。这就是为什么前面抽样到 46 条暴露词样本。
+
+  我把这个校验加到那个非 tool chain 路径：
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(src/goldenglow/data/sft_teacher.py)
+  ⎿  Added 12 lines
+      1903              continue
+      1904          if task_type == "multi_turn_dialogue" and not _validate_multi_turn_messages(cle
+            an_messages):
+      1905              continue
+      1906 +        # style/knowledge 类样本不允许任何 assistant 消息出现"根据证据/根据剧情/检索到 
+           +的"等检索过程暴露词                                                                    
+      1907 +        if task_type in {"canon_qa", "persona_grounded_qa", "multi_turn_dialogue", "wor
+           +ldbuilding_qa"}:                                                                       
+      1908 +            exposed = False                                                            
+      1909 +            for msg in clean_messages:                                                 
+      1910 +                if msg.get("role") != "assistant":                                     
+      1911 +                    continue                                                           
+      1912 +                text = str(msg.get("content") or "")                                   
+      1913 +                if any(marker in text for marker in _ANSWER_EXPOSURE_MARKERS):         
+      1914 +                    exposed = True                                                     
+      1915 +                    break                                                              
+      1916 +            if exposed:                                                                
+      1917 +                continue                                                               
+      1918  
+      1919          meta = sample.get("meta") if isinstance(sample.get("meta"), dict) else {}
+      1920          normalized_sample = {
+
+● 现在做语法校验和单元级 dry-run。
