@@ -1,0 +1,15 @@
+# Python-side retrieval and orchestration dependencies for CPU inference.
+# llama.cpp CLI / GGUF / LoRA conversion are installed separately.
+
+faiss-cpu
+huggingface_hub
+numpy
+pyyaml
+rank-bm25
+safetensors
+sentence-transformers
+sentencepiece
+torch
+tqdm
+transformers
+
