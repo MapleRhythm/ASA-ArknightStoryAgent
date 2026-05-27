@@ -5,10 +5,26 @@
     "dense_top_k": 60,
     "sparse_top_k": 60,
     "enable_minirag": true,
-    "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
+    "minirag_weight": 0.35,
+    "minirag_mode_weights": {
+      "fact": 0.5,
+      "relation": 1.0,
+      "causality": 1.0,
+      "reveal": 1.0,
+      "reasoning": 0.75,
+      "mystery": 0.75,
+      "answerability": 0.75
+    },
     "fusion_top_k": 40,
     "rerank_top_k": 15,
     "rerank_batch_size": 4,
+    "minirag_chapter_isolation": true,
+    "minirag_auto_second_retrieval": true,
+    "minirag_scope_seed_top_k": 40,
+    "minirag_expansion_query_top_k": 8,
+    "minirag_graph_scope_min_ratio": 1.0,
+    "minirag_second_pass_scope_min_ratio": 2.5,
     "enable_neighbor_expansion": false,
     "neighbor_max_seed_docs": 24,
     "neighbor_story_window": 2,
@@ -29,6 +45,14 @@
     "self_consistency_samples": 1,
     "self_consistency_temperature": 0.7,
     "use_model_hypothesis": true,
-    "use_model_conclusion_generation": true
+    "use_model_conclusion_generation": true,
+    "web_context": {
+      "enabled": false,
+      "cache_dir": "outputs/web_context_cache",
+      "timeout_seconds": 6,
+      "max_elapsed_seconds": 18,
+      "max_pages": 3,
+      "max_total_chars": 6000
+    }
   }
 }

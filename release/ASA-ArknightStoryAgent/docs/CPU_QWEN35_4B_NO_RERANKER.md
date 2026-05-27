@@ -1,6 +1,6 @@
-# CPU 版本：Qwen3.5 4B，无 reranker
+# CPU 版本：已合并 LoRA 的 Qwen3.5 4B，无 reranker
 
-适用场景：纯 CPU 部署，本地 llama.cpp 跑 Qwen3.5 4B GGUF，不加载 reranker，降低内存和延迟成本。
+适用场景：纯 CPU 部署，本地 llama.cpp 跑已合并 LoRA 的 Qwen3.5 4B GGUF；不加载运行时 LoRA，也不加载 reranker，降低部署复杂度和内存成本。
 
 ## 环境脚本
 
@@ -23,9 +23,11 @@ data/ArknightsGameData/zh_CN/gamedata/story/
 data/ArknightsGameData/zh_CN/gamedata/excel/
 indexes/arknights_story/
 indexes/arknights_story_minirag/graph.json
-third_party/llama.cpp/build/bin/llama-completion
-model/gguf/qwen3.5-4b-q4_k_m.gguf
+third_party/llama.cpp/build-cpu/bin/llama-completion
+model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 ```
+
+注意：CPU 发布版推荐使用已合并 LoRA 的 GGUF。llama.cpp 对部分 Qwen3.5 LoRA 的运行时 LoRA GGUF 转换兼容性有限，合并后再导出 GGUF 更稳。
 
 主索引构建：
 
@@ -60,8 +62,8 @@ question    可选。传入时直接回答一次；不传时进入交互模式�
 --threads 16
 --ctx-size 8192
 --max-tokens 512
---gguf-model model/gguf/qwen3.5-4b-q4_k_m.gguf
---llama-cli third_party/llama.cpp/build/bin/llama-completion
+--gguf-model model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
+--llama-cli third_party/llama.cpp/build-cpu/bin/llama-completion
 --dense-top-k 80
 --sparse-top-k 80
 --fusion-top-k 50

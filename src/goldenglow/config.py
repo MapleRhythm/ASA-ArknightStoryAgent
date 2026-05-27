@@ -46,9 +46,15 @@ class QueryConfig:
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 0.8
-    minirag_weight: float = 0.8
+    minirag_weight: float = 0.35
     minirag_mode_weights: dict[str, float] = field(default_factory=dict)
     minirag_fusion_mode: str = "score"
+    minirag_chapter_isolation: bool = True
+    minirag_auto_second_retrieval: bool = True
+    minirag_scope_seed_top_k: int = 40
+    minirag_expansion_query_top_k: int = 8
+    minirag_graph_scope_min_ratio: float = 2.5
+    minirag_second_pass_scope_min_ratio: float = 2.5
     reranker_candidate_top_k: int = 120
     enable_neighbor_expansion: bool = False
     neighbor_max_seed_docs: int = 24

@@ -7,6 +7,16 @@
     "sparse_top_k": 120,
     "enable_minirag": true,
     "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "minirag_weight": 0.35,
+    "minirag_mode_weights": {
+      "fact": 0.5,
+      "relation": 1.0,
+      "causality": 1.0,
+      "reveal": 1.0,
+      "reasoning": 0.75,
+      "mystery": 0.75,
+      "answerability": 0.75
+    },
     "fusion_top_k": 80,
     "rerank_top_k": 32,
     "rerank_batch_size": 8,

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 RELEASE_SOURCE_DIR="${RELEASE_SOURCE_DIR:-$ROOT_DIR/release/ASA-ArknightStoryAgent}"
-RELEASE_BRANCH="${RELEASE_BRANCH:-inference-release}"
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
 WORKTREE_DIR="${WORKTREE_DIR:-$ROOT_DIR/.worktrees/$RELEASE_BRANCH}"
 COMMIT="${COMMIT:-0}"
 PUSH="${PUSH:-0}"
@@ -42,17 +42,38 @@ fi
 mkdir -p "$(dirname "$WORKTREE_DIR")"
 
 CREATED_RELEASE_BRANCH=0
-if git show-ref --verify --quiet "refs/heads/$RELEASE_BRANCH"; then
-  if [[ ! -d "$WORKTREE_DIR/.git" && ! -f "$WORKTREE_DIR/.git" ]]; then
-    echo "[worktree] add existing branch $RELEASE_BRANCH -> $WORKTREE_DIR"
-    git worktree add "$WORKTREE_DIR" "$RELEASE_BRANCH"
+if [[ -e "$WORKTREE_DIR/.git" ]]; then
+  echo "[worktree] use existing worktree $WORKTREE_DIR"
+  current_branch="$(git -C "$WORKTREE_DIR" symbolic-ref --quiet --short HEAD || true)"
+  if [[ "$current_branch" != "$RELEASE_BRANCH" ]]; then
+    echo "Existing worktree is on branch '$current_branch', expected '$RELEASE_BRANCH': $WORKTREE_DIR" >&2
+    exit 1
+  fi
+  if ! git -C "$WORKTREE_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
+    # Unborn orphan branch: allow the first sync to populate and commit it.
+    CREATED_RELEASE_BRANCH=1
   fi
 else
-  echo "[worktree] create orphan branch $RELEASE_BRANCH -> $WORKTREE_DIR"
-  git worktree add --detach "$WORKTREE_DIR" HEAD
-  git -C "$WORKTREE_DIR" switch --orphan "$RELEASE_BRANCH"
-  git -C "$WORKTREE_DIR" rm -r --quiet --ignore-unmatch .
-  CREATED_RELEASE_BRANCH=1
+  if [[ -e "$WORKTREE_DIR" ]]; then
+    if rmdir "$WORKTREE_DIR" 2>/dev/null; then
+      echo "[worktree] removed empty stale directory $WORKTREE_DIR"
+    else
+      echo "Path exists but is not a git worktree: $WORKTREE_DIR" >&2
+      echo "Move it away or set WORKTREE_DIR to another path." >&2
+      exit 1
+    fi
+  fi
+
+  if git show-ref --verify --quiet "refs/heads/$RELEASE_BRANCH"; then
+    echo "[worktree] add existing branch $RELEASE_BRANCH -> $WORKTREE_DIR"
+    git worktree add "$WORKTREE_DIR" "$RELEASE_BRANCH"
+  else
+    echo "[worktree] create orphan branch $RELEASE_BRANCH -> $WORKTREE_DIR"
+    git worktree add --detach "$WORKTREE_DIR" HEAD
+    git -C "$WORKTREE_DIR" switch --orphan "$RELEASE_BRANCH"
+    git -C "$WORKTREE_DIR" rm -r --quiet --ignore-unmatch .
+    CREATED_RELEASE_BRANCH=1
+  fi
 fi
 
 if [[ "$CREATED_RELEASE_BRANCH" != "1" && -n "$(git -C "$WORKTREE_DIR" status --porcelain)" && "$FORCE" != "1" ]]; then

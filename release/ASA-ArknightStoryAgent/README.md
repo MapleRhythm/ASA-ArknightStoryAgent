@@ -15,8 +15,20 @@ indexes/arknights_story_minirag/graph.json
 | 版本 | 生成方式 | reranker | 环境脚本 | 运行脚本 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | GPU | vLLM + Qwen3.5 4B + LoRA | 开启 | `scripts/setup_gpu_reranker_qwen35_4b.sh` | `scripts/run_gpu_reranker_qwen35_4b.sh` | 质量优先 |
-| CPU 本地 | llama.cpp + Qwen3.5 4B GGUF | 关闭 | `scripts/setup_cpu_qwen35_4b_no_reranker.sh` | `scripts/run_cpu_qwen35_4b_no_reranker.sh` | 纯本地 CPU |
+| CPU 本地 | llama.cpp + 已合并 LoRA 的 Qwen3.5 4B GGUF | 关闭 | `scripts/setup_cpu_qwen35_4b_no_reranker.sh` | `scripts/run_cpu_qwen35_4b_no_reranker.sh` | 纯本地 CPU |
 | CPU API | 本地 CPU 检索 + 远程 API | 关闭 | `scripts/setup_cpu_api_no_reranker.sh` | `scripts/run_cpu_api_no_reranker.sh` | 部署最轻 |
+
+也可以启动本地 Web 前端，在浏览器里切换这三种模式：
+
+```bash
+bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
+```
+
+打开：
+
+```text
+http://127.0.0.1:7860
+```
 
 接口说明：
 
@@ -43,6 +55,7 @@ indexes/arknights_story_minirag/  # 已内置 MiniRAG 图
 model/                            # 放 embedding、reranker、4B、LoRA、GGUF
 scripts/                          # 环境、建索引、运行脚本
 src/asa_arknight_story_agent/     # 推理最小源码
+web/                              # 本地浏览器前端
 ```
 
 ## 1. 获取游戏数据
@@ -133,8 +146,28 @@ model/reranker/bge-reranker-v2-m3-evidence-chain-answerability/
 CPU 本地模型版本需要：
 
 ```text
-third_party/llama.cpp/build/bin/llama-completion
-model/gguf/qwen3.5-4b-q4_k_m.gguf
+third_party/llama.cpp/build-cpu/bin/llama-completion
+model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
+```
+
+对应环境脚本会自动从 Hugging Face 下载默认模型：
+
+```text
+MapleRhythm/asa-arknightstoryagent-4b-lora
+MapleRhythm/asa-arknightstoryagent-4b-gguf
+MapleRhythm/asa-evidence-chain-reranker
+```
+
+国内网络只下载时可设置镜像：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+如果你 fork 了模型仓库，可用环境变量覆盖：
+
+```bash
+export ASA_HF_OWNER=你的HF用户名
 ```
 
 CPU API 版本需要：
@@ -156,6 +189,14 @@ HUGGINGFACE_UPLOAD.md
 ```
 
 ## 5. 运行
+
+Web 前端：
+
+```bash
+bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
+```
+
+前端会调用已有推理脚本。CPU 本地模式首次回答会加载索引和模型，可能需要几分钟；CPU API 模式需要先设置 API key。
 
 GPU：
 
@@ -182,17 +223,3 @@ bash scripts/run_cpu_api_no_reranker.sh "炎景公主一事具体指什么"
 ```bash
 python scripts/query_retrieval.py "岁兽是什么，为什么会成为危机"
 ```
-
-## 7. 发布到 GitHub
-
-```bash
-cd release/ASA-ArknightStoryAgent
-git init
-git add .
-git commit -m "Initial inference-only release"
-git branch -M main
-git remote add origin git@github.com:<user>/<repo>.git
-git push -u origin main
-```
-
-不要提交 API key、日志、原始游戏数据和模型权重。当前发布版只保留 MiniRAG 图索引；其它大文件建议通过 Hugging Face 或对象存储分发。

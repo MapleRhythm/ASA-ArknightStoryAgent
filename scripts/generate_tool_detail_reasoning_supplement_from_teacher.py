@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import sys
 import time
 from typing import Any
@@ -75,6 +76,70 @@ HYPOTHESIS_SYSTEM = seed_data.HYPOTHESIS_SYSTEM
 CONCLUSION_SYSTEM = seed_data.CONCLUSION_SYSTEM
 HYPOTHESIS_INTENTS = seed_data.HYPOTHESIS_INTENTS
 RETRIEVAL_ACTIONS = {"answer_directly", "retrieve_more", "clarify_user", "abstain"}
+QUERY_TYPES = {
+    "fact",
+    "relation",
+    "causality",
+    "reasoning",
+    "reveal",
+    "mystery",
+    "answerability",
+}
+GENERIC_EVIDENCE_TAGS = {
+    "信赖触摸",
+    "信赖提升后交谈",
+    "信赖提升后交谈1",
+    "信赖提升后交谈2",
+    "信赖提升后交谈3",
+    "行动失败",
+    "行动出发",
+    "选中干员",
+    "选中干员1",
+    "选中干员2",
+    "选中干员3",
+    "任命助理",
+    "任命队长",
+    "编入队伍",
+    "闲置",
+    "戳一下",
+    "问候",
+    "问候语音",
+}
+NOISY_SLOT_PATTERNS = (
+    "更多信息",
+    "更多细节",
+    "相关背景",
+    "详细资料",
+    "完整剧情",
+    "深层含义",
+    "具体背景",
+    "更直接的人物身份证据",
+    "与主实体直接相关的桥接信息",
+)
+NOISY_ENTITY_TERMS = {
+    "角色",
+    "人物",
+    "干员",
+    "当前",
+    "证据",
+    "剧情",
+    "身份",
+    "关系",
+    "真相",
+    "原因",
+    "动机",
+    "职责",
+    "任务",
+    "互动",
+    "联系",
+    "语音",
+    "台词",
+    "信赖触摸",
+    "行动失败",
+    "行动出发",
+    "选中干员",
+}
+CJK_TOKEN_RE = re.compile(r"[\u4e00-\u9fff·]{2,16}|[A-Za-z][A-Za-z0-9_.-]{1,31}")
 
 BADCASE_TRIGGER_GROUPS = {
     "causal_reasoning": ("为什么", "为何", "为了", "原因", "导致", "目的", "动机"),
@@ -157,6 +222,7 @@ TASK_SCHEMA_TEXT = {
             "question": "用户问题",
             "dialogue_context": "多轮上下文；没有则为空字符串",
             "intent": "plot_fact|plot_reasoning|timeline|character_relation|event_summary|compare|persona_chat|out_of_scope",
+            "query_type": "fact|relation|causality|reasoning|reveal|mystery|answerability",
             "entities": ["核心实体", "别名或关联实体"],
             "keywords": ["用于检索的关键词"],
             "expected_answer_type": "答案类型",
@@ -167,6 +233,7 @@ TASK_SCHEMA_TEXT = {
             "clarification_question": "仅 clarify_user 时填写，否则为空字符串",
             "follow_up_hypothesis": {
                 "question": "原问题",
+                "query_type": "fact|relation|causality|reasoning|reveal|mystery|answerability",
                 "entities": ["下一轮检索实体"],
                 "keywords": ["下一轮检索关键词"],
                 "expected_answer_type": "答案类型",
@@ -321,6 +388,7 @@ def current_hypothesis_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
     return {
         "question": str(spec["question"]).strip(),
         "intent": str(spec["intent"]).strip(),
+        "query_type": str(spec["query_type"]).strip(),
         "entities": dedupe_keep_order(list(spec["entities"]), limit=12),
         "keywords": dedupe_keep_order(list(spec["keywords"]), limit=20),
         "expected_answer_type": str(spec["expected_answer_type"]).strip(),
@@ -369,18 +437,132 @@ def normalize_string_list(value: Any, *, limit: int) -> list[str]:
     return dedupe_keep_order(raw, limit=limit)
 
 
+def is_noisy_term(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text or text in NOISY_ENTITY_TERMS:
+        return True
+    if len(text) > 24:
+        return True
+    if any(marker in text for marker in ("什么", "为什么", "怎么", "如何", "用户", "assistant", "user")):
+        return True
+    if text in GENERIC_EVIDENCE_TAGS or any(tag in text for tag in ("信赖提升", "选中干员")):
+        return True
+    return False
+
+
+def normalize_clean_string_list(value: Any, *, limit: int) -> list[str]:
+    return [item for item in normalize_string_list(value, limit=limit * 2) if not is_noisy_term(item)][:limit]
+
+
+def infer_query_type(question: str, intent: str, expected_answer_type: str) -> str:
+    text = f"{question} {intent} {expected_answer_type}"
+    if any(token in text for token in ("真相", "秘密", "阴谋", "幕后", "揭露", "识破", "暴露")):
+        return "reveal"
+    if any(token in text for token in ("谜", "究竟", "到底", "怎么回事")):
+        return "mystery"
+    if any(token in text for token in ("为什么", "为何", "原因", "导致", "动机", "目的")):
+        return "causality"
+    if intent == "character_relation" or any(token in text for token in ("关系", "身份", "身世", "来历", "是谁", "是什么人")):
+        return "relation"
+    if any(token in text for token in ("是什么", "可回答", "本质")) and any(token in text for token in ("为什么", "原因", "危机", "祸患")):
+        return "answerability"
+    if intent in {"plot_reasoning", "event_summary"}:
+        return "reasoning"
+    return "fact"
+
+
+def evidence_text(evidence_docs: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for doc in evidence_docs:
+        parts.extend(
+            [
+                str(doc.get("id") or ""),
+                str(doc.get("activity_name") or ""),
+                str(doc.get("story_name") or doc.get("story_id") or ""),
+                str(doc.get("stage_code") or doc.get("stage_id") or ""),
+                str(doc.get("avg_tag") or ""),
+                str(doc.get("clean_text") or ""),
+            ]
+        )
+    return "\n".join(parts)
+
+
+def generic_voice_evidence_only(evidence_docs: list[dict[str, Any]]) -> bool:
+    if not evidence_docs:
+        return True
+    tagged = 0
+    for doc in evidence_docs:
+        tag_text = " ".join(
+            str(doc.get(key) or "")
+            for key in ("activity_name", "story_name", "story_id", "avg_tag", "clean_text")
+        )
+        if any(tag in tag_text for tag in GENERIC_EVIDENCE_TAGS):
+            tagged += 1
+    return tagged == len(evidence_docs)
+
+
+def question_anchor_terms(question: str, entities: list[str]) -> list[str]:
+    candidates = list(entities) + CJK_TOKEN_RE.findall(question)
+    return [
+        item
+        for item in dedupe_keep_order(candidates, limit=16)
+        if len(item) >= 2 and not is_noisy_term(item)
+    ]
+
+
+def evidence_mentions_any_anchor(question: str, entities: list[str], evidence_docs: list[dict[str, Any]]) -> bool:
+    text = evidence_text(evidence_docs)
+    anchors = question_anchor_terms(question, entities)
+    return bool(anchors and any(anchor in text for anchor in anchors[:8]))
+
+
+def slot_is_actionable(slot: str) -> bool:
+    slot = str(slot or "").strip()
+    if len(slot) < 4 or len(slot) > 32:
+        return False
+    return not any(pattern in slot for pattern in NOISY_SLOT_PATTERNS)
+
+
+def follow_up_aligns_with_slots(follow_up: dict[str, Any], missing_slots: list[str]) -> bool:
+    if not missing_slots:
+        return False
+    text = " ".join(
+        [
+            str(follow_up.get("question") or ""),
+            " ".join(str(item) for item in follow_up.get("entities") or []),
+            " ".join(str(item) for item in follow_up.get("keywords") or []),
+        ]
+    )
+    for slot in missing_slots:
+        slot_terms: list[str] = []
+        for term in CJK_TOKEN_RE.findall(slot):
+            if len(term) >= 2 and not is_noisy_term(term):
+                slot_terms.append(term)
+                if "\u4e00" <= term[0] <= "\u9fff" and len(term) >= 4:
+                    for size in (2, 3, 4):
+                        slot_terms.extend(term[index : index + size] for index in range(0, len(term) - size + 1))
+        slot_terms = [term for term in dedupe_keep_order(slot_terms, limit=20) if not is_noisy_term(term)]
+        if any(term in text for term in slot_terms[:4]):
+            return True
+    return False
+
+
 def normalize_follow_up(value: Any, *, fallback_question: str, fallback_context: str) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     question = str(value.get("question") or fallback_question).strip()
-    entities = normalize_string_list(value.get("entities"), limit=12)
-    keywords = normalize_string_list(value.get("keywords"), limit=20)
+    query_type = str(value.get("query_type") or "").strip()
+    entities = normalize_clean_string_list(value.get("entities"), limit=12)
+    keywords = normalize_clean_string_list(value.get("keywords"), limit=20)
     expected_answer_type = str(value.get("expected_answer_type") or "").strip()
     dialogue_context = str(value.get("dialogue_context") or fallback_context or "").strip()
+    if query_type not in QUERY_TYPES:
+        query_type = infer_query_type(question, "", expected_answer_type)
     if not question or not entities or not keywords or not expected_answer_type:
         return None
     return {
         "question": question,
+        "query_type": query_type,
         "entities": entities,
         "keywords": keywords,
         "expected_answer_type": expected_answer_type,
@@ -388,7 +570,13 @@ def normalize_follow_up(value: Any, *, fallback_question: str, fallback_context:
     }
 
 
-def normalize_teacher_spec(raw: Any, *, expected_category: str, expected_task_type: str) -> dict[str, Any] | None:
+def normalize_teacher_spec(
+    raw: Any,
+    *,
+    expected_category: str,
+    expected_task_type: str,
+    evidence_docs: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     task_type = str(raw.get("task_type") or expected_task_type).strip()
@@ -404,11 +592,16 @@ def normalize_teacher_spec(raw: Any, *, expected_category: str, expected_task_ty
     intent = str(raw.get("intent") or "").strip()
     if intent not in HYPOTHESIS_INTENTS:
         return None
-    entities = normalize_string_list(raw.get("entities"), limit=12)
-    keywords = normalize_string_list(raw.get("keywords"), limit=20)
+    query_type = str(raw.get("query_type") or "").strip()
+    entities = normalize_clean_string_list(raw.get("entities"), limit=12)
+    keywords = normalize_clean_string_list(raw.get("keywords"), limit=20)
     expected_answer_type = str(raw.get("expected_answer_type") or "").strip()
     dialogue_context = str(raw.get("dialogue_context") or "").strip()
+    if query_type not in QUERY_TYPES:
+        query_type = infer_query_type(question, intent, expected_answer_type)
     if not question or not entities or not keywords or not expected_answer_type:
+        return None
+    if expected_task_type == INITIAL_HYPOTHESIS_TASK_TYPE and not evidence_mentions_any_anchor(question, entities, evidence_docs):
         return None
 
     normalized = {
@@ -418,6 +611,7 @@ def normalize_teacher_spec(raw: Any, *, expected_category: str, expected_task_ty
         "question": question,
         "dialogue_context": dialogue_context,
         "intent": intent,
+        "query_type": query_type,
         "entities": entities,
         "keywords": keywords,
         "expected_answer_type": expected_answer_type,
@@ -431,19 +625,25 @@ def normalize_teacher_spec(raw: Any, *, expected_category: str, expected_task_ty
     if next_action not in RETRIEVAL_ACTIONS:
         return None
     answer = str(raw.get("answer") or "").strip()
-    missing_slots = normalize_string_list(raw.get("missing_slots"), limit=8)
+    missing_slots = [
+        slot
+        for slot in normalize_string_list(raw.get("missing_slots"), limit=8)
+        if slot_is_actionable(slot)
+    ][:5]
     clarification_question = str(raw.get("clarification_question") or "").strip()
     follow_up = normalize_follow_up(
         raw.get("follow_up_hypothesis"),
         fallback_question=question,
         fallback_context=dialogue_context,
     )
+    current_round = int(raw.get("current_round") or 1)
 
     if next_action == "retrieve_more":
         if answer or not missing_slots or follow_up is None:
             return None
-        current_round = int(raw.get("current_round") or 1)
         if current_round >= 4:
+            return None
+        if not follow_up_aligns_with_slots(follow_up, missing_slots):
             return None
     elif next_action == "clarify_user":
         if not clarification_question:
@@ -453,13 +653,22 @@ def normalize_teacher_spec(raw: Any, *, expected_category: str, expected_task_ty
     else:
         if not answer:
             return None
+        if next_action == "answer_directly":
+            if not evidence_mentions_any_anchor(question, entities, evidence_docs):
+                return None
+            if generic_voice_evidence_only(evidence_docs) and any(
+                token in expected_answer_type for token in ("身份", "关系", "原因", "动机", "真相")
+            ):
+                return None
+        if next_action == "abstain" and current_round < 4:
+            return None
         missing_slots = []
         clarification_question = ""
         follow_up = None
 
     normalized.update(
         {
-            "current_round": max(1, min(4, int(raw.get("current_round") or 2))),
+            "current_round": max(1, min(4, current_round)),
             "next_action": next_action,
             "answer": answer,
             "missing_slots": missing_slots,
@@ -578,6 +787,7 @@ def build_system_prompt() -> str:
         "你是《明日方舟》剧情问答 Agent 的教师模型数据生成器。"
         "你只输出严格 JSON，不输出 markdown、解释或多余文本。"
         "你的输出将被直接转换成 SFT 数据，因此字段必须完整、可解析、无额外字段污染。"
+        "你必须优先生成证据匹配、可检索、低幻觉的训练样本；不确定时宁可 retrieve_more/abstain，不要硬答。"
     )
 
 
@@ -585,12 +795,14 @@ def build_user_prompt(job: TeacherJob) -> str:
     action_guidance = {
         INITIAL_HYPOTHESIS_TASK_TYPE: (
             "当前任务是生成初始 hypothesis 样本。只生成检索假设，不要直接回答问题。"
-            "entities/keywords 要能帮助召回正文细节，不能只写宽泛词。"
+            "entities/keywords/query_type 要能帮助召回正文细节，不能只写宽泛词；"
+            "必须把多轮上下文里的指代消解成明确角色或事件。"
         ),
         CONCLUSION_TASK_TYPE: (
             "当前任务是生成 conclusion 样本。必须判断证据是否足够："
-            "如果证据只有概述或缺关键因果，next_action=retrieve_more，answer 必须为空，并生成 follow_up_hypothesis；"
-            "如果证据足够，next_action=answer_directly，answer 必须完整回答本质/因果/细节，follow_up_hypothesis 必须为 null。"
+            "如果证据不匹配、只有语音碎片、只有概述或缺关键因果，next_action=retrieve_more，answer 必须为空，并生成能补槽的 follow_up_hypothesis；"
+            "如果已到最后一轮仍无有效证据，next_action=abstain；"
+            "只有证据足够时才 answer_directly，answer 必须逐点受证据支撑，follow_up_hypothesis 必须为 null。"
         ),
     }[job.task_type]
 
@@ -608,11 +820,34 @@ def build_user_prompt(job: TeacherJob) -> str:
             "4. conclusion_generation 的 assistant 最终 JSON 只能包含 question、next_action、answer、missing_slots、clarification_question、follow_up_hypothesis。",
             "5. retrieve_more 时 answer 必须是空字符串，missing_slots 必须具体，follow_up_hypothesis 必须非空。",
             "6. answer_directly/abstain/clarify_user 时 follow_up_hypothesis 必须为 null。",
-            "7. follow_up_hypothesis 只能包含 question、entities、keywords、expected_answer_type、dialogue_context。",
-            "8. 用户纠正或追问场景必须继承 dialogue_context，不允许把“这个/该计划/这件事”当成实体。",
-            "9. 不能生成泛泛答案，例如“证据不足以确认”“与某议员有关”这类没有本质细节的 answer_directly。",
-            "10. 用户问题必须是完整自然问句，禁止从证据原文截取残句当问题，例如“眼下能做的”“接下来要做的”。",
-            "11. 不要照抄 schema 示例；必须围绕下面 case 和证据生成。",
+            "7. hypothesis 和 follow_up_hypothesis 必须包含 query_type，取值只能是 fact、relation、causality、reasoning、reveal、mystery、answerability。",
+            "8. follow_up_hypothesis 只能包含 question、query_type、entities、keywords、expected_answer_type、dialogue_context。",
+            "9. query_type 判定：事实细节=fact；人物/组织关系和身份=relation；为什么/目的/导致=causality；过程推理=reasoning；真相/阴谋/身份揭示=reveal；谜团/到底怎么回事=mystery；同时问定义与原因=answerability。",
+            "",
+            "证据质量与决策规则：",
+            "10. 只有当当前证据直接包含问题主实体，并且能支撑答案中的关键判断时，才允许 answer_directly。",
+            "11. 如果证据不含问题主实体，或只有通用干员语音/信赖触摸/行动失败/行动出发/选中干员等碎片，身份/关系/原因/真相类问题禁止 answer_directly。",
+            "12. 证据包含主实体但缺关键槽位时必须选择 retrieve_more；已到第4轮仍缺关键证据时选择 abstain。",
+            "13. answer_directly 的 answer 只能使用当前证据明示或可由相邻证据直接推出的信息；禁止补充证据包外的人设、种族、阵营、性格评价、战斗能力或结局。",
+            "14. 不得把“去过哪里、说过什么、做过什么”当成“身份/身世/关系”的答案；证据只支持行动轨迹时应 retrieve_more 或 abstain。",
+            "15. 如果问题本身缺少实体或指代无法从 dialogue_context 消解，选择 clarify_user，不要猜。",
+            "",
+            "missing_slots 与 follow_up 规则：",
+            "16. missing_slots 必须是 2-5 个短的可检索缺口，每条 6-24 字，禁止“更多信息/完整剧情/深层含义/具体背景/相关资料”等泛词。",
+            "17. follow_up_hypothesis 必须逐项回应 missing_slots，不能复读原问题；question 应改写成更小的可检索问题。",
+            "18. follow_up_hypothesis.entities 必须保留主实体；关系问题必须保留双方实体；新增桥接实体必须来自当前证据、当前假设或历史上下文。",
+            "19. follow_up_hypothesis.keywords 应包含 missing_slots 里的关键名词/关系词，禁止填“关系、互动、联系、身份、角色”等空泛词。",
+            "",
+            "实体与关键词规则：",
+            "20. entities 只放专名或明确称谓，禁止“这位/他/她/干员/角色/人物/任务/职责/真实身份/行动失败/信赖触摸/选中干员”等泛词或语音标签。",
+            "21. keywords 是检索词，不是摘要句；优先短词组：人物名、别名、组织、地点、事件物件、关系词、因果词。",
+            "22. 用户纠正或追问场景必须继承 dialogue_context，不允许把“这个/该计划/这件事”当成实体。",
+            "23. 用户问题必须是完整自然问句，禁止从证据原文截取残句当问题，例如“眼下能做的”“接下来要做的”。",
+            "24. 不要照抄 schema 示例；必须围绕下面 case 和证据生成。",
+            "",
+            "负例要求：",
+            "25. 每批 conclusion_generation 如果证据明显不足，至少生成 1 条 retrieve_more 或 abstain；不要为了凑 answer_directly 而硬答。",
+            "26. abstain 的 answer 必须说明“当前证据为什么不足”，但不要输出 follow_up_hypothesis。",
             "",
             f"类别说明: {CATEGORY_DESCRIPTIONS[job.category]}",
             f"任务说明: {action_guidance}",
@@ -752,6 +987,7 @@ def execute_job(
                 raw_spec,
                 expected_category=job.category,
                 expected_task_type=job.task_type,
+                evidence_docs=job.evidence_docs,
             )
             if spec is None:
                 continue

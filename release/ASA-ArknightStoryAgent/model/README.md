@@ -10,7 +10,7 @@ model/reranker/bge-reranker-v2-m3/
 model/reranker/bge-reranker-v2-m3-evidence-chain-answerability/
 model/qwen3.5-4b/
 model/lora/asa-arknightstoryagent-4b-lora/
-model/gguf/qwen3.5-4b-q4_k_m.gguf
+model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 ```
 
 公开 embedding / reranker 基座模型可用：

@@ -4,7 +4,7 @@
 
 ```text
 configs/runtime_gpu_reranker_qwen35_4b.json       # GPU，本地 Qwen3.5 4B + reranker
-configs/runtime_cpu_qwen35_4b_no_reranker.json   # CPU，本地 Qwen3.5 4B GGUF，无 reranker
+configs/runtime_cpu_qwen35_4b_no_reranker.json   # CPU，本地已合并 LoRA 的 Qwen3.5 4B GGUF，无 reranker
 configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 API，无 reranker
 ```
 
@@ -75,8 +75,9 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
   "ctx_size": 8192,
   "max_tokens": 512,
   "llama_cpp": {
-    "llama_cli_path": "third_party/llama.cpp/build/bin/llama-completion",
-    "gguf_model_path": "model/gguf/qwen3.5-4b-q4_k_m.gguf",
+    "llama_cli_path": "third_party/llama.cpp/build-cpu/bin/llama-completion",
+    "gguf_model_path": "model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf",
+    "lora_path": null,
     "device": "cpu",
     "gpu_layers": "0"
   }
@@ -105,7 +106,7 @@ CPU/API：
 - `temperature` / `top_p`：采样参数。
 - `repeat_penalty`：本地模型重复惩罚。
 - `base_model_path`：HF 格式 Qwen3.5 4B 基座目录。
-- `lora_path`：LoRA adapter 目录；如果使用合并模型可设为 `null`。
+- `lora_path`：LoRA 路径。vLLM 使用 Hugging Face LoRA 目录；CPU/llama.cpp 推荐使用已合并 LoRA 的 GGUF，并设为 `null`。
 - `gguf_model_path`：llama.cpp GGUF 文件。
 - `api_base_url`：API endpoint。`openai_compatible_api` 使用 chat completions；`responses_api` 使用 responses。
 - `api_key_env`：读取 API key 的环境变量名。
@@ -115,6 +116,10 @@ CPU/API：
 
 ```json
 {
+  "pipeline_mode": "answer_then_retrieve_refine",
+  "initial_prompt_hint": "直接回答用户问题。提示词越少越好；可以使用你已有的剧情知识，但不确定的细节不要写死。",
+  "initial_answer_max_tokens": 1024,
+  "refine_answer_max_tokens": 1536,
   "max_retrieval_rounds": 3,
   "prompt_evidence_top_k": 10,
   "enable_mmr": true,
@@ -132,6 +137,10 @@ CPU/API：
 
 字段说明：
 
+- `pipeline_mode`：API 模式可设为 `answer_then_retrieve_refine` 或 `standard`。前者先让 API 直接回答，再用初答检索证据并校正；后者走本地 4B 同款 hypothesis/conclusion 多轮 RAG。
+- `initial_prompt_hint`：API 初答阶段的极简提示词。
+- `initial_answer_max_tokens`：API 初答 token 上限。
+- `refine_answer_max_tokens`：证据校正阶段 token 上限。
 - `max_retrieval_rounds`：最多多轮检索次数。
 - `prompt_evidence_top_k`：最终塞给生成模型的证据数量。
 - `enable_mmr`：是否做证据去冗余。

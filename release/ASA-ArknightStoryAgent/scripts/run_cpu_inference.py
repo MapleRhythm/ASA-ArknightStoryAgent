@@ -23,7 +23,7 @@ from asa_arknight_story_agent.config import (  # noqa: E402
     RERANKER_MODEL_DIR,
 )
 
-DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build" / "bin" / "llama-completion"
+DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build-cpu" / "bin" / "llama-completion"
 DEFAULT_GGUF_MODEL_PATH = PROJECT_ROOT / "model" / "gguf" / "qwen3.5-4b-q4_k_m.gguf"
 DEFAULT_BASE_MODEL_PATH = PROJECT_ROOT / "model" / "qwen3.5-4b"
 DEFAULT_VLLM_LORA_PATH = PROJECT_ROOT / "model" / "lora" / "asa-arknightstoryagent-4b-lora"
@@ -100,13 +100,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llama-cli",
         type=Path,
-        default=DEFAULT_LLAMA_CLI_PATH,
+        default=None,
         help="Path to the llama.cpp CLI binary.",
     )
     parser.add_argument(
         "--gguf-model",
         type=Path,
-        default=DEFAULT_GGUF_MODEL_PATH,
+        default=None,
         help="Path to the GGUF model used for inference.",
     )
     parser.add_argument(
@@ -158,6 +158,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-minirag", dest="enable_minirag", action="store_true", default=None)
     parser.add_argument("--disable-minirag", dest="enable_minirag", action="store_false")
     parser.add_argument("--minirag-index", type=Path, default=None)
+    parser.add_argument("--minirag-weight", type=float, default=None)
     parser.add_argument("--enable-mmr", dest="enable_mmr", action="store_true", default=None)
     parser.add_argument("--disable-mmr", dest="enable_mmr", action="store_false")
     parser.add_argument("--mmr-lambda", type=float, default=None)
@@ -167,6 +168,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-crag-refinement", dest="enable_crag_refinement", action="store_false")
     parser.add_argument("--crag-refine-top-sentences", type=int, default=None)
     parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
+    parser.add_argument("--max-retrieval-rounds", type=int, default=None)
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
     parser.add_argument(
@@ -178,6 +180,11 @@ def parse_args() -> argparse.Namespace:
         "--answer-only",
         action="store_true",
         help="Print only the final answer instead of the full JSON payload.",
+    )
+    parser.add_argument(
+        "--stdio-jsonl",
+        action="store_true",
+        help="Run as a persistent JSONL stdio service for the Web UI.",
     )
     return parser.parse_args()
 
@@ -191,6 +198,20 @@ def append_dialogue_turn(history: list[str], role: str, content: str) -> None:
 
 def render_dialogue_context(history: list[str]) -> str:
     return "\n".join(history).strip()
+
+
+def render_history_payload(history: object) -> str:
+    if not isinstance(history, list):
+        return ""
+    lines: list[str] = []
+    for item in history[-12:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        content = str(item.get("content") or "").strip()
+        if role and content:
+            lines.append(f"{role}: {content}")
+    return "\n".join(lines).strip()
 
 
 def ensure_index(args: argparse.Namespace) -> None:
@@ -234,7 +255,9 @@ def main() -> None:
         retrieval_cfg.get("neighbor_activity_story_sort_window", 1)
     )
     reranker_max_length = int(retrieval_cfg.get("reranker_max_length", 1024))
-    max_retrieval_rounds = inference_cfg.get("max_retrieval_rounds")
+    max_retrieval_rounds = args.max_retrieval_rounds
+    if max_retrieval_rounds is None:
+        max_retrieval_rounds = inference_cfg.get("max_retrieval_rounds")
     if max_retrieval_rounds is None:
         max_retrieval_rounds = 3
     max_retrieval_rounds = int(max_retrieval_rounds)
@@ -294,6 +317,10 @@ def main() -> None:
     if not enable_reranker:
         reranker_model = None
     enable_minirag = bool(resolve_config_value(args.enable_minirag, retrieval_cfg, "enable_minirag", False))
+    minirag_weight = float(resolve_config_value(args.minirag_weight, retrieval_cfg, "minirag_weight", 0.35))
+    minirag_mode_weights = retrieval_cfg.get("minirag_mode_weights") or {}
+    if not isinstance(minirag_mode_weights, dict):
+        minirag_mode_weights = {}
     minirag_index_path = None
     if enable_minirag:
         minirag_index_path = resolve_path_value(
@@ -356,11 +383,12 @@ def main() -> None:
         llama_batch_size = resolve_config_value(args.llama_batch_size, llama_cpp_cfg, "batch_size", None)
         llama_ubatch_size = resolve_config_value(args.llama_ubatch_size, llama_cpp_cfg, "ubatch_size", None)
         llama_flash_attn = resolve_config_value(args.llama_flash_attn, llama_cpp_cfg, "flash_attn", None)
+        llama_threads = int(resolve_config_value(args.threads, llama_cpp_cfg, "threads", 16))
         generator = LlamaCppRunner(
             llama_cli_path=llama_cli or DEFAULT_LLAMA_CLI_PATH,
             gguf_model_path=gguf_model or DEFAULT_GGUF_MODEL_PATH,
             lora_path=lora_path,
-            threads=args.threads,
+            threads=llama_threads,
             ctx_size=int(resolve_config_value(args.ctx_size, llama_cpp_cfg, "ctx_size", ctx_size)),
             max_tokens=max_tokens,
             temperature=temperature,
@@ -380,6 +408,8 @@ def main() -> None:
             sparse_top_k=sparse_top_k,
             fusion_top_k=fusion_top_k,
             rerank_top_k=rerank_top_k,
+            minirag_weight=minirag_weight,
+            minirag_mode_weights={str(key): float(value) for key, value in minirag_mode_weights.items()},
             enable_neighbor_expansion=enable_neighbor_expansion,
             neighbor_max_seed_docs=neighbor_max_seed_docs,
             neighbor_story_window=neighbor_story_window,
@@ -399,6 +429,83 @@ def main() -> None:
         use_model_hypothesis=use_model_hypothesis,
         use_model_conclusion_generation=use_model_conclusion_generation,
     )
+
+    if args.stdio_jsonl:
+        print(
+            json.dumps(
+                {
+                    "event": "ready",
+                    "backend": backend,
+                    "device": device,
+                    "runtime": pipeline.generator.describe_runtime(),
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        for raw_line in sys.stdin:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                request = json.loads(raw_line)
+                if not isinstance(request, dict):
+                    raise ValueError("request must be a JSON object")
+                if request.get("command") in {"exit", "quit", "stop"}:
+                    print(json.dumps({"event": "stopped"}, ensure_ascii=False), flush=True)
+                    break
+                question = str(request.get("message") or request.get("question") or "").strip()
+                if not question:
+                    raise ValueError("message cannot be empty")
+                dialogue_context = str(request.get("dialogue_context") or "").strip()
+                if not dialogue_context:
+                    dialogue_context = render_history_payload(request.get("history"))
+
+                old_rounds = pipeline.max_retrieval_rounds
+                old_max_tokens = getattr(pipeline.generator, "max_tokens", None)
+                if request.get("max_retrieval_rounds") not in (None, ""):
+                    pipeline.max_retrieval_rounds = max(1, int(request["max_retrieval_rounds"]))
+                if request.get("max_tokens") not in (None, "") and hasattr(pipeline.generator, "max_tokens"):
+                    pipeline.generator.max_tokens = max(1, int(request["max_tokens"]))
+
+                started = time.perf_counter()
+                stages: list[str] = []
+                try:
+                    result = pipeline.run(question, dialogue_context, progress_callback=stages.append)
+                    elapsed = time.perf_counter() - started
+                    print(
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "ok": True,
+                                "elapsed": elapsed,
+                                "stages": stages,
+                                "result": asdict(result),
+                                "answer": result.answer,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                finally:
+                    pipeline.max_retrieval_rounds = old_rounds
+                    if old_max_tokens is not None and hasattr(pipeline.generator, "max_tokens"):
+                        pipeline.generator.max_tokens = old_max_tokens
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "error",
+                            "ok": False,
+                            "error": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+        return
+
     dialogue_history: list[str] = []
     if args.dialogue_context.strip():
         dialogue_history.extend(

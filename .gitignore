@@ -32,6 +32,7 @@ env/
 # Local agent / CLI tooling
 /.openclaw-agents/
 /.openclaw-cli/
+/.worktrees/
 
 # Logs / temp
 *.log

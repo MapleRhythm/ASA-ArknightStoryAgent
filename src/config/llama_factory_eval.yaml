@@ -1,5 +1,5 @@
 model_name_or_path: model/qwen3.5-4b
-adapter_name_or_path: model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b
+adapter_name_or_path: model/lora/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1
 trust_remote_code: true
 
 stage: sft
@@ -16,8 +16,8 @@ overwrite_cache: true
 preprocessing_num_workers: 8
 dataloader_num_workers: 2
 
-output_dir: outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v2_qwen35_4b
-run_name: teacher_v2_plus_prompt_supplement_v2_qwen35_4b_eval
+output_dir: outputs/llama_factory_eval/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1
+run_name: teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1_eval
 overwrite_output_dir: true
 report_to: wandb
 

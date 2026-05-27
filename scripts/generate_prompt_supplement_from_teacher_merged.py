@@ -149,6 +149,19 @@ ABSTRACT_ENTITY_HINTS = (
     "物种",
     "类型",
 )
+GENERIC_VOICE_TAGS = (
+    "信赖触摸",
+    "信赖提升后交谈",
+    "行动失败",
+    "行动出发",
+    "选中干员",
+    "任命助理",
+    "任命队长",
+    "编入队伍",
+    "闲置",
+    "戳一下",
+    "问候",
+)
 
 
 def _expected_answer_type_is_compatible(question: str, intent: str, expected_answer_type: str) -> bool:
@@ -206,6 +219,20 @@ def _collect_grounding_texts(
                 if isinstance(value, str) and value:
                     texts.append(value)
     return texts
+
+
+def _generic_voice_evidence_only(evidence_docs: list[dict[str, Any]]) -> bool:
+    if not evidence_docs:
+        return True
+    tagged = 0
+    for doc in evidence_docs:
+        text = " ".join(
+            str(doc.get(key) or "")
+            for key in ("activity_name", "story_name", "story_id", "avg_tag", "clean_text")
+        )
+        if any(tag in text for tag in GENERIC_VOICE_TAGS):
+            tagged += 1
+    return tagged == len(evidence_docs)
 
 
 def _is_grounded_follow_up_entity(
@@ -700,6 +727,10 @@ def build_merged_conclusion_prompt_bundle(
         "22. retrieve_more 时，follow_up_hypothesis 新增的实体或桥接词必须已经出现在当前证据、历史检索上下文或当前假设文档中；不得发明“医疗干员”“某个影子”这类抽象标签充当实体。",
         "23. `expected_answer_type` 必须和问题形式匹配：身份类问题用“身份关系”；原因类问题用“原因/动机”；关系类问题用“关系问答”或“身份关系”；台词类问题用“角色台词”；内容概括类问题用“事件概要”或“事实问答”。",
         "24. 特别注意：像“在事件中扮演什么角色/负责什么/做了什么/起了什么作用”这类问题，当前 hypothesis 和 follow_up_hypothesis 的 `expected_answer_type` 都不要写成“身份关系”。",
+        "25. 如果证据只有通用干员语音、信赖触摸、行动失败、行动出发、选中干员等碎片，身份/关系/原因/真相类问题禁止 answer_directly。",
+        "26. answer_directly 的答案必须逐点受当前证据支撑；禁止补入证据外的种族、阵营、性格、战斗能力、结局或人设评价。",
+        "27. retrieve_more 的 missing_slots 必须是 2-5 个短的可检索缺口，禁止“更多信息/完整剧情/深层含义/具体背景/相关资料”等泛词。",
+        "28. follow_up_hypothesis 必须逐项回应 missing_slots，不能只复读原问题。",
     ]
 
     if avoid_questions:
@@ -882,6 +913,24 @@ def _is_valid_conclusion_decision(
                 return False
     current_round, max_rounds = _extract_round_info(user_text)
     next_action = str(normalized_payload.get("next_action") or "").strip()
+    if next_action == "answer_directly":
+        current_question = str(normalized_payload.get("question") or "").strip()
+        current_answer_type = ""
+        if isinstance(current_hypothesis, dict):
+            current_answer_type = str(current_hypothesis.get("expected_answer_type") or "")
+        if _generic_voice_evidence_only(evidence_docs) and any(
+            token in current_question + current_answer_type
+            for token in ("身份", "关系", "为什么", "原因", "真相", "身世", "来历")
+        ):
+            return False
+        if isinstance(current_hypothesis, dict):
+            current_entities = current_hypothesis.get("entities") or []
+            if current_entities and not _primary_entity_is_grounded(
+                str(current_entities[0]).strip(),
+                evidence_docs=evidence_docs,
+                candidate_entities=extract_primary_entity_candidates(evidence_docs),
+            ):
+                return False
     if current_round is not None and max_rounds is not None:
         if next_action == "abstain" and current_round < max_rounds:
             return False

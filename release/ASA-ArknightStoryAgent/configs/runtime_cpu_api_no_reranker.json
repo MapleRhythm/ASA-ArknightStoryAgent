@@ -6,6 +6,16 @@
     "sparse_top_k": 80,
     "enable_minirag": true,
     "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+    "minirag_weight": 0.35,
+    "minirag_mode_weights": {
+      "fact": 0.5,
+      "relation": 1.0,
+      "causality": 1.0,
+      "reveal": 1.0,
+      "reasoning": 0.75,
+      "mystery": 0.75,
+      "answerability": 0.75
+    },
     "fusion_top_k": 50,
     "rerank_top_k": 20,
     "rerank_batch_size": 4,
@@ -27,6 +37,10 @@
     "extra_body": {}
   },
   "inference": {
+    "pipeline_mode": "answer_then_retrieve_refine",
+    "initial_prompt_hint": "直接回答用户问题。提示词越少越好；可以使用你已有的剧情知识，但不确定的细节不要写死。",
+    "initial_answer_max_tokens": 1024,
+    "refine_answer_max_tokens": 1536,
     "max_retrieval_rounds": 3,
     "prompt_evidence_top_k": 10,
     "enable_mmr": true,
@@ -37,6 +51,7 @@
     "crag_refine_max_sentences": 24,
     "self_consistency_samples": 1,
     "self_consistency_temperature": 0.7,
+    "answer_grounding_mode": "weak",
     "use_model_hypothesis": true,
     "use_model_conclusion_generation": true
   }

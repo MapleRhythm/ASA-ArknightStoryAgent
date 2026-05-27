@@ -24,11 +24,17 @@ TOP_KS="${TOP_KS:-1,5,10,20}"
 LISTWISE="${LISTWISE:-data/processed/evidence_chain_reranker/batch_v2_dpo_filtered/reranker_listwise.jsonl}"
 INDEX_DIR="${INDEX_DIR:-indexes/arknights_story}"
 OLD_RERANKER="${OLD_RERANKER:-model/reranker/bge-reranker-v2-m3-evidence-chain-answerability}"
-NEW_RERANKER="${NEW_RERANKER:-model/reranker/bge-reranker-v2-m3-evidence-chain-dpo-v1}"
+NEW_RERANKER="${NEW_RERANKER:-}"
 OUT_DIR="${OUT_DIR:-outputs/retrieval_eval}"
 STAMP="${STAMP:-$(date +%Y%m%d_%H%M%S)}"
 
 mkdir -p "$OUT_DIR"
+
+if [[ -z "$NEW_RERANKER" ]]; then
+  echo "[eval] NEW_RERANKER is required; the old DPO artifact is no longer kept locally." >&2
+  echo "[eval] Example: NEW_RERANKER=model/reranker/<candidate> bash scripts/run_reranker_recall_eval.sh" >&2
+  exit 2
+fi
 
 if [[ "$DEVICE" == cuda* ]]; then
   python - <<'PY'

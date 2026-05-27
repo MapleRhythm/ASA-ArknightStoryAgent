@@ -27,14 +27,14 @@ model/lora/asa-arknightstoryagent-4b-lora/
   tokenizer.json
 ```
 
-创建仓库并上传：
+默认发布用户名为 `MapleRhythm`。创建仓库并上传：
 
 ```bash
 huggingface-cli repo create asa-arknightstoryagent-4b-lora \
   --type model \
   --private
 
-huggingface-cli upload <你的HF用户名>/asa-arknightstoryagent-4b-lora \
+huggingface-cli upload MapleRhythm/asa-arknightstoryagent-4b-lora \
   model/lora/asa-arknightstoryagent-4b-lora \
   . \
   --repo-type model
@@ -43,7 +43,7 @@ huggingface-cli upload <你的HF用户名>/asa-arknightstoryagent-4b-lora \
 部署机下载：
 
 ```bash
-huggingface-cli download <你的HF用户名>/asa-arknightstoryagent-4b-lora \
+huggingface-cli download MapleRhythm/asa-arknightstoryagent-4b-lora \
   --local-dir model/lora/asa-arknightstoryagent-4b-lora
 ```
 
@@ -54,7 +54,7 @@ huggingface-cli download <你的HF用户名>/asa-arknightstoryagent-4b-lora \
 本地文件：
 
 ```text
-model/gguf/qwen3.5-4b-q4_k_m.gguf
+model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 ```
 
 上传：
@@ -64,19 +64,29 @@ huggingface-cli repo create asa-arknightstoryagent-4b-gguf \
   --type model \
   --private
 
-huggingface-cli upload <你的HF用户名>/asa-arknightstoryagent-4b-gguf \
-  model/gguf/qwen3.5-4b-q4_k_m.gguf \
-  qwen3.5-4b-q4_k_m.gguf \
+huggingface-cli upload MapleRhythm/asa-arknightstoryagent-4b-gguf \
+  model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf \
+  qwen3.5-4b-lora-merged-q4_k_m.gguf \
   --repo-type model
 ```
 
 下载：
 
 ```bash
-huggingface-cli download <你的HF用户名>/asa-arknightstoryagent-4b-gguf \
-  qwen3.5-4b-q4_k_m.gguf \
+huggingface-cli download MapleRhythm/asa-arknightstoryagent-4b-gguf \
+  qwen3.5-4b-lora-merged-q4_k_m.gguf \
   --local-dir model/gguf
 ```
+
+## 3.1 运行时 LoRA GGUF
+
+CPU 本地发布版默认不使用运行时 LoRA GGUF，而是使用已合并 LoRA 的 GGUF：
+
+```text
+model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
+```
+
+如果你后续确认某个 llama.cpp 版本可以正确转换并加载 Qwen3.5 LoRA GGUF，再单独发布运行时 adapter。
 
 ## 4. 上传微调 reranker
 
@@ -93,7 +103,7 @@ huggingface-cli repo create asa-evidence-chain-reranker \
   --type model \
   --private
 
-huggingface-cli upload <你的HF用户名>/asa-evidence-chain-reranker \
+huggingface-cli upload MapleRhythm/asa-evidence-chain-reranker \
   model/reranker/bge-reranker-v2-m3-evidence-chain-answerability \
   . \
   --repo-type model
@@ -102,7 +112,7 @@ huggingface-cli upload <你的HF用户名>/asa-evidence-chain-reranker \
 下载：
 
 ```bash
-huggingface-cli download <你的HF用户名>/asa-evidence-chain-reranker \
+huggingface-cli download MapleRhythm/asa-evidence-chain-reranker \
   --local-dir model/reranker/bge-reranker-v2-m3-evidence-chain-answerability
 ```
 

@@ -2,28 +2,26 @@
 
 目标：
 
-- 开发分支保留完整训练、数据生成、评测和推理代码。
-- 发布分支只保留 `release/ASA-ArknightStoryAgent/` 内的推理发布版内容。
-- 开发分支更新后，用一个指令同步到发布分支。
+- `main`：主分支，给用户看的推理发布版，只包含可部署内容。
+- `dev-training`：副分支，保留完整训练、数据生成、评测和开发代码。
+- 在 `dev-training` 更新发布目录后，用一个指令同步到 `main`。
 
-## 分支建议
-
-推荐命名：
+## 推荐分支结构
 
 ```text
-master 或 dev-training      # 原始训练开发版
-inference-release           # 推理发布版
+main           # 推理发布版，GitHub 默认分支
+dev-training   # 原始训练开发版
 ```
 
-如果你想把当前 `master` 改名为开发分支：
+当前仓库如果还在 `master`，建议先把它改成开发分支：
 
 ```bash
 git branch -m dev-training
 ```
 
-不改名也可以，脚本会把当前分支视为开发分支。
+然后用同步脚本创建/更新 `main`。
 
-## 一键同步
+## 一键同步到主分支
 
 在开发分支运行：
 
@@ -31,17 +29,17 @@ git branch -m dev-training
 bash scripts/sync_inference_release_branch.sh
 ```
 
-脚本会：
+脚本默认会：
 
-- 校验发布目录里的 Python、JSON、shell 脚本。
-- 创建或复用 `inference-release` 分支。
-- 创建或复用 worktree：`.worktrees/inference-release`。
-- 把 `release/ASA-ArknightStoryAgent/` 同步为发布分支根目录内容。
+- 校验 `release/ASA-ArknightStoryAgent/` 里的 Python、JSON、shell 脚本。
+- 创建或复用 `main` 分支。
+- 创建或复用 worktree：`.worktrees/main`。
+- 把 `release/ASA-ArknightStoryAgent/` 同步为 `main` 分支根目录内容。
 
-默认只同步，不提交。查看结果：
+默认只同步，不提交。查看发布分支状态：
 
 ```bash
-git -C .worktrees/inference-release status
+git -C .worktrees/main status
 ```
 
 ## 同步并提交
@@ -57,26 +55,29 @@ COMMIT=1 COMMIT_MESSAGE="release: sync inference package" \
   bash scripts/sync_inference_release_branch.sh
 ```
 
-## 同步、提交并推送
+## 同步、提交并推送主分支
 
 ```bash
 COMMIT=1 PUSH=1 bash scripts/sync_inference_release_branch.sh
 ```
 
-首次推送后，GitHub 上会出现两个分支：
+推送开发分支：
 
-```text
-dev-training 或 master
-inference-release
+```bash
+git push -u origin dev-training
 ```
 
-可以把 `inference-release` 设置为给用户看的发布分支，或单独创建 GitHub Release。
+推送后到 GitHub 仓库设置里把默认分支设为：
+
+```text
+main
+```
 
 ## 常用变量
 
 ```bash
-RELEASE_BRANCH=inference-release
-WORKTREE_DIR=.worktrees/inference-release
+RELEASE_BRANCH=main
+WORKTREE_DIR=.worktrees/main
 RELEASE_SOURCE_DIR=release/ASA-ArknightStoryAgent
 COMMIT=0
 PUSH=0
@@ -84,7 +85,7 @@ SKIP_VALIDATE=0
 FORCE=0
 ```
 
-如果 release worktree 有未提交改动，脚本默认会停止，避免覆盖手工修改。确认要用开发分支发布目录覆盖它时：
+如果 `main` worktree 有未提交改动，脚本默认会停止，避免覆盖手工修改。确认要用开发分支发布目录覆盖它时：
 
 ```bash
 FORCE=1 bash scripts/sync_inference_release_branch.sh
@@ -92,7 +93,7 @@ FORCE=1 bash scripts/sync_inference_release_branch.sh
 
 ## 推荐规则
 
-- 不要直接在 `inference-release` 分支长期手改功能代码；发布改动应先回到开发分支的 `release/ASA-ArknightStoryAgent/`。
-- 发布分支只放可部署推理版，不放训练数据、teacher 生成脚本、wandb、LLaMA-Factory 配置和训练输出。
-- MiniRAG 图可以保留在发布分支：`indexes/arknights_story_minirag/graph.json`。
+- 不要在 `main` 长期手改功能代码；发布改动应先进入 `dev-training` 的 `release/ASA-ArknightStoryAgent/`。
+- `main` 只放可部署推理版，不放训练数据、teacher 生成脚本、wandb、LLaMA-Factory 配置和训练输出。
+- MiniRAG 图可以保留在 `main`：`indexes/arknights_story_minirag/graph.json`。
 - 模型权重、原始游戏数据、API key、日志不要提交到任一分支。

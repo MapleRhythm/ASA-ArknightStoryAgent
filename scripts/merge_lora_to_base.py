@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -66,16 +68,29 @@ def main() -> None:
 
     for optional_name in (
         "chat_template.jinja",
-        "preprocessor_config.json",
-        "processor_config.json",
         "generation_config.json",
-        "video_preprocessor_config.json",
     ):
         source = args.base_model / optional_name
         if source.exists():
             target = args.output_dir / optional_name
-            if not target.exists():
-                target.write_bytes(source.read_bytes())
+            target.write_bytes(source.read_bytes())
+
+    # AutoModelForCausalLM may save a text-only Qwen3.5 config. Keep that config
+    # instead of copying the top-level multimodal config from the original base:
+    # a text-only checkpoint with a multimodal config makes vLLM look for
+    # missing visual.* weights.
+    config_path = args.output_dir / "config.json"
+    if config_path.exists():
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        if config.get("model_type") == "qwen3_5_text":
+            for optional_name in ("preprocessor_config.json", "processor_config.json", "video_preprocessor_config.json"):
+                optional_path = args.output_dir / optional_name
+                if optional_path.exists():
+                    optional_path.unlink()
+
+    readme_source = args.base_model / "README.md"
+    if readme_source.exists():
+        shutil.copy2(readme_source, args.output_dir / "README.base.md")
 
     print("Merge completed.", flush=True)
 

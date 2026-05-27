@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ASA-ArknightStoryAgent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-title">ASA</div>
+            <div class="brand-subtitle">Arknight Story Agent</div>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-title">运行模式</div>
+          <label class="mode-card active">
+            <input type="radio" name="mode" value="cpu-local" checked />
+            <span>
+              <b>CPU 本地 4B</b>
+              <small>GGUF + LoRA，无 reranker</small>
+            </span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="mode" value="cpu-api" />
+            <span>
+              <b>CPU + API</b>
+              <small>本地检索，远程教师/大模型生成</small>
+            </span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="mode" value="gpu-reranker" />
+            <span>
+              <b>GPU 完整模式</b>
+              <small>reranker + vLLM 4B LoRA</small>
+            </span>
+          </label>
+        </section>
+
+        <section class="panel compact">
+          <div class="panel-title">推理设置</div>
+          <label class="field">
+            <span>最大检索轮次</span>
+            <input id="maxRounds" type="number" min="1" max="5" value="3" />
+          </label>
+          <label class="field">
+            <span>最大输出 tokens</span>
+            <input id="maxTokens" type="number" min="256" max="8192" step="128" value="1024" />
+          </label>
+          <label class="field">
+            <span>超时秒数</span>
+            <input id="timeout" type="number" min="60" max="3600" step="30" value="900" />
+          </label>
+        </section>
+
+        <section class="panel compact status-panel">
+          <div class="panel-title">系统状态</div>
+          <div class="service-controls">
+            <button id="startServiceBtn" type="button">启动服务</button>
+            <button id="stopServiceBtn" type="button" class="danger-btn">关闭服务</button>
+          </div>
+          <div id="health" class="health">正在检查...</div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">Local RAG Console</div>
+            <h1>明日方舟剧情问答</h1>
+          </div>
+          <button id="clearBtn" class="ghost-btn">清空对话</button>
+        </header>
+
+        <section id="chat" class="chat">
+          <div class="empty-state">
+            <div class="empty-card">
+              <span class="empty-kicker">示例问题</span>
+              <button data-example="凯尔希在14章中为什么似乎死了？">凯尔希在14章中为什么似乎死了？</button>
+              <button data-example="炎景公主一事具体指什么？">炎景公主一事具体指什么？</button>
+              <button data-example="真龙为什么不愿轻易启动不反？">真龙为什么不愿轻易启动不反？</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="trace-dock">
+          <div class="trace-header">
+            <span>运行轨迹</span>
+            <small id="latency">待机</small>
+          </div>
+          <pre id="trace">等待问题输入。</pre>
+        </section>
+
+        <form id="composer" class="composer">
+          <textarea id="message" rows="1" placeholder="输入剧情问题，Enter 发送，Shift+Enter 换行"></textarea>
+          <button id="sendBtn" type="submit">发送</button>
+        </form>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

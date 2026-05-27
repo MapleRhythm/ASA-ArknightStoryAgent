@@ -106,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dense-top-k", type=int, default=120)
     parser.add_argument("--sparse-top-k", type=int, default=120)
     parser.add_argument("--minirag-top-k", type=int, default=120)
-    parser.add_argument("--minirag-weight", type=float, default=1.2)
+    parser.add_argument("--minirag-weight", type=float, default=0.35)
     parser.add_argument(
         "--minirag-fusion-mode",
         choices=("score", "append"),
@@ -143,6 +143,27 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.25,
         help="Character-trigram Jaccard threshold for a hit.",
+    )
+    parser.add_argument(
+        "--overlap-threshold",
+        type=float,
+        default=0.32,
+        help=(
+            "Character-trigram overlap coefficient threshold for long gold/multi-chunk hits. "
+            "A hit is accepted if Jaccard passes, or overlap passes with enough shared grams."
+        ),
+    )
+    parser.add_argument(
+        "--min-overlap-grams",
+        type=int,
+        default=60,
+        help="Minimum shared trigrams required when using overlap-threshold.",
+    )
+    parser.add_argument(
+        "--min-candidate-grams",
+        type=int,
+        default=80,
+        help="Minimum candidate trigrams required when using overlap-threshold.",
     )
     parser.add_argument(
         "--index-dir",
@@ -194,6 +215,64 @@ def trigram_jaccard(left: str, right: str) -> float:
     return len(intersection) / len(union)
 
 
+def trigram_overlap_stats(left: str, right: str) -> tuple[float, int, int]:
+    left_grams = char_trigrams(normalize_text(left))
+    right_grams = char_trigrams(normalize_text(right))
+    if not left_grams or not right_grams:
+        return 0.0, 0, len(right_grams)
+    shared = len(left_grams & right_grams)
+    return shared / min(len(left_grams), len(right_grams)), shared, len(right_grams)
+
+
+def candidate_texts(item: dict[str, Any]) -> list[tuple[str, str]]:
+    document = item["document"]
+    texts: list[tuple[str, str]] = []
+    clean_text = str(document.get("clean_text") or "")
+    if clean_text:
+        texts.append(("chunk", clean_text))
+    chain_text = str(item.get("evidence_chain_text") or "")
+    if chain_text:
+        texts.append(("chain", chain_text))
+    seen: set[str] = set()
+    deduped: list[tuple[str, str]] = []
+    for source, text in texts:
+        normalized = normalize_text(text)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append((source, text))
+    return deduped
+
+
+def candidate_hit_source(
+    item: dict[str, Any],
+    gold_text: str,
+    *,
+    jaccard_threshold: float,
+    overlap_threshold: float,
+    min_overlap_grams: int,
+    min_candidate_grams: int,
+) -> tuple[str, float] | None:
+    best_source = ""
+    best_score = 0.0
+    for source, text in candidate_texts(item):
+        jaccard = trigram_jaccard(gold_text, text)
+        overlap, shared_grams, candidate_grams = trigram_overlap_stats(gold_text, text)
+        score = max(jaccard, overlap)
+        if score > best_score:
+            best_source = source
+            best_score = score
+        if jaccard >= jaccard_threshold:
+            return source, jaccard
+        if (
+            overlap >= overlap_threshold
+            and shared_grams >= min_overlap_grams
+            and candidate_grams >= min_candidate_grams
+        ):
+            return source, overlap
+    return None
+
+
 def load_listwise(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
@@ -216,6 +295,9 @@ def evaluate(
     query_config: QueryConfig,
     top_ks: list[int],
     jaccard_threshold: float,
+    overlap_threshold: float,
+    min_overlap_grams: int,
+    min_candidate_grams: int,
     skip_rerank: bool = False,
 ) -> dict[str, Any]:
     max_k = max(top_ks)
@@ -252,10 +334,20 @@ def evaluate(
             else retriever.search(query, config=query_config)
         )
         first_hit_rank: int | None = None
+        hit_source = ""
+        hit_score = 0.0
         for rank, item in enumerate(results[:max_k], start=1):
-            doc_text = str(item["document"].get("clean_text") or "")
-            if trigram_jaccard(gold_text, doc_text) >= jaccard_threshold:
+            hit = candidate_hit_source(
+                item,
+                gold_text,
+                jaccard_threshold=jaccard_threshold,
+                overlap_threshold=overlap_threshold,
+                min_overlap_grams=min_overlap_grams,
+                min_candidate_grams=min_candidate_grams,
+            )
+            if hit is not None:
                 first_hit_rank = rank
+                hit_source, hit_score = hit
                 break
 
         overall_count += 1
@@ -276,6 +368,9 @@ def evaluate(
         overall_reciprocal_rank_sum += reciprocal_rank
         overall_first_hit_rank_sum += first_hit_rank
         per_type_stats["rr_sum"] += reciprocal_rank
+        per_type_stats.setdefault("hit_sources", {})
+        per_type_stats["hit_sources"][hit_source] = per_type_stats["hit_sources"].get(hit_source, 0) + 1
+        per_type_stats["best_hit_score_sum"] = per_type_stats.get("best_hit_score_sum", 0.0) + hit_score
         for k in top_ks:
             if first_hit_rank <= k:
                 overall_hits[k] += 1
@@ -296,6 +391,8 @@ def evaluate(
             "count": count,
             "missed": stats["missed"],
             "mrr": round(stats["rr_sum"] / count, 4),
+            "hit_sources": stats.get("hit_sources", {}),
+            "mean_hit_jaccard": round(stats.get("best_hit_score_sum", 0.0) / max(count - stats["missed"], 1), 4),
             "recall": {
                 f"@{k}": round(stats["hits"][k] / count, 4) for k in top_ks
             },
@@ -331,12 +428,23 @@ def _first_hit_rank(
     gold_text: str,
     *,
     jaccard_threshold: float,
+    overlap_threshold: float,
+    min_overlap_grams: int,
+    min_candidate_grams: int,
     max_k: int,
-) -> int | None:
+) -> tuple[int, str, float] | None:
     for rank, item in enumerate(hits[:max_k], start=1):
-        doc_text = str(item["document"].get("clean_text") or "")
-        if trigram_jaccard(gold_text, doc_text) >= jaccard_threshold:
-            return rank
+        hit = candidate_hit_source(
+            item,
+            gold_text,
+            jaccard_threshold=jaccard_threshold,
+            overlap_threshold=overlap_threshold,
+            min_overlap_grams=min_overlap_grams,
+            min_candidate_grams=min_candidate_grams,
+        )
+        if hit is not None:
+            source, score = hit
+            return rank, source, score
     return None
 
 
@@ -347,6 +455,9 @@ def evaluate_source_oracle(
     query_config: QueryConfig,
     top_ks: list[int],
     jaccard_threshold: float,
+    overlap_threshold: float,
+    min_overlap_grams: int,
+    min_candidate_grams: int,
 ) -> dict[str, Any]:
     """Compare whether gold evidence enters each pre-rerank source pool.
 
@@ -362,6 +473,8 @@ def evaluate_source_oracle(
             "missed": 0,
             "rr_sum": 0.0,
             "first_hit_rank_sum": 0,
+            "hit_sources": {},
+            "best_hit_score_sum": 0.0,
             "hits": {k: 0 for k in top_ks},
         }
         for name in source_names
@@ -424,20 +537,23 @@ def evaluate_source_oracle(
             "minirag": minirag_hits,
             "fusion": fusion_hits,
         }
-        source_ranks: dict[str, int | None] = {}
+        source_ranks: dict[str, tuple[int, str, float] | None] = {}
 
         for source_name, hits in hit_sets.items():
             stats = buckets[source_name]
             stats["count"] += 1
-            first_hit_rank = _first_hit_rank(
+            hit = _first_hit_rank(
                 hits,
                 gold_text,
                 jaccard_threshold=jaccard_threshold,
+                overlap_threshold=overlap_threshold,
+                min_overlap_grams=min_overlap_grams,
+                min_candidate_grams=min_candidate_grams,
                 max_k=max_k,
             )
             if source_name in {"dense", "sparse", "minirag"}:
-                source_ranks[source_name] = first_hit_rank
-            if first_hit_rank is None:
+                source_ranks[source_name] = hit
+            if hit is None:
                 stats["missed"] += 1
                 if len(source_misses[source_name]) < 10:
                     source_misses[source_name].append(
@@ -448,19 +564,22 @@ def evaluate_source_oracle(
                         }
                     )
                 continue
+            first_hit_rank, hit_source, hit_score = hit
             stats["rr_sum"] += 1.0 / first_hit_rank
             stats["first_hit_rank_sum"] += first_hit_rank
+            stats["hit_sources"][hit_source] = stats["hit_sources"].get(hit_source, 0) + 1
+            stats["best_hit_score_sum"] += hit_score
             for k in top_ks:
                 if first_hit_rank <= k:
                     stats["hits"][k] += 1
 
         union_rank_candidates = [
-            rank for rank in source_ranks.values() if rank is not None
+            hit for hit in source_ranks.values() if hit is not None
         ]
-        union_first_hit_rank = min(union_rank_candidates) if union_rank_candidates else None
+        union_hit = min(union_rank_candidates, key=lambda hit: hit[0]) if union_rank_candidates else None
         union_stats = buckets["source_union"]
         union_stats["count"] += 1
-        if union_first_hit_rank is None:
+        if union_hit is None:
             union_stats["missed"] += 1
             if len(source_misses["source_union"]) < 10:
                 source_misses["source_union"].append(
@@ -471,8 +590,11 @@ def evaluate_source_oracle(
                     }
                 )
         else:
+            union_first_hit_rank, union_hit_source, union_hit_score = union_hit
             union_stats["rr_sum"] += 1.0 / union_first_hit_rank
             union_stats["first_hit_rank_sum"] += union_first_hit_rank
+            union_stats["hit_sources"][union_hit_source] = union_stats["hit_sources"].get(union_hit_source, 0) + 1
+            union_stats["best_hit_score_sum"] += union_hit_score
             for k in top_ks:
                 if union_first_hit_rank <= k:
                     union_stats["hits"][k] += 1
@@ -498,6 +620,8 @@ def evaluate_source_oracle(
                 if count
                 else 0.0
             ),
+            "hit_sources": stats.get("hit_sources", {}),
+            "mean_hit_jaccard": round(stats.get("best_hit_score_sum", 0.0) / max(hit_count, 1), 4),
             "recall": {
                 f"@{k}": round(stats["hits"][k] / count, 4) if count else 0.0
                 for k in top_ks
@@ -566,6 +690,9 @@ def main() -> int:
         query_config=query_config,
         top_ks=args.top_ks,
         jaccard_threshold=args.jaccard_threshold,
+        overlap_threshold=args.overlap_threshold,
+        min_overlap_grams=args.min_overlap_grams,
+        min_candidate_grams=args.min_candidate_grams,
         skip_rerank=args.skip_rerank,
     )
     source_oracle = None
@@ -576,6 +703,9 @@ def main() -> int:
             query_config=query_config,
             top_ks=args.top_ks,
             jaccard_threshold=args.jaccard_threshold,
+            overlap_threshold=args.overlap_threshold,
+            min_overlap_grams=args.min_overlap_grams,
+            min_candidate_grams=args.min_candidate_grams,
         )
 
     summary = {
@@ -605,6 +735,9 @@ def main() -> int:
             "rerank_batch_size": query_config.rerank_batch_size,
         },
         "jaccard_threshold": args.jaccard_threshold,
+        "overlap_threshold": args.overlap_threshold,
+        "min_overlap_grams": args.min_overlap_grams,
+        "min_candidate_grams": args.min_candidate_grams,
         "top_ks": args.top_ks,
         **result,
     }

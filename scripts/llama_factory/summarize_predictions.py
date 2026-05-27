@@ -11,20 +11,25 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REFERENCE_FILE = (
-    PROJECT_ROOT / "data" / "processed" / "llama_factory" / "teacher_v2_plus_prompt_supplement_v2" / "test.json"
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "llama_factory"
+    / "teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1"
+    / "test.json"
 )
 DEFAULT_PREDICTIONS_FILE = (
     PROJECT_ROOT
     / "outputs"
     / "llama_factory_eval"
-    / "teacher_v2_plus_prompt_supplement_v2_qwen35_4b"
+    / "teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1"
     / "generated_predictions.jsonl"
 )
 DEFAULT_OUTPUT_FILE = (
     PROJECT_ROOT
     / "outputs"
     / "llama_factory_eval"
-    / "teacher_v2_plus_prompt_supplement_v2_qwen35_4b"
+    / "teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1"
     / "custom_metrics.json"
 )
 

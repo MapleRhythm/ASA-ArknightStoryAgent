@@ -133,6 +133,47 @@ RELATION_GATE_KEYWORDS = frozenset(
         "真身",
     }
 )
+CHAPTER_SCOPE_EXCLUDED_ACTIVITY_IDS = frozenset(
+    {
+        "operator_voice",
+        "operator_handbook",
+        "moegirl_lore",
+        "obt",
+    }
+)
+
+
+def document_chapter_scope_key(document: dict[str, Any]) -> str:
+    """Return the story/event scope used to isolate MiniRAG graph traversal."""
+    activity_id = str(document.get("activity_id") or "").strip()
+    if activity_id and activity_id not in CHAPTER_SCOPE_EXCLUDED_ACTIVITY_IDS:
+        return f"activity:{activity_id}"
+
+    story_id = str(document.get("story_id") or document.get("story_key") or "").strip()
+    match = re.search(r"(?:^|/)activities/([^/]+)/", story_id)
+    if match:
+        return f"activity:{match.group(1)}"
+    match = re.search(r"(?:^|/)(?:level_)?main[_-](\d{1,2})(?:[-_/]|$)", story_id, flags=re.IGNORECASE)
+    if match:
+        return f"activity:main_{int(match.group(1))}"
+
+    zone_id = str(document.get("zone_id") or "").strip()
+    if zone_id.startswith("main_"):
+        return f"activity:{zone_id}"
+    return ""
+
+
+def document_chapter_scope_label(document: dict[str, Any]) -> str:
+    scope = document_chapter_scope_key(document)
+    if not scope:
+        return ""
+    activity_name = str(document.get("activity_name") or "").strip()
+    chapter_name = str(document.get("chapter_name") or "").strip()
+    zone_name = str(document.get("zone_name") or "").strip()
+    label_parts = [part for part in (activity_name, chapter_name, zone_name) if part]
+    if label_parts:
+        return f"{scope} ({' / '.join(label_parts[:2])})"
+    return scope
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [
@@ -425,6 +466,8 @@ def build_minirag_graph(
     entity_to_doc_indices: dict[str, list[int]] = {}
     entity_to_doc_weights: dict[str, dict[str, float]] = {}
     doc_to_entities: list[list[str]] = []
+    doc_chapter_keys: list[str] = []
+    chapter_doc_indices: dict[str, list[int]] = {}
 
     if progress:
         print(
@@ -450,6 +493,10 @@ def build_minirag_graph(
     total_documents = len(documents)
     progress_interval = max(1, progress_interval)
     for doc_index, document in enumerate(documents):
+        chapter_key = document_chapter_scope_key(document)
+        doc_chapter_keys.append(chapter_key)
+        if chapter_key:
+            chapter_doc_indices.setdefault(chapter_key, []).append(doc_index)
         text = "\n".join(
             str(document.get(key) or "")
             for key in ("search_text", "clean_text", "activity_name", "story_name", "stage_code", "stage_name")
@@ -492,7 +539,7 @@ def build_minirag_graph(
             )
 
     return {
-        "version": 3 if teacher_relations else 1,
+        "version": 4 if teacher_relations else 2,
         "documents_path": str(DOCUMENTS_PATH),
         "document_count": len(documents),
         "entity_count": len(entity_to_doc_indices),
@@ -500,6 +547,8 @@ def build_minirag_graph(
         "entity_to_doc_indices": entity_to_doc_indices,
         "entity_to_doc_weights": entity_to_doc_weights,
         "doc_to_entities": doc_to_entities,
+        "doc_chapter_keys": doc_chapter_keys,
+        "chapter_doc_indices": chapter_doc_indices,
         "doc_id_to_index": {
             str(document.get("id")): doc_index
             for doc_index, document in enumerate(documents)
@@ -517,6 +566,8 @@ class MiniRAGIndex:
     entity_to_doc_indices: dict[str, list[int]]
     entity_to_doc_weights: dict[str, dict[int, float]]
     doc_to_entities: list[list[str]]
+    doc_chapter_keys: list[str]
+    chapter_doc_indices: dict[str, list[int]]
     alias_lookup: dict[str, str]
     generic_entities: set[str]
     teacher_relations: list[dict[str, str]]
@@ -575,6 +626,17 @@ class MiniRAGIndex:
                 for entities in payload.get("doc_to_entities", [])
                 if isinstance(entities, list)
             ],
+            doc_chapter_keys=[
+                str(key)
+                for key in payload.get("doc_chapter_keys", [])
+            ]
+            if isinstance(payload.get("doc_chapter_keys"), list)
+            else [],
+            chapter_doc_indices={
+                str(chapter_key): [int(index) for index in indices]
+                for chapter_key, indices in (payload.get("chapter_doc_indices") or {}).items()
+                if isinstance(indices, list)
+            },
             alias_lookup=build_alias_lookup(alias_map),
             generic_entities=set(str(key) for key in payload.get("entity_to_doc_indices", {})),
             teacher_relations=teacher_relations,
@@ -613,6 +675,7 @@ class MiniRAGIndex:
         endpoint_weight: float = 0.5,
         evidence_weight: float = 2.4,
         weak_evidence_weight: float = 0.45,
+        allowed_doc_indices: set[int] | None = None,
     ) -> None:
         seen_relations: set[tuple[str, str, str, str]] = set()
         query_entity_set = set(query_entities)
@@ -628,6 +691,8 @@ class MiniRAGIndex:
                 if key in seen_relations:
                     continue
                 seen_relations.add(key)
+                if not self._relation_allowed(relation, allowed_doc_indices):
+                    continue
                 endpoints = [str(relation.get("head") or ""), str(relation.get("tail") or "")]
                 matched_endpoints = sum(
                     1
@@ -649,14 +714,26 @@ class MiniRAGIndex:
                 effective_evidence_weight = (
                     evidence_weight if strong_relation_match else weak_evidence_weight
                 )
-                for rank, doc_index in enumerate(self.relation_evidence_doc_indices.get(key, [])[:8]):
+                evidence_doc_indices = self._filter_doc_indices(
+                    self.relation_evidence_doc_indices.get(key, [])[:8],
+                    allowed_doc_indices,
+                )
+                for rank, doc_index in enumerate(evidence_doc_indices):
                     scores[doc_index] = scores.get(doc_index, 0.0) + relation_bonus * effective_evidence_weight / (rank + 1)
                 for endpoint in endpoints:
-                    for rank, doc_index in enumerate(self.entity_to_doc_indices.get(endpoint, [])[:128]):
+                    endpoint_docs = self._filter_doc_indices(
+                        self.entity_to_doc_indices.get(endpoint, [])[:128],
+                        allowed_doc_indices,
+                    )
+                    for rank, doc_index in enumerate(endpoint_docs):
                         scores[doc_index] = scores.get(doc_index, 0.0) + endpoint_weight / (rank + 1)
                 if strong_relation_match:
                     for endpoint in endpoints:
-                        for rank, doc_index in enumerate(self.entity_to_doc_indices.get(endpoint, [])[:32]):
+                        endpoint_docs = self._filter_doc_indices(
+                            self.entity_to_doc_indices.get(endpoint, [])[:32],
+                            allowed_doc_indices,
+                        )
+                        for rank, doc_index in enumerate(endpoint_docs):
                             scores[doc_index] = scores.get(doc_index, 0.0) + relation_bonus / (rank + 1)
 
     @staticmethod
@@ -670,10 +747,42 @@ class MiniRAGIndex:
             return 48
         return 128
 
-    def _relation_neighbors(self, entity: str) -> list[str]:
+    def _relation_allowed(
+        self,
+        relation: dict[str, str],
+        allowed_doc_indices: set[int] | None,
+    ) -> bool:
+        if allowed_doc_indices is None:
+            return True
+        key = (
+            str(relation.get("head") or ""),
+            str(relation.get("relation") or ""),
+            str(relation.get("tail") or ""),
+            str(relation.get("source_name") or ""),
+        )
+        evidence_indices = self.relation_evidence_doc_indices.get(key, [])
+        return bool(evidence_indices and any(index in allowed_doc_indices for index in evidence_indices))
+
+    def _filter_doc_indices(
+        self,
+        doc_indices: list[int],
+        allowed_doc_indices: set[int] | None,
+    ) -> list[int]:
+        if allowed_doc_indices is None:
+            return doc_indices
+        return [doc_index for doc_index in doc_indices if doc_index in allowed_doc_indices]
+
+    def _relation_neighbors(
+        self,
+        entity: str,
+        *,
+        allowed_doc_indices: set[int] | None = None,
+    ) -> list[str]:
         neighbors: list[str] = []
         seen: set[str] = set()
         for relation in self.relation_adjacency.get(entity, []):
+            if not self._relation_allowed(relation, allowed_doc_indices):
+                continue
             for endpoint in (str(relation.get("head") or ""), str(relation.get("tail") or "")):
                 if endpoint and endpoint != entity and endpoint not in seen:
                     seen.add(endpoint)
@@ -691,6 +800,7 @@ class MiniRAGIndex:
         max_active_entities: int = 256,
         relation_traversal_weight: float = 1.4,
         min_entity_mass: float = 1e-4,
+        allowed_doc_indices: set[int] | None = None,
     ) -> None:
         """Lightweight Personalized PageRank-style propagation on the hetero graph.
 
@@ -720,7 +830,10 @@ class MiniRAGIndex:
                 if mass < min_entity_mass:
                     continue
                 node_weight = self._entity_node_weight(entity)
-                docs = self.entity_to_doc_indices.get(entity, [])[: self._entity_doc_limit(entity)]
+                docs = self._filter_doc_indices(
+                    self.entity_to_doc_indices.get(entity, [])[: self._entity_doc_limit(entity)],
+                    allowed_doc_indices,
+                )
                 for rank, doc_index in enumerate(docs):
                     edge_weight = min(self.entity_to_doc_weights.get(entity, {}).get(doc_index, 1.0), 4.0)
                     contribution = mass * node_weight * edge_weight / (rank + 1)
@@ -749,7 +862,7 @@ class MiniRAGIndex:
             # next frontier so relation facts can bridge entity names that never
             # appear together in the same retrieved chunk.
             for entity, mass in entity_mass.items():
-                for neighbor_entity in self._relation_neighbors(entity):
+                for neighbor_entity in self._relation_neighbors(entity, allowed_doc_indices=allowed_doc_indices):
                     if hop > 1 and neighbor_entity in query_entity_set:
                         continue
                     next_entity_mass[neighbor_entity] = next_entity_mass.get(neighbor_entity, 0.0) + (
@@ -775,19 +888,41 @@ class MiniRAGIndex:
         *,
         top_k: int = 40,
         propagation_weight: float = 0.35,
+        chapter_scope: str | None = None,
     ) -> list[dict[str, Any]]:
         query_entities = self._query_entities(query)
         if not query_entities:
             return []
 
+        allowed_doc_indices: set[int] | None = None
+        if chapter_scope:
+            if self.chapter_doc_indices:
+                allowed_doc_indices = set(self.chapter_doc_indices.get(chapter_scope, []))
+            else:
+                allowed_doc_indices = {
+                    index
+                    for index, document in enumerate(documents)
+                    if document_chapter_scope_key(document) == chapter_scope
+                }
+            if not allowed_doc_indices:
+                return []
+
         scores: dict[int, float] = {}
         for entity in query_entities:
-            direct_docs = self.entity_to_doc_indices.get(entity, [])
+            direct_docs = self._filter_doc_indices(
+                self.entity_to_doc_indices.get(entity, []),
+                allowed_doc_indices,
+            )
             for rank, doc_index in enumerate(direct_docs):
                 edge_weight = self.entity_to_doc_weights.get(entity, {}).get(doc_index, 1.0)
                 scores[doc_index] = scores.get(doc_index, 0.0) + min(edge_weight, 4.0) / (rank + 1)
-        self._add_ppr_scores(scores, query_entities, propagation_weight=propagation_weight)
-        self._add_relation_scores(scores, query, query_entities)
+        self._add_ppr_scores(
+            scores,
+            query_entities,
+            propagation_weight=propagation_weight,
+            allowed_doc_indices=allowed_doc_indices,
+        )
+        self._add_relation_scores(scores, query, query_entities, allowed_doc_indices=allowed_doc_indices)
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)[:top_k]
         return [

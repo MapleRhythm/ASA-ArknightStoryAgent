@@ -49,6 +49,15 @@ HYPOTHESIS_INTENTS = {
     "persona_chat",
     "out_of_scope",
 }
+HYPOTHESIS_QUERY_TYPES = {
+    "fact",
+    "relation",
+    "causality",
+    "reasoning",
+    "reveal",
+    "mystery",
+    "answerability",
+}
 
 HYPOTHESIS_SYSTEM = "你是《明日方舟》剧情问答系统中的 hypothesis_builder。"
 FOLLOW_UP_SYSTEM = "你是《明日方舟》剧情问答系统中的 follow_up_hypothesis_builder。"
@@ -735,8 +744,12 @@ def make_conclusion_record(
 def validate_payload(task_type: str, payload: dict[str, Any]) -> None:
     expected = SCHEMA_EXACT_FIELDS[task_type]
     actual = set(payload)
-    if actual != expected:
+    optional = {"query_type"} if task_type in {INITIAL_HYPOTHESIS_TASK_TYPE, FOLLOW_UP_HYPOTHESIS_TASK_TYPE} else set()
+    if actual != expected and actual != expected | optional:
         raise ValueError(f"{task_type} fields mismatch: {sorted(actual)} != {sorted(expected)}")
+    if task_type in {INITIAL_HYPOTHESIS_TASK_TYPE, FOLLOW_UP_HYPOTHESIS_TASK_TYPE} and "query_type" in payload:
+        if payload["query_type"] not in HYPOTHESIS_QUERY_TYPES:
+            raise ValueError(f"bad query_type: {payload['query_type']}")
     if task_type == INITIAL_HYPOTHESIS_TASK_TYPE:
         if payload["intent"] not in HYPOTHESIS_INTENTS:
             raise ValueError(f"bad intent: {payload['intent']}")

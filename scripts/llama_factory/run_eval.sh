@@ -7,14 +7,14 @@ LLAMAFACTORY_BIN="${LLAMAFACTORY_BIN:-llamafactory-cli}"
 SOURCE_DIR="${SOURCE_DIR:-}"
 DATASET_DIR="${DATASET_DIR:-}"
 EVAL_CONFIG_PATH="${EVAL_CONFIG_PATH:-$ROOT_DIR/src/config/llama_factory_eval.yaml}"
-PREDICTIONS_FILE="${PREDICTIONS_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/generated_predictions.jsonl}"
-SUMMARY_FILE="${SUMMARY_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/custom_metrics.json}"
+PREDICTIONS_FILE="${PREDICTIONS_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1/generated_predictions.jsonl}"
+SUMMARY_FILE="${SUMMARY_FILE:-$ROOT_DIR/outputs/llama_factory_eval/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1/custom_metrics.json}"
 REFERENCE_FILE="${REFERENCE_FILE:-$DATASET_DIR/test.json}"
 EVAL_GPUS="${EVAL_GPUS:-2}"
 WANDB_PROJECT="${WANDB_PROJECT:-goldenglow-sft}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
-WANDB_RUN_NAME="${WANDB_RUN_NAME:-teacher_v2_plus_prompt_supplement_v2_qwen35_4b_eval}"
-WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-teacher_v2_plus_prompt_supplement_v2}"
+WANDB_RUN_NAME="${WANDB_RUN_NAME:-teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1_eval}"
+WANDB_RUN_GROUP="${WANDB_RUN_GROUP:-teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1}"
 WANDB_DIR="${WANDB_DIR:-$ROOT_DIR/outputs/wandb}"
 CACHE_DIR="${CACHE_DIR:-$ROOT_DIR/outputs/.cache}"
 XDG_CACHE_HOME="${XDG_CACHE_HOME:-$CACHE_DIR}"
@@ -45,19 +45,19 @@ if [[ -z "$DATASET_DIR" ]]; then
   DATASET_DIR="$ROOT_DIR/data/processed/llama_factory/$SOURCE_BASENAME"
 fi
 
-if [[ "$PREDICTIONS_FILE" == "$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/generated_predictions.jsonl" ]]; then
+if [[ "$PREDICTIONS_FILE" == "$ROOT_DIR/outputs/llama_factory_eval/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1/generated_predictions.jsonl" ]]; then
   PREDICTIONS_FILE="$ROOT_DIR/outputs/llama_factory_eval/${SOURCE_BASENAME}_qwen35_4b/generated_predictions.jsonl"
 fi
 
-if [[ "$SUMMARY_FILE" == "$ROOT_DIR/outputs/llama_factory_eval/teacher_v2_plus_prompt_supplement_v4_qwen35_4b/custom_metrics.json" ]]; then
+if [[ "$SUMMARY_FILE" == "$ROOT_DIR/outputs/llama_factory_eval/teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1/custom_metrics.json" ]]; then
   SUMMARY_FILE="$ROOT_DIR/outputs/llama_factory_eval/${SOURCE_BASENAME}_qwen35_4b/custom_metrics.json"
 fi
 
-if [[ "$WANDB_RUN_NAME" == "teacher_v2_plus_prompt_supplement_v2_qwen35_4b_eval" ]]; then
+if [[ "$WANDB_RUN_NAME" == "teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1_qwen35_4b_lr3e5_epoch1_eval" ]]; then
   WANDB_RUN_NAME="${SOURCE_BASENAME}_qwen35_4b_eval"
 fi
 
-if [[ "$WANDB_RUN_GROUP" == "teacher_v2_plus_prompt_supplement_v2" ]]; then
+if [[ "$WANDB_RUN_GROUP" == "teacher_online_chain_short_prompt_v1_ds_flash_800_no_kaltsit_clean_v1" ]]; then
   WANDB_RUN_GROUP="$SOURCE_BASENAME"
 fi
 

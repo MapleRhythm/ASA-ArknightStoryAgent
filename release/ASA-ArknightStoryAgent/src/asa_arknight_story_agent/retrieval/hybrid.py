@@ -25,6 +25,11 @@ REVEAL_QUERY_RE = re.compile(r"阴谋|真相|秘密|识破|揭穿|曝光|暴露|
 CONCEPT_CRISIS_QUERY_RE = re.compile(r"是什么|本质|来历|为何成为|为什么成为|为什么会成为|危机|祸|患|威胁")
 LINE_SPLIT_RE = re.compile(r"[\n\r。！？；]+")
 STAGE_NUMBER_RE = re.compile(r"(?:^|[_\-/])(?:level_)?[a-z0-9]+_(\d{2})(?:[_a-z\-/]|$)", re.IGNORECASE)
+MAIN_CHAPTER_REF_RE = re.compile(
+    r"(?:第\s*([一二三四五六七八九十百零〇两0-9]{1,4})\s*章|([0-9]{1,2})\s*章|level_main[_-]([0-9]{1,2})|main[_-]([0-9]{1,2})|EPISODE\s*([0-9]{1,2}))",
+    re.IGNORECASE,
+)
+MAIN_CHAPTER_SOURCE_RE = re.compile(r"(?:^|[/_])(?:level_)?main[_-](\d{1,2})(?:[-_/]|$)", re.IGNORECASE)
 QUERY_CHAR_STOP_CHARS = set("的是了嘛吗呢啊吧呀么什怎为哪件这那其一在和与及或把被让给从向对将会要请问具体指")
 LOW_RERANK_QUERY_TYPES = {"fact", "relation"}
 HIGH_RERANK_QUERY_TYPES = {"causality", "reasoning", "reveal", "mystery", "answerability"}
@@ -262,6 +267,37 @@ def load_jsonl(path: Path) -> list[dict]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def parse_main_chapter_number(value: str) -> int | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        number = int(raw)
+        return number if 0 < number < 100 else None
+    digits = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if raw == "十":
+        return 10
+    if "十" in raw:
+        left, _, right = raw.partition("十")
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        number = tens * 10 + ones
+        return number if 0 < number < 100 else None
+    if len(raw) == 1 and raw in digits:
+        return digits[raw]
+    return None
+
+
+def extract_main_chapter_numbers(text: str) -> list[int]:
+    numbers: list[int] = []
+    for match in MAIN_CHAPTER_REF_RE.finditer(text or ""):
+        raw_number = next((group for group in match.groups() if group), "")
+        number = parse_main_chapter_number(raw_number)
+        if number is not None:
+            numbers.append(number)
+    return list(dict.fromkeys(numbers))
 
 
 class ArknightsHybridRetriever:
@@ -666,6 +702,28 @@ class ArknightsHybridRetriever:
             terms.append(normalized)
         return list(dict.fromkeys(terms))
 
+    def extract_bridge_terms(self, query: str, candidates: list[dict[str, Any]], *, limit: int = 24) -> list[str]:
+        terms = list(self._extract_query_terms(query))
+        counts: dict[str, int] = {}
+        known = set(terms)
+        for item in candidates[:40]:
+            text = self._document_text(item["document"])
+            weight = 2 if float(item.get("rerank_score") or item.get("fusion_score") or 0.0) > 0 else 1
+            for token in ENTITY_TOKEN_RE.findall(text):
+                normalized = token.strip()
+                if (
+                    not normalized
+                    or normalized in EXPANSION_STOP_WORDS
+                    or normalized in known
+                    or len(normalized) == 1
+                    or (normalized.isascii() and len(normalized) < 3)
+                ):
+                    continue
+                counts[normalized] = counts.get(normalized, 0) + weight
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        terms.extend(term for term, _count in ranked[: max(0, limit - len(terms))])
+        return list(dict.fromkeys(terms))[:limit]
+
     def _original_query_text(self, query: str) -> str:
         return query.split("\n", 1)[0].strip()
 
@@ -972,6 +1030,32 @@ class ArknightsHybridRetriever:
 
     def _document_text(self, document: dict) -> str:
         return str(document.get("search_text") or document.get("clean_text") or "")
+
+    def _document_main_chapter_number(self, document: dict) -> int | None:
+        fields = " ".join(
+            str(document.get(key) or "")
+            for key in ("activity_id", "story_id", "story_key", "source_path", "id", "search_text")
+        )
+        match = MAIN_CHAPTER_SOURCE_RE.search(fields)
+        if match:
+            return int(match.group(1))
+        numbers = extract_main_chapter_numbers(fields)
+        return numbers[0] if numbers else None
+
+    def _apply_main_chapter_focus_adjustment(self, query: str, candidates: list[dict[str, Any]]) -> None:
+        query_chapters = extract_main_chapter_numbers(query)
+        if not query_chapters:
+            return
+        target_chapter = query_chapters[0]
+        for item in candidates:
+            document = item["document"]
+            doc_chapter = self._document_main_chapter_number(document)
+            if doc_chapter == target_chapter:
+                item["rerank_score"] = float(item.get("rerank_score") or 0.0) + 3.0
+                item["main_chapter_focus"] = f"match:{target_chapter}"
+            elif doc_chapter is not None:
+                item["rerank_score"] = float(item.get("rerank_score") or 0.0) - 2.5
+                item["main_chapter_focus"] = f"mismatch:{doc_chapter}!={target_chapter}"
 
     def _document_stage_number(self, document: dict) -> int | None:
         stage_code = str(document.get("stage_code") or "")
@@ -1370,6 +1454,17 @@ class ArknightsHybridRetriever:
             chain_text = self._render_chain_text(chain)
             if not chain_text:
                 continue
+            chain_structure = {
+                "chain_length": len(member_indices),
+                "causal_order": "model_candidate",
+                "evidence_types": sorted(chain["roles"]) if chain.get("roles") else ["context"],
+            }
+            chain_text = (
+                f"[CHAIN_LEN={chain_structure['chain_length']}] "
+                f"[CAUSAL_ORDER={chain_structure['causal_order']}] "
+                f"[EVIDENCE_TYPES=({'|'.join(chain_structure['evidence_types'])})]\n"
+                + chain_text
+            )
             chain_payloads.append(
                 {
                     "chain": chain,
@@ -1395,6 +1490,7 @@ class ArknightsHybridRetriever:
         ):
             chain = payload["chain"]
             normalized_rank_bonus = 1.0 / (rank + 1)
+            chain_score = float(score)
             for member in chain["members"]:
                 item = doc_index_to_item.get(int(member["item"]["doc_index"]))
                 if item is None:
@@ -1407,9 +1503,9 @@ class ArknightsHybridRetriever:
                 if "motive" in member["roles"]:
                     role_bonus += 0.1
                 if query_mode in LOW_RERANK_QUERY_TYPES:
-                    chain_member_score = float(score) * 0.45 + normalized_rank_bonus * 0.35 + role_bonus * 0.35
+                    chain_member_score = chain_score * 0.7 + normalized_rank_bonus * 0.35 + role_bonus * 0.35
                 else:
-                    chain_member_score = float(score) * 1.5 + normalized_rank_bonus * 1.3 + role_bonus
+                    chain_member_score = chain_score * 1.8 + normalized_rank_bonus * 1.3 + role_bonus
                 item["evidence_chain_score"] = max(
                     float(item.get("evidence_chain_score", float("-inf"))),
                     chain_member_score,
@@ -1421,6 +1517,14 @@ class ArknightsHybridRetriever:
                 item["evidence_chain_roles"] = sorted(member["roles"])
                 item["evidence_chain_text"] = payload["chain_text"]
         return True
+
+    @staticmethod
+    def _final_rerank_score(item: dict[str, Any]) -> float:
+        chain_score = item.get("evidence_chain_score")
+        rerank_score = float(item.get("rerank_score") or 0.0)
+        if chain_score is not None:
+            return max(float(chain_score), rerank_score * 0.35 + float(chain_score) * 0.65)
+        return rerank_score
 
     def rerank_with_evidence_chains(
         self,
@@ -1444,17 +1548,31 @@ class ArknightsHybridRetriever:
             )
             for item, score in zip(candidates, scores, strict=True):
                 item["rerank_score"] = float(score)
+            resolved_bridge_terms = bridge_terms or self.extract_bridge_terms(query, candidates)
+            chain_scored = self._apply_chain_model_scores(
+                query,
+                candidates,
+                bridge_terms=resolved_bridge_terms,
+                batch_size=batch_size,
+                query_mode=query_mode,
+            )
+            if not chain_scored:
+                self._apply_evidence_chain_rerank(query, candidates, bridge_terms=resolved_bridge_terms)
+            self._apply_main_chapter_focus_adjustment(query, candidates)
             return sorted(
                 candidates,
-                key=lambda item: item.get("rerank_score", float("-inf")),
+                key=self._final_rerank_score,
                 reverse=True,
             )[:top_k]
 
         for item in candidates:
             item["rerank_score"] = float(item.get("fusion_score") or 0.0)
+        resolved_bridge_terms = bridge_terms or self.extract_bridge_terms(query, candidates)
+        self._apply_evidence_chain_rerank(query, candidates, bridge_terms=resolved_bridge_terms)
+        self._apply_main_chapter_focus_adjustment(query, candidates)
         return sorted(
             candidates,
-            key=lambda item: item.get("rerank_score", float("-inf")),
+            key=self._final_rerank_score,
             reverse=True,
         )[:top_k]
 
