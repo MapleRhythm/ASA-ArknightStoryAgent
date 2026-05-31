@@ -15,7 +15,14 @@ OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 EMBEDDING_MODEL_DIR = MODEL_ROOT / "embeddings" / "bge-small-zh-v1.5"
 BASE_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3"
 EVIDENCE_CHAIN_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3-evidence-chain-answerability"
-RERANKER_MODEL_DIR = EVIDENCE_CHAIN_RERANKER_MODEL_DIR if EVIDENCE_CHAIN_RERANKER_MODEL_DIR.exists() else BASE_RERANKER_MODEL_DIR
+RANK_MIX_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3-rank-mix-v6-small-patch"
+RERANKER_MODEL_DIR = (
+    RANK_MIX_RERANKER_MODEL_DIR
+    if RANK_MIX_RERANKER_MODEL_DIR.exists()
+    else EVIDENCE_CHAIN_RERANKER_MODEL_DIR
+    if EVIDENCE_CHAIN_RERANKER_MODEL_DIR.exists()
+    else BASE_RERANKER_MODEL_DIR
+)
 
 DOCUMENTS_PATH = INDEX_ROOT / "documents.jsonl"
 FAISS_INDEX_PATH = INDEX_ROOT / "faiss.index"
@@ -53,8 +60,11 @@ class QueryConfig:
     minirag_auto_second_retrieval: bool = True
     minirag_scope_seed_top_k: int = 40
     minirag_expansion_query_top_k: int = 8
-    minirag_graph_scope_min_ratio: float = 2.5
-    minirag_second_pass_scope_min_ratio: float = 2.5
+    minirag_graph_scope_min_ratio: float = 1.0
+    minirag_second_pass_scope_min_ratio: float = 1.0
+    enable_storyline_sparse_scope: bool = True
+    storyline_scope_seed_top_k: int = 40
+    storyline_sparse_scope_min_ratio: float = 1.5
     reranker_candidate_top_k: int = 120
     enable_neighbor_expansion: bool = False
     neighbor_max_seed_docs: int = 24

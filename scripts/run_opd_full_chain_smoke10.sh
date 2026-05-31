@@ -48,7 +48,7 @@ run_train_python scripts/generate_opd_full_chain_candidates_from_4b.py \
   --runtime-config configs/runtime_inference_gpu.json \
   --sample 10 \
   --runs-per-question 1 \
-  --max-rounds 3 \
+  --max-rounds 2 \
   --device cuda:0 \
   --reranker-model model/reranker/bge-reranker-v2-m3-evidence-chain-answerability \
   --minirag-index indexes/arknights_story_minirag_v3/graph.json \

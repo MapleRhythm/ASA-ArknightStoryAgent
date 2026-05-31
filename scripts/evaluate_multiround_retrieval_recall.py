@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+import importlib.util
 import json
 import os
 from pathlib import Path
+import random
 import re
 import sys
 import time
@@ -145,6 +147,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--runtime-config", type=Path, default=DEFAULT_RUNTIME_CONFIG_PATH)
     parser.add_argument("--sample", type=int, default=None)
+    parser.add_argument("--sample-offset", type=int, default=0, help="Take --sample records after skipping this many records.")
+    parser.add_argument("--sample-seed", type=int, default=None, help="Shuffle records with this seed before applying --sample.")
     parser.add_argument("--top-ks", type=parse_top_ks, default="1,5,10,20,50")
     parser.add_argument("--max-rounds", type=int, default=None)
     parser.add_argument(
@@ -192,6 +196,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-minirag-auto-second-retrieval", dest="minirag_auto_second_retrieval", action="store_false")
     parser.add_argument("--minirag-scope-seed-top-k", type=int, default=None)
     parser.add_argument("--minirag-expansion-query-top-k", type=int, default=None)
+    parser.add_argument("--minirag-graph-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--minirag-second-pass-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_true", default=None)
+    parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
+    parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
+    parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
     parser.add_argument("--enable-neighbor-expansion", action="store_true", default=None)
     parser.add_argument("--disable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_false")
     parser.add_argument("--neighbor-max-seed-docs", type=int, default=None)
@@ -203,13 +213,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mmr-lambda", type=float, default=None)
     parser.add_argument("--enable-pyramid-order", action="store_true", default=None)
     parser.add_argument("--disable-pyramid-order", dest="enable_pyramid_order", action="store_false")
+    parser.add_argument("--enable-evidence-pinning", action="store_true", default=None)
+    parser.add_argument("--disable-evidence-pinning", dest="enable_evidence_pinning", action="store_false")
     parser.add_argument("--enable-crag-refinement", action="store_true", default=None)
     parser.add_argument("--disable-crag-refinement", dest="enable_crag_refinement", action="store_false")
     parser.add_argument("--crag-refine-top-sentences", type=int, default=None)
     parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
+    parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
-    parser.add_argument("--backend", choices=("vllm", "llama.cpp"), default=None)
+    parser.add_argument(
+        "--backend",
+        choices=("vllm", "llama.cpp", "api", "openai_compatible_api", "chat_completions", "responses_api", "responses"),
+        default=None,
+    )
     parser.add_argument("--base-model", type=Path, default=None)
     parser.add_argument("--lora-path", type=Path, default=None)
     parser.add_argument(
@@ -235,6 +252,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repeat-penalty", type=float, default=None)
+    parser.add_argument("--api-base-url", type=str, default=None)
+    parser.add_argument("--api-key-env", type=str, default=None)
+    parser.add_argument("--api-key", type=str, default=None)
+    parser.add_argument("--api-model", type=str, default=None)
+    parser.add_argument("--api-timeout", type=float, default=None)
+    parser.add_argument("--no-json-response-format", action="store_true")
+    parser.add_argument("--api-request-log-dir", type=Path, default=None)
     parser.add_argument("--jaccard-threshold", type=float, default=0.25)
     parser.add_argument("--overlap-threshold", type=float, default=0.32)
     parser.add_argument("--min-overlap-grams", type=int, default=60)
@@ -267,11 +291,21 @@ def validate_vllm_lora_path(path: Path | None) -> None:
     )
 
 
-def build_generator(args: argparse.Namespace, generator_cfg: dict[str, Any]) -> LlamaCppRunner | VllmRunner:
+def load_api_mode_module() -> Any:
+    module_path = PROJECT_ROOT / "api-mode" / "run_api_inference.py"
+    spec = importlib.util.spec_from_file_location("goldenglow_api_mode_runner", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load API mode runner from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def build_generator(args: argparse.Namespace, generator_cfg: dict[str, Any]) -> Any:
     llama_cfg = generator_cfg.get("llama_cpp", {}) if isinstance(generator_cfg.get("llama_cpp"), dict) else {}
     vllm_cfg = generator_cfg.get("vllm", {}) if isinstance(generator_cfg.get("vllm"), dict) else {}
     backend = str(config_value(args.backend, generator_cfg, "backend", "vllm"))
-    ctx_size = int(config_value(args.ctx_size, generator_cfg, "ctx_size", 8192))
+    ctx_size = int(config_value(args.ctx_size, generator_cfg, "ctx_size", 12000))
     max_tokens = int(config_value(args.max_tokens, generator_cfg, "max_tokens", 512))
     temperature = float(config_value(args.temperature, generator_cfg, "temperature", 0.2))
     top_p = float(config_value(args.top_p, generator_cfg, "top_p", 0.9))
@@ -308,6 +342,44 @@ def build_generator(args: argparse.Namespace, generator_cfg: dict[str, Any]) -> 
             max_num_batched_tokens=(
                 int(config_value(args.max_num_batched_tokens, vllm_cfg, "max_num_batched_tokens", 0)) or None
             ),
+        )
+
+    if backend in {"api", "openai_compatible_api", "chat_completions", "responses_api", "responses"}:
+        api_mode = load_api_mode_module()
+        configured_backend = str(generator_cfg.get("backend", "chat_completions"))
+        api_backend = (
+            configured_backend
+            if backend == "api" and configured_backend in {"openai_compatible_api", "chat_completions", "responses_api", "responses"}
+            else ("chat_completions" if backend == "api" else backend)
+        )
+        if api_backend in {"openai_compatible_api", "chat_completions"}:
+            generator_cls = api_mode.OpenAICompatibleAPIRunner
+        elif api_backend in {"responses_api", "responses"}:
+            generator_cls = api_mode.ResponsesAPIRunner
+        else:
+            raise SystemExit(f"Unsupported API generator backend: {api_backend}")
+        api_key_env = str(config_value(args.api_key_env, generator_cfg, "api_key_env", "DEEPSEEK_API_KEY"))
+        api_key = args.api_key if args.api_key is not None else os.environ.get(api_key_env)
+        if not api_key:
+            raise SystemExit(f"Missing API key. Set environment variable {api_key_env} or pass --api-key.")
+        api_mode.validate_api_key(api_key, api_key_env)
+        request_log_dir = None
+        if args.api_request_log_dir is not None:
+            request_log_dir = args.api_request_log_dir
+            if not request_log_dir.is_absolute():
+                request_log_dir = PROJECT_ROOT / request_log_dir
+        return generator_cls(
+            api_base_url=str(config_value(args.api_base_url, generator_cfg, "api_base_url", "https://api.deepseek.com")),
+            api_key=api_key,
+            api_key_env=api_key_env,
+            model=str(config_value(args.api_model, generator_cfg, "model", "deepseek-v4-flash")),
+            timeout=float(config_value(args.api_timeout, generator_cfg, "timeout", 120)),
+            max_tokens=max(int(config_value(args.max_tokens, generator_cfg, "max_tokens", 4096)), 4096),
+            temperature=temperature,
+            top_p=top_p,
+            response_format_json=bool(generator_cfg.get("response_format_json", True)) and not args.no_json_response_format,
+            extra_body=generator_cfg.get("extra_body") if isinstance(generator_cfg.get("extra_body"), dict) else None,
+            request_log_dir=request_log_dir,
         )
 
     llama_cli = resolve_path(
@@ -392,6 +464,26 @@ def build_query_config(
                 "minirag_expansion_query_top_k",
                 8,
             )
+        ),
+        minirag_graph_scope_min_ratio=float(
+            config_value(args.minirag_graph_scope_min_ratio, retrieval_cfg, "minirag_graph_scope_min_ratio", 1.0)
+        ),
+        minirag_second_pass_scope_min_ratio=float(
+            config_value(
+                args.minirag_second_pass_scope_min_ratio,
+                retrieval_cfg,
+                "minirag_second_pass_scope_min_ratio",
+                2.5,
+            )
+        ),
+        enable_storyline_sparse_scope=bool(
+            config_value(args.enable_storyline_sparse_scope, retrieval_cfg, "enable_storyline_sparse_scope", True)
+        ),
+        storyline_scope_seed_top_k=int(
+            config_value(args.storyline_scope_seed_top_k, retrieval_cfg, "storyline_scope_seed_top_k", 40)
+        ),
+        storyline_sparse_scope_min_ratio=float(
+            config_value(args.storyline_sparse_scope_min_ratio, retrieval_cfg, "storyline_sparse_scope_min_ratio", 1.5)
         ),
         reranker_candidate_top_k=int(
             config_value(args.reranker_candidate_top_k, retrieval_cfg, "reranker_candidate_top_k", 120)
@@ -820,7 +912,7 @@ def main() -> int:
     faiss_index_path = index_dir / "faiss.index"
     bm25_tokens_path = index_dir / "bm25_tokens.pkl"
     device = str(config_value(args.device, retrieval_cfg, "device", "cuda"))
-    max_rounds = int(config_value(args.max_rounds, inference_cfg, "max_retrieval_rounds", 3))
+    max_rounds = min(2, max(1, int(config_value(args.max_rounds, inference_cfg, "max_retrieval_rounds", 2))))
     max_k = max(args.top_ks)
 
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True)) and not args.no_reranker
@@ -836,7 +928,13 @@ def main() -> int:
         default=MINIRAG_GRAPH_PATH if bool(retrieval_cfg.get("enable_minirag", True)) else None,
     )
 
-    records = load_listwise(listwise_path)
+    all_records = load_listwise(listwise_path)
+    records = list(all_records)
+    if args.sample_seed is not None:
+        rng = random.Random(args.sample_seed)
+        rng.shuffle(records)
+    if args.sample_offset > 0:
+        records = records[args.sample_offset :]
     if args.sample is not None:
         records = records[: args.sample]
 
@@ -864,6 +962,9 @@ def main() -> int:
         enable_mmr=bool(config_value(args.enable_mmr, inference_cfg, "enable_mmr", False)),
         mmr_lambda=float(config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72)),
         enable_pyramid_order=bool(config_value(args.enable_pyramid_order, inference_cfg, "enable_pyramid_order", False)),
+        enable_evidence_pinning=bool(
+            config_value(args.enable_evidence_pinning, inference_cfg, "enable_evidence_pinning", False)
+        ),
         enable_crag_refinement=bool(config_value(args.enable_crag_refinement, inference_cfg, "enable_crag_refinement", False)),
         crag_refine_top_sentences=int(
             config_value(args.crag_refine_top_sentences, inference_cfg, "crag_refine_top_sentences", 4)
@@ -878,6 +979,9 @@ def main() -> int:
             config_value(args.self_consistency_temperature, inference_cfg, "self_consistency_temperature", 0.7)
         ),
         answer_grounding_mode=str(inference_cfg.get("answer_grounding_mode", "weak")),
+        conclusion_prompt_mode=str(
+            config_value(args.conclusion_prompt_mode, inference_cfg, "conclusion_prompt_mode", "full")
+        ),
     )
 
     started = time.time()
@@ -937,6 +1041,12 @@ def main() -> int:
         "planner_mode": args.planner_mode,
         "max_rounds": max_rounds,
         "top_ks": args.top_ks,
+        "sample": {
+            "source_count": len(all_records),
+            "count": len(records),
+            "offset": args.sample_offset,
+            "seed": args.sample_seed,
+        },
         "skipped": skipped,
         "query_config": asdict(query_config),
         "generator_runtime": generator.describe_runtime(),

@@ -1,385 +1,298 @@
 # ASA-ArknightStoryAgent
 
-一个面向《明日方舟》剧情问答的本地 Agent 项目。核心目标不是泛知识聊天，而是基于剧情证据进行中文问答，并保持自然、克制的中文表达。
+面向《明日方舟》剧情问答的本地 / API 混合 RAG Agent。项目目标不是泛聊天，而是用剧情原文、档案、语音和可追踪证据回答剧情事实、因果、关系、时间线与阴谋真相类问题。
 
-当前主链路：
+核心原则：
 
-1. 用户问题进入推理脚本
-2. 模型生成初始 hypothesis
-3. 触发混合检索：稠密召回 + 稀疏召回 + 融合 + 可选 reranker
-4. 模型判断是否需要继续检索
-5. 若需要，则生成 follow-up hypothesis 并继续召回
-6. 基于最终证据生成答案
+- 答案优先基于检索证据，不能把模型记忆或二创设定写成官方剧情。
+- 证据足够时应回答“可确认部分”，不要因缺少完整背景直接拒答。
+- 证据不足时必须说明不足，不能把推测包装成事实。
+- 本地 4B 与 API teacher 使用同一套 `CPUInferencePipeline`，差异只在生成器后端。
+
+## 当前架构
+
+主代码位于 `src/goldenglow/`。
+
+- `src/goldenglow/config.py`：路径配置与 `QueryConfig`。
+- `src/goldenglow/retrieval/hybrid.py`：dense / BM25 / MiniRAG / reranker 混合召回。
+- `src/goldenglow/retrieval/minirag.py`：活动级图检索、章节 scope、关系扩展。
+- `src/goldenglow/retrieval/storyline.py`：故事线标签与 sparse scope。
+- `src/goldenglow/inference/cpu_pipeline.py`：多轮 RAG 主链路。
+- `api-mode/run_api_inference.py`：API 生成器入口，复用本地检索链路。
+
+当前标准推理流程：
+
+```text
+用户问题
+-> user_question_hypothesis_generation
+-> dense + BM25 + MiniRAG 召回
+-> MiniRAG 章节隔离 / 图扩展 / 二次 scoped retrieval
+-> 可选故事线 sparse scope、neighbor expansion、web context
+-> fusion + reranker
+-> prompt evidence 去重、降权、MMR / pyramid / pinning
+-> conclusion_generation
+-> answer_directly / retrieve_more / clarify_user / abstain
+-> follow_up_hypothesis_generation 后进入下一轮，最多 2 轮召回
+```
+
+达到最大轮次后，链路会基于当前证据输出可确认部分或证据不足说明，而不是机械返回“达到检索轮次上限”。
+当前核心链路会把外部传入的 `max_retrieval_rounds` clamp 到 `2`，避免第三轮召回只增加延迟。
 
 ## 技术栈
 
-- 基座模型：`Qwen3.5-4B`
-- 微调方式：`LoRA`
-- 主训练框架：`LLaMA-Factory`
-- 向量模型：`bge-small-zh-v1.5`
-- 稀疏检索：`BM25`
-- 向量索引：`FAISS-CPU`
-- 重排：交叉编码器 reranker（可关闭）
-- 推理框架：`llama.cpp`
-- 调度逻辑：原生 `Python`
+- 基座模型：`model/qwen3.5-4b`
+- 本地生成：`vLLM` 或 `llama.cpp`
+- 微调：LoRA + LLaMA-Factory
+- 向量模型：`model/embeddings/bge-small-zh-v1.5`
+- 稀疏检索：BM25
+- 向量索引：FAISS
+- 重排器：BGE reranker 系列，当前按 runtime config 选择
+- API teacher：OpenAI-compatible Chat Completions / Responses API，当前常用 DeepSeek
 
-## 目录概览
+## 关键目录
 
-- `data/ArknightsGameData/zh_CN/gamedata/story/`
-  明日方舟剧情原文
-- `data/processed/sft_data/`
-  SFT 数据、补充中间能力数据、合并后的训练数据
-- `indexes/arknights_story/`
-  检索索引、文档和 BM25 产物
-- `model/qwen3.5-4b/`
-  基座模型
-- `model/lora/`
-  LoRA 训练输出
-- `model/gguf/`
-  GGUF 推理模型
-- `scripts/`
-  数据生成、索引构建、推理、评测脚本
-- `scripts/llama_factory/`
-  LLaMA-Factory 训练与评测入口
-- `src/<主代码包>/retrieval/`
-  检索与重排实现
-- `src/<主代码包>/inference/`
-  推理主链路
-- `configs/`
-  运行时配置
-- `src/config/`
-  训练配置
+- `data/ArknightsGameData/zh_CN/gamedata/story/`：剧情原文。
+- `indexes/arknights_story/`：documents、FAISS、BM25、别名表。
+- `indexes/arknights_story_minirag/`、`indexes/arknights_story_minirag_v3/`：MiniRAG 图索引。
+- `model/qwen3.5-4b/`：基座模型。
+- `model/lora/`：LoRA 训练输出。
+- `model/merged/`：合并后的完整模型。
+- `model/reranker/`：证据链 reranker。
+- `configs/runtime_inference_gpu.json`：本地 GPU / vLLM 默认运行配置。
+- `api-mode/runtime_deepseek_api.json`：DeepSeek API 模式配置。
+- `release/ASA-ArknightStoryAgent/`：推理发布版源码、配置、Web UI 与 MiniRAG v3 图。
+- `src/config/`：LLaMA-Factory 训练配置。
+- `outputs/`：评测、运行轨迹、API 请求日志。
 
-## 环境建议
+## 环境
 
-建议至少准备两个 conda 环境：
-
-- `train`
-  用于数据生成、检索 GPU 测试、LLaMA-Factory 训练
-- `reasoning`
-  用于 CPU 推理和实际运行
-
-如果要在 `train` 环境下跑 GPU 推理加速，可额外安装 `vLLM` overlay：
+推荐使用 `train` conda 环境运行训练、GPU 检索、vLLM 和 API 模式：
 
 ```bash
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate train
-bash scripts/install_train_vllm.sh
+export PYTHONPATH=.python_packages/train:src
 ```
 
-如果仓库所在磁盘空间不足，可以把 overlay 装到别的目录：
+安装或重建 vLLM overlay：
 
 ```bash
-conda activate train
-PYTHON_OVERLAY_DIR=/path/to/big-disk/vllm_overlay bash scripts/install_train_vllm.sh
+PYTHON_OVERLAY_DIR=.python_packages/train bash scripts/install_train_vllm.sh
 ```
 
-## 1. 构建检索索引
+训练时常用 3 卡：
 
-在首次运行前，先构建剧情检索索引：
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2
+export DISABLE_VERSION_CHECK=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
+## 构建索引
+
+构建基础检索索引：
 
 ```bash
 python scripts/build_retrieval_index.py --device cpu
 ```
 
-索引产物会输出到：
-
-- `indexes/arknights_story/documents.jsonl`
-- `indexes/arknights_story/faiss.index`
-- `indexes/arknights_story/bm25_tokens.pkl`
-
-## 2. 生成 SFT 数据
-
-主数据集：
+构建 MiniRAG 图索引：
 
 ```bash
-python scripts/generate_sft_from_teacher.py --device cuda
+python scripts/build_minirag_index.py
 ```
 
-该脚本现在会直接产出与补充脚本对齐的三类 tool 样本：
-
-- `user_question_hypothesis_generation`
-- `follow_up_hypothesis_generation`
-- `conclusion_generation`
-
-补充中间能力数据集：
+基础调试：
 
 ```bash
-python scripts/generate_prompt_supplement_from_teacher.py \
-  --config configs/sft_teacher_prompt_supplement_v2.json \
-  --target-total 700 \
-  --max-requests 450 \
-  --device cuda \
-  --concurrency 4
+python scripts/query_retrieval.py "炎景公主一事具体是什么"
 ```
 
-补充数据集默认输出到：
+## 本地推理
 
-- `data/processed/sft_data/prompt_supplement_v2`
-
-## 3. 合并训练数据集
-
-将主数据集与补充中间能力数据集合并：
+GPU / vLLM 推理使用：
 
 ```bash
-python scripts/merge_sft_datasets.py \
-  --base-dir data/processed/sft_data/teacher_v2 \
-  --supplement-dir data/processed/sft_data/prompt_supplement_v2 \
-  --output-dir data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2
-```
-
-当前推荐训练输入目录：
-
-- `data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2`
-
-## 4. 使用 LLaMA-Factory 训练
-
-当前主训练入口已经默认指向合并后的数据集。
-
-进入训练环境后运行：
-
-```bash
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate train
-bash scripts/llama_factory/run_train.sh
-```
 
-该脚本会自动：
-
-1. 将 `teacher_v2_plus_prompt_supplement_v2` 转换成 LLaMA-Factory 使用的 ShareGPT 数据
-2. 启动 LoRA 训练
-
-默认相关路径：
-
-- 输入数据：`data/processed/sft_data/teacher_v2_plus_prompt_supplement_v2`
-- 转换后数据：`data/processed/llama_factory/teacher_v2_plus_prompt_supplement_v2`
-- 训练配置：`src/config/llama_factory_config.yaml`
-- 输出目录：`model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b`
-
-如果只想用单卡：
-
-```bash
-CUDA_VISIBLE_DEVICES=0 bash scripts/llama_factory/run_train.sh
-```
-
-## 5. 推理
-
-当前实际推理入口：
-
-```bash
-python scripts/run_cpu_inference.py "烛煌的真实身份是什么？"
-```
-
-典型示例：
-
-```bash
-conda activate reasoning
-
+CUDA_VISIBLE_DEVICES=0 \
+PYTHONPATH=.python_packages/train:src \
 python scripts/run_cpu_inference.py \
-  "烛煌的真实身份是什么？" \
-  --llama-cli third_party/llama.cpp/build/bin/llama-completion \
-  --gguf-model model/gguf/teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf \
-  --answer-only
+  --runtime-config configs/runtime_inference_gpu.json \
+  --answer-only \
+  "博士为什么要关闭全舰防御系统"
 ```
 
-默认行为：
+常用配置在 `configs/runtime_inference_gpu.json`：
 
-- 自动生成初始 hypothesis
-- 自动执行混合检索
-- 自动判断是否继续检索
-- 如果模型返回 `retrieve_more`，则继续 follow-up retrieval
-- 达到足够证据或达到安全上限后生成最终答案
+- `retrieval.reranker_model_path`
+- `retrieval.minirag_index_path`
+- `retrieval.minirag_chapter_isolation`
+- `retrieval.minirag_auto_second_retrieval`
+- `retrieval.enable_storyline_sparse_scope`
+- `inference.max_retrieval_rounds`
+- `inference.prompt_evidence_top_k`
+- `inference.conclusion_prompt_mode`
+- `inference.answer_grounding_mode`
+- `inference.web_context`
 
-GPU 加速推理：
+## API 模式
+
+API 模式入口：
 
 ```bash
-conda activate train
+export DEEPSEEK_API_KEY="sk-..."
 
-bash scripts/run_gpu_inference.sh \
-  --base-model model/qwen3.5-4b \
-  --lora-path model/lora/teacher_v2_plus_prompt_supplement_v2_qwen35_4b \
-  --answer-only
+PYTHONPATH=.python_packages/train:src \
+python api-mode/run_api_inference.py \
+  --runtime-config api-mode/runtime_deepseek_api.json \
+  --answer-only \
+  "真龙为什么要启动不反"
 ```
 
-说明：
+注意：
 
-- `scripts/run_gpu_inference.sh` 默认优先走 `vLLM`
-- 如果命令里显式传了 `--gguf-model` 或 `--llama-cli`，脚本会自动退回 `llama.cpp`
-- 也可以手动指定 `--backend vllm` 或 `--backend llama.cpp`
+- DeepSeek key 使用纯 `sk-...`；如果外部记录为 `ds:sk-...`，运行脚本前应去掉 `ds:`。
+- API 模式现在和本地链路透传同一组关键推理配置，包括 MiniRAG 章节隔离、故事线 scope、web context、MMR、pyramid、evidence pinning、conclusion prompt mode。
+- JSON 任务会附加轻量 teacher system 约束；direct-answer 任务会切换到自然语言 system，避免最终答案被强行输出 JSON。
+- API 请求日志默认写入 `outputs/api_mode_runs/` 或指定 `--log-dir`。
 
-## 6. 运行时检索配置
+## SODA 半在线黑盒蒸馏
 
-实际使用阶段的检索参数通过这个文件控制：
+当前推荐用 SODA/KTO 修正本地 4B 的在线错误，而不是继续盲目补 SFT。
 
-- `configs/runtime_inference.json`
+实现入口：
 
-当前支持的关键字段：
+- `scripts/generate_soda_blackbox_distillation.py`
+- `scripts/run_soda_blackbox_distill.sh`
+- `src/config/llama_factory_soda_blackbox_deepseek_v1_config.yaml`
 
-```json
-{
-  "retrieval": {
-    "device": "cpu",
-    "enable_reranker": true,
-    "dense_top_k": 40,
-    "sparse_top_k": 40,
-    "fusion_top_k": 30,
-    "rerank_top_k": 10,
-    "rerank_batch_size": 8
-  },
-  "generator": {
-    "backend": "vllm"
-  },
-  "inference": {
-    "max_follow_up_rounds": 6
-  }
-}
-```
+机制：
 
-说明：
+1. 当前本地 4B 按真实 pipeline 运行。
+2. 脚本记录每一次 runtime prompt 和学生输出。
+3. API teacher 对同一个 prompt 生成输出。
+4. teacher 输出作为 KTO positive，student 输出作为 KTO negative。
+5. 导出 LLaMA-Factory ShareGPT KTO 数据。
 
-- `enable_reranker`
-  是否启用交叉编码器重排
-- `generator.backend`
-  生成后端，当前支持 `llama.cpp` 与 `vllm`
-- `dense_top_k`
-  稠密召回候选数
-- `sparse_top_k`
-  稀疏召回候选数
-- `fusion_top_k`
-  融合后进入下一阶段的候选数
-- `rerank_top_k`
-  重排后保留的证据数
-- `max_follow_up_rounds`
-  多轮检索安全上限；模型只要持续返回 `retrieve_more` 就会继续检索，直到达到上限
-
-临时覆盖配置也可以直接走 CLI：
+先跑小样本：
 
 ```bash
-python scripts/run_cpu_inference.py \
-  "烛煌的真实身份是什么？" \
-  --llama-cli third_party/llama.cpp/build/bin/llama-completion \
-  --gguf-model model/gguf/teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf \
-  --no-reranker \
-  --fusion-top-k 12 \
-  --rerank-top-k 6 \
-  --answer-only
+export DEEPSEEK_API_KEY="sk-..."
+
+SODA_SAMPLE=50 \
+GEN_CUDA_VISIBLE_DEVICES=0 \
+TRAIN_CUDA_VISIBLE_DEVICES=0,1,2 \
+bash scripts/run_soda_blackbox_distill.sh
 ```
 
-## 7. 检索延迟测试
-
-用于拆解各阶段延迟：
-
-- `dense_encode`
-- `FAISS`
-- `BM25`
-- `fusion`
-- `rerank`
-- `end-to-end`
-
-GPU 检索测试：
+第一版正式建议：
 
 ```bash
-conda activate train
-
-python scripts/benchmark_retrieval_latency.py \
-  --device cuda \
-  --query "烛煌的真实身份是什么？" \
-  --query "Logos和菈玛莲是什么关系？" \
-  --query "沙卒在萨尔贡黑市的地位和影响力如何？" \
-  --warmup 2 \
-  --repeat 5 \
-  --output outputs/retrieval_latency_train_gpu.json
+SODA_SAMPLE=300 \
+GEN_CUDA_VISIBLE_DEVICES=0 \
+TRAIN_CUDA_VISIBLE_DEVICES=0,1,2 \
+bash scripts/run_soda_blackbox_distill.sh
 ```
 
-CPU 检索测试：
+不建议一开始上千问题；先抽样检查 `data/processed/llama_factory/soda_blackbox_deepseek_v1/raw_pairs.jsonl` 和 `audit_records.jsonl`。
+
+## SFT / KTO 训练
+
+历史 SFT 和 API-grounded 数据生成脚本仍保留：
+
+- `scripts/generate_api_grounded_sft_from_retrieval.py`
+- `scripts/generate_online_teacher_chain_sft.py`
+- `scripts/merge_online_teacher_chain_sft_datasets.py`
+
+当前常用训练配置示例：
+
+- `src/config/llama_factory_online_teacher_chain_v2_quality_fix3_plus_detail_conclusion_patch_v1_config.yaml`
+- `src/config/llama_factory_soda_blackbox_deepseek_v1_config.yaml`
+- `src/config/llama_factory_opd_kto_full_chain_sample500_v3_config.yaml`
+
+启动训练：
 
 ```bash
-conda activate reasoning
-
-python scripts/benchmark_retrieval_latency.py \
-  --device cpu \
-  --query "烛煌的真实身份是什么？" \
-  --warmup 2 \
-  --repeat 5 \
-  --output outputs/retrieval_latency_reasoning_cpu.json
+DISABLE_VERSION_CHECK=1 \
+PYTHONPATH=.python_packages/train:src \
+CUDA_VISIBLE_DEVICES=0,1,2 \
+python -m llamafactory.cli train \
+  src/config/llama_factory_soda_blackbox_deepseek_v1_config.yaml
 ```
 
-如果要看不带重排的延迟：
+## Reranker 训练与评测
+
+主要脚本：
+
+- `scripts/build_rank_mix_reranker_dataset.py`
+- `scripts/build_rank_clean_reranker_dataset.py`
+- `scripts/train_evidence_chain_reranker.py`
+- `scripts/evaluate_evidence_chain_reranker.py`
+
+训练示例：
 
 ```bash
-python scripts/benchmark_retrieval_latency.py \
-  --device cpu \
-  --query "烛煌的真实身份是什么？" \
-  --disable-reranker
+PYTHONPATH=.python_packages/train:src \
+python scripts/train_evidence_chain_reranker.py \
+  --model-name-or-path model/reranker/bge-reranker-v2-m3-rank-mix-v5-warm \
+  --train-file data/processed/evidence_chain_reranker/rank_mix_v6_small_patch/reranker_pairwise.jsonl \
+  --output-dir model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch \
+  --num-train-epochs 1 \
+  --per-device-train-batch-size 8 \
+  --learning-rate 2e-5 \
+  --max-length 1024 \
+  --bf16
 ```
 
-## 8. 常用脚本
+## 评测
 
-- `scripts/build_retrieval_index.py`
-  构建剧情检索索引
-- `scripts/query_retrieval.py`
-  手工调试检索结果
-- `scripts/generate_sft_from_teacher.py`
-  生成主 SFT 数据
-- `scripts/generate_prompt_supplement_from_teacher.py`
-  生成 `user_question_hypothesis_generation` / `follow_up_hypothesis_generation` / `conclusion_generation` 补充数据
-- `scripts/merge_sft_datasets.py`
-  合并数据集
-- `scripts/llama_factory/run_train.sh`
-  主训练入口
-- `scripts/run_cpu_inference.py`
-  实际使用阶段的推理入口
-- `scripts/benchmark_retrieval_latency.py`
-  检索链路延迟测试
+多轮召回 / 答案链路评测：
 
-## 9. 当前训练与推理约定
+```bash
+PYTHONPATH=.python_packages/train:src \
+CUDA_VISIBLE_DEVICES=0 \
+python scripts/evaluate_multiround_retrieval_recall.py \
+  --runtime-config configs/runtime_inference_gpu.json \
+  --output outputs/eval_multiround_retrieval/current_sample50.json \
+  --sample 50 \
+  --max-rounds 2 \
+  --device cuda
+```
 
-- 主训练链路使用 `LLaMA-Factory`
-- `scripts/transformers_peft/` 保留为兼容/调试路径，不是当前主训练入口
-- 实际推理默认走 `llama.cpp`
-- 实际运行时，是否继续检索由模型 planner 决定，而不是固定只补一轮
+API 对照评测可用同一脚本的 API backend，或直接用 `api-mode/run_api_inference.py` 批量跑问题文件。
 
-## 10. 常见问题
+## 常见问题
 
-1. `llama.cpp CLI not found`
+### vLLM OOM
 
-请确认：
+降低以下参数：
 
-- 已构建 `third_party/llama.cpp`
-- 传入了真实的 `--llama-cli` 路径
+- `generator.vllm.gpu_memory_utilization`
+- `generator.vllm.max_model_len`
+- `inference.prompt_conclusion_evidence_max_total_chars`
+- `retrieval.rerank_top_k`
 
-2. `GGUF model not found`
+同时检查 `nvidia-smi` 是否已有旧进程占显存。
 
-请确认：
+### API 返回空 content
 
-- 已导出 GGUF
-- `--gguf-model` 指向真实文件
+DeepSeek 等 reasoning 模型可能把内容放到 `reasoning_content`。API runner 已做一次重试，要求最终内容写入 assistant `content`。
 
-3. CPU 推理很慢
+### JSON 字段漂移
 
 优先检查：
 
-- `configs/runtime_inference.json` 中是否关闭了 reranker
-- `fusion_top_k` 和 `rerank_top_k` 是否过大
+- 当前 LoRA 是否为最新 SFT/SODA 版本。
+- `conclusion_prompt_mode` 是否与训练数据一致。
+- API / local 是否使用同一套 runtime config。
+- 训练数据里是否混入 extra fields，如 `confidence`、`decision`、`slot_values`。
 
-4. 训练报数据集找不到
+## 开发规则
 
-请先确认是否已执行：
-
-```bash
-python scripts/merge_sft_datasets.py ...
-```
-
-以及：
-
-```bash
-python scripts/llama_factory/prepare_sft_dataset.py ...
-```
-
-## 11. 当前推荐使用顺序
-
-1. 构建索引
-2. 生成主 SFT 数据
-3. 生成 supplement 数据
-4. 合并数据集
-5. 使用 LLaMA-Factory 训练 LoRA
-6. 导出 GGUF / 挂载 LoRA
-7. 使用 `run_cpu_inference.py` 进行实际推理
+- 不要为单个问题、角色或活动写硬编码修复。
+- 任何检索策略变化都应配置化，并保留 trace 方便复盘。
+- 修改 retrieval / reranker / prompt / 数据清洗后至少跑 `py_compile` 和小样本评测。
+- 训练数据必须保留 raw、clean、summary、rejected/failed 记录。
+- 不要把 API key、私有 endpoint token 或本地密钥写进仓库。

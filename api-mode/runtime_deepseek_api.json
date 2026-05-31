@@ -43,7 +43,7 @@
     "initial_prompt_hint": "直接回答用户问题。提示词越少越好；可以使用你已有的剧情知识，但不确定的细节不要写死。",
     "initial_answer_max_tokens": 1024,
     "refine_answer_max_tokens": 1536,
-    "max_retrieval_rounds": 3,
+    "max_retrieval_rounds": 2,
     "prompt_evidence_top_k": 16,
     "prompt_evidence_max_chars_per_doc": 1800,
     "prompt_conclusion_evidence_max_total_chars": 24000,

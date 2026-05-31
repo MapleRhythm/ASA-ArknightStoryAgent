@@ -1,24 +1,51 @@
-# ASA-ArknightStoryAgent 明日方舟剧情问答推理版
+# ASA-ArknightStoryAgent 推理发布版
 
-这是 ASA-ArknightStoryAgent 的 GitHub 推理发布版。目录内只保留部署和推理所需内容，不包含 SFT 数据生成、teacher 标注生成、DPO/reranker 训练、wandb、LLaMA-Factory 或训练脚本。
+这是 ASA-ArknightStoryAgent 的可部署推理版，只保留运行问答链路需要的代码、配置、Web UI、建索引脚本和 MiniRAG 图，不包含训练数据生成、SFT/KTO/reranker 训练、wandb 或 LLaMA-Factory 配置。
 
-发布版已内置 MiniRAG 图：
+当前发布链路面向《明日方舟》剧情问答，原则是：优先依据剧情原文、档案、语音和联网补充证据回答；证据能支持部分内容时先回答可确认部分；证据不足时明确说明缺口，不把模型记忆或二创内容写成官方事实。
+
+## 当前链路
 
 ```text
-indexes/arknights_story_minirag/graph.json
+用户问题
+-> user_question_hypothesis_generation
+-> dense + BM25 + MiniRAG v3 混合召回
+-> MiniRAG 章节隔离 / 图扩展 / scoped second-pass retrieval
+-> storyline sparse scope
+-> 可选 neighbor expansion / web context
+-> fusion + reranker
+-> prompt evidence 去重、降权、截断
+-> minimal conclusion_generation
+-> answer_directly / retrieve_more / clarify_user / abstain
+-> 最多 2 轮召回；达到上限后基于当前证据输出可确认部分
 ```
 
-你仍需要本地构建 Dense / BM25 / FAISS 主索引。
+`max_retrieval_rounds` 在核心链路中硬限制为最多 2 轮，即使外部传入更大的值也不会继续第三轮召回。
 
-## 三个推理版本
+内置 MiniRAG v3 图：
 
-| 版本 | 生成方式 | reranker | 环境脚本 | 运行脚本 | 说明 |
+```text
+indexes/arknights_story_minirag_v3/graph.json
+```
+
+仍需本地构建主检索索引：
+
+```text
+indexes/arknights_story/documents.jsonl
+indexes/arknights_story/faiss.index
+indexes/arknights_story/bm25_tokens.pkl
+indexes/arknights_story/operator_aliases.json
+```
+
+## 三种运行模式
+
+| 模式 | 生成方式 | reranker | 默认配置 | 运行脚本 | 用途 |
 | --- | --- | --- | --- | --- | --- |
-| GPU | vLLM + Qwen3.5 4B + LoRA | 开启 | `scripts/setup_gpu_reranker_qwen35_4b.sh` | `scripts/run_gpu_reranker_qwen35_4b.sh` | 质量优先 |
-| CPU 本地 | llama.cpp + 已合并 LoRA 的 Qwen3.5 4B GGUF | 关闭 | `scripts/setup_cpu_qwen35_4b_no_reranker.sh` | `scripts/run_cpu_qwen35_4b_no_reranker.sh` | 纯本地 CPU |
-| CPU API | 本地 CPU 检索 + 远程 API | 关闭 | `scripts/setup_cpu_api_no_reranker.sh` | `scripts/run_cpu_api_no_reranker.sh` | 部署最轻 |
+| GPU | vLLM + Qwen3.5 4B + LoRA | 开启 | `configs/runtime_gpu_reranker_qwen35_4b.json` | `scripts/run_gpu_reranker_qwen35_4b.sh` | 质量优先 |
+| CPU 本地 | llama.cpp + 合并 LoRA GGUF | 关闭 | `configs/runtime_cpu_qwen35_4b_no_reranker.json` | `scripts/run_cpu_qwen35_4b_no_reranker.sh` | 纯本地部署 |
+| CPU API | 本地 CPU 检索 + OpenAI-compatible API | 关闭 | `configs/runtime_cpu_api_no_reranker.json` | `scripts/run_cpu_api_no_reranker.sh` | 轻量部署 |
 
-也可以启动本地 Web 前端，在浏览器里切换这三种模式：
+也可以启动 Web UI：
 
 ```bash
 bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
@@ -30,35 +57,21 @@ bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
 http://127.0.0.1:7860
 ```
 
-接口说明：
-
-```text
-docs/GPU_RERANKER_QWEN35_4B.md
-docs/CPU_QWEN35_4B_NO_RERANKER.md
-docs/CPU_API_NO_RERANKER.md
-```
-
-配置说明：
-
-```text
-docs/CONFIG_REFERENCE.md
-```
-
 ## 目录结构
 
 ```text
 api-mode/                         # API 模式入口
-configs/                          # 三个版本的 runtime 配置
+configs/                          # 三种运行模式的 runtime 配置
 data/                             # 放 ArknightsGameData
-docs/                             # 接口说明和配置说明
-indexes/arknights_story_minirag/  # 已内置 MiniRAG 图
+docs/                             # 部署与配置说明
+indexes/arknights_story_minirag_v3/ # 内置 MiniRAG v3 图
 model/                            # 放 embedding、reranker、4B、LoRA、GGUF
 scripts/                          # 环境、建索引、运行脚本
 src/asa_arknight_story_agent/     # 推理最小源码
 web/                              # 本地浏览器前端
 ```
 
-## 1. 获取游戏数据
+## 1. 准备游戏文本
 
 游戏文本数据来自：
 
@@ -81,7 +94,7 @@ data/ArknightsGameData/zh_CN/gamedata/excel/
 
 本仓库不内置原始游戏数据。请自行确认游戏数据及衍生索引的再分发许可。
 
-## 2. 选择环境
+## 2. 安装环境
 
 GPU 版本：
 
@@ -106,31 +119,22 @@ source .venv-api/bin/activate
 
 ## 3. 构建主检索索引
 
-GPU 环境可用：
+GPU 环境：
 
 ```bash
 python scripts/build_retrieval_index.py --device cuda
 ```
 
-CPU / API 环境用：
+CPU / API 环境：
 
 ```bash
 python scripts/build_retrieval_index.py --device cpu
 ```
 
-生成后应看到：
-
-```text
-indexes/arknights_story/documents.jsonl
-indexes/arknights_story/faiss.index
-indexes/arknights_story/bm25_tokens.pkl
-indexes/arknights_story/operator_aliases.json
-```
-
-MiniRAG 图已内置，一般不需要重建。如需基于本地 documents 重建：
+MiniRAG v3 图已内置，一般不需要重建。如需基于本地 documents 重建：
 
 ```bash
-python scripts/build_minirag_index.py --progress
+python scripts/build_minirag_index.py --progress --output indexes/arknights_story_minirag_v3/graph.json
 ```
 
 ## 4. 准备模型或 API
@@ -140,7 +144,8 @@ GPU 版本需要：
 ```text
 model/qwen3.5-4b/
 model/lora/asa-arknightstoryagent-4b-lora/
-model/reranker/bge-reranker-v2-m3-evidence-chain-answerability/
+model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch/
+model/embeddings/bge-small-zh-v1.5/
 ```
 
 CPU 本地模型版本需要：
@@ -148,26 +153,7 @@ CPU 本地模型版本需要：
 ```text
 third_party/llama.cpp/build-cpu/bin/llama-completion
 model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
-```
-
-对应环境脚本会自动从 Hugging Face 下载默认模型：
-
-```text
-MapleRhythm/asa-arknightstoryagent-4b-lora
-MapleRhythm/asa-arknightstoryagent-4b-gguf
-MapleRhythm/asa-evidence-chain-reranker
-```
-
-国内网络只下载时可设置镜像：
-
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-```
-
-如果你 fork 了模型仓库，可用环境变量覆盖：
-
-```bash
-export ASA_HF_OWNER=你的HF用户名
+model/embeddings/bge-small-zh-v1.5/
 ```
 
 CPU API 版本需要：
@@ -176,27 +162,19 @@ CPU API 版本需要：
 export OPENAI_API_KEY="你的 key"
 ```
 
-如使用第三方 OpenAI 兼容接口，修改：
+如使用第三方 OpenAI 兼容服务，修改：
 
 ```text
 configs/runtime_cpu_api_no_reranker.json
 ```
 
-微调权重上传到 Hugging Face 的方法见：
+国内网络只下载模型时可设置：
 
-```text
-HUGGINGFACE_UPLOAD.md
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
 ```
 
 ## 5. 运行
-
-Web 前端：
-
-```bash
-bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
-```
-
-前端会调用已有推理脚本。CPU 本地模式首次回答会加载索引和模型，可能需要几分钟；CPU API 模式需要先设置 API key。
 
 GPU：
 
@@ -223,3 +201,58 @@ bash scripts/run_cpu_api_no_reranker.sh "炎景公主一事具体指什么"
 ```bash
 python scripts/query_retrieval.py "岁兽是什么，为什么会成为危机"
 ```
+
+## 关键配置
+
+GPU 默认配置：
+
+```text
+configs/runtime_gpu_reranker_qwen35_4b.json
+```
+
+当前关键项：
+
+- `retrieval.reranker_model_path`: `model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch`
+- `retrieval.minirag_index_path`: `indexes/arknights_story_minirag_v3/graph.json`
+- `retrieval.minirag_chapter_isolation`: `true`
+- `retrieval.minirag_auto_second_retrieval`: `true`
+- `retrieval.enable_storyline_sparse_scope`: `true`
+- `retrieval.enable_neighbor_expansion`: GPU 默认 `true`
+- `inference.max_retrieval_rounds`: `2`
+- `inference.conclusion_prompt_mode`: `minimal`
+- `inference.answer_grounding_mode`: `weak`
+- `inference.web_context.enabled`: GPU 默认 `true`
+
+## 常见问题
+
+### vLLM OOM
+
+优先降低：
+
+- `generator.vllm.gpu_memory_utilization`
+- `generator.vllm.max_model_len`
+- `inference.prompt_conclusion_evidence_max_total_chars`
+- `retrieval.rerank_top_k`
+
+同时用 `nvidia-smi` 检查是否有旧进程占显存。
+
+### API key
+
+默认读取：
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+不要把 API key 写入配置文件或提交到仓库。
+
+### 召回不到目标原文
+
+先用 `scripts/query_retrieval.py` 检查静态召回，再检查 runtime trace 里的：
+
+- `retained_chapter_scope`
+- `retained_storyline_scope`
+- `minirag_chapter_expansion`
+- `evidence_summary`
+
+如果前两轮都没有新增有效证据，第三轮通常只增加延迟，因此当前发布版不再启用第三轮召回。

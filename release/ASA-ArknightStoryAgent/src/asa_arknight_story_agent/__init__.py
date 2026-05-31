@@ -1,1 +1,2 @@
-"""ASA-ArknightStoryAgent inference package."""
+"""Goldenglow retrieval package."""
+

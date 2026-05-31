@@ -184,6 +184,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repeat-penalty", type=float, default=None)
+    parser.add_argument("--max-retrieval-rounds", type=int, default=None)
     parser.add_argument("--dense-top-k", type=int, default=None)
     parser.add_argument("--sparse-top-k", type=int, default=None)
     parser.add_argument("--fusion-top-k", type=int, default=None)
@@ -201,18 +202,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-minirag-auto-second-retrieval", dest="minirag_auto_second_retrieval", action="store_false")
     parser.add_argument("--minirag-scope-seed-top-k", type=int, default=None)
     parser.add_argument("--minirag-expansion-query-top-k", type=int, default=None)
+    parser.add_argument("--minirag-graph-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--minirag-second-pass-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_true", default=None)
+    parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
+    parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
+    parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
     parser.add_argument("--reranker-candidate-top-k", type=int, default=None)
     parser.add_argument("--enable-mmr", dest="enable_mmr", action="store_true", default=None)
     parser.add_argument("--disable-mmr", dest="enable_mmr", action="store_false")
     parser.add_argument("--mmr-lambda", type=float, default=None)
     parser.add_argument("--enable-pyramid-order", dest="enable_pyramid_order", action="store_true", default=None)
     parser.add_argument("--disable-pyramid-order", dest="enable_pyramid_order", action="store_false")
+    parser.add_argument("--enable-evidence-pinning", dest="enable_evidence_pinning", action="store_true", default=None)
+    parser.add_argument("--disable-evidence-pinning", dest="enable_evidence_pinning", action="store_false")
     parser.add_argument("--enable-crag-refinement", dest="enable_crag_refinement", action="store_true", default=None)
     parser.add_argument("--disable-crag-refinement", dest="enable_crag_refinement", action="store_false")
     parser.add_argument("--crag-refine-top-sentences", type=int, default=None)
     parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
+    parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
     parser.add_argument("--enable-web-context", dest="enable_web_context", action="store_true", default=None)
@@ -298,10 +308,15 @@ def main() -> None:
         retrieval_cfg.get("neighbor_activity_story_sort_window", 1)
     )
     reranker_max_length = int(retrieval_cfg.get("reranker_max_length", 1024))
-    max_retrieval_rounds = inference_cfg.get("max_retrieval_rounds")
+    max_retrieval_rounds = resolve_config_value(
+        args.max_retrieval_rounds,
+        inference_cfg,
+        "max_retrieval_rounds",
+        None,
+    )
     if max_retrieval_rounds is None:
-        max_retrieval_rounds = 3
-    max_retrieval_rounds = int(max_retrieval_rounds)
+        max_retrieval_rounds = 2
+    max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
     prompt_evidence_top_k = int(inference_cfg.get("prompt_evidence_top_k", 8))
     use_model_hypothesis = bool(inference_cfg.get("use_model_hypothesis", True))
     use_model_conclusion_generation = bool(
@@ -314,6 +329,9 @@ def main() -> None:
     mmr_lambda = float(resolve_config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72))
     enable_pyramid_order = bool(
         resolve_config_value(args.enable_pyramid_order, inference_cfg, "enable_pyramid_order", False)
+    )
+    enable_evidence_pinning = bool(
+        resolve_config_value(args.enable_evidence_pinning, inference_cfg, "enable_evidence_pinning", False)
     )
     enable_crag_refinement = bool(
         resolve_config_value(args.enable_crag_refinement, inference_cfg, "enable_crag_refinement", False)
@@ -347,6 +365,9 @@ def main() -> None:
         resolve_config_value(args.self_consistency_temperature, inference_cfg, "self_consistency_temperature", 0.7)
     )
     answer_grounding_mode = str(inference_cfg.get("answer_grounding_mode", "weak"))
+    conclusion_prompt_mode = str(
+        resolve_config_value(args.conclusion_prompt_mode, inference_cfg, "conclusion_prompt_mode", "full")
+    )
     web_context_cfg = inference_cfg.get("web_context", {}) if isinstance(inference_cfg.get("web_context"), dict) else {}
     web_context_cfg = dict(web_context_cfg)
     web_context_cfg["enabled"] = bool(
@@ -368,7 +389,7 @@ def main() -> None:
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True))
     if args.no_reranker:
         enable_reranker = False
-    ctx_size = int(resolve_config_value(args.ctx_size, generator_cfg, "ctx_size", 8192))
+    ctx_size = int(resolve_config_value(args.ctx_size, generator_cfg, "ctx_size", 12000))
     max_tokens = int(resolve_config_value(args.max_tokens, generator_cfg, "max_tokens", 512))
     temperature = float(resolve_config_value(args.temperature, generator_cfg, "temperature", 0.2))
     top_p = float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9))
@@ -420,8 +441,31 @@ def main() -> None:
             8,
         )
     )
-    minirag_graph_scope_min_ratio = float(retrieval_cfg.get("minirag_graph_scope_min_ratio", 2.5))
-    minirag_second_pass_scope_min_ratio = float(retrieval_cfg.get("minirag_second_pass_scope_min_ratio", 2.5))
+    minirag_graph_scope_min_ratio = float(
+        resolve_config_value(args.minirag_graph_scope_min_ratio, retrieval_cfg, "minirag_graph_scope_min_ratio", 1.0)
+    )
+    minirag_second_pass_scope_min_ratio = float(
+        resolve_config_value(
+            args.minirag_second_pass_scope_min_ratio,
+            retrieval_cfg,
+            "minirag_second_pass_scope_min_ratio",
+            1.0,
+        )
+    )
+    enable_storyline_sparse_scope = bool(
+        resolve_config_value(args.enable_storyline_sparse_scope, retrieval_cfg, "enable_storyline_sparse_scope", True)
+    )
+    storyline_scope_seed_top_k = int(
+        resolve_config_value(args.storyline_scope_seed_top_k, retrieval_cfg, "storyline_scope_seed_top_k", 40)
+    )
+    storyline_sparse_scope_min_ratio = float(
+        resolve_config_value(
+            args.storyline_sparse_scope_min_ratio,
+            retrieval_cfg,
+            "storyline_sparse_scope_min_ratio",
+            1.5,
+        )
+    )
     reranker_candidate_top_k = int(
         resolve_config_value(args.reranker_candidate_top_k, retrieval_cfg, "reranker_candidate_top_k", 120)
     )
@@ -535,6 +579,9 @@ def main() -> None:
             minirag_expansion_query_top_k=minirag_expansion_query_top_k,
             minirag_graph_scope_min_ratio=minirag_graph_scope_min_ratio,
             minirag_second_pass_scope_min_ratio=minirag_second_pass_scope_min_ratio,
+            enable_storyline_sparse_scope=enable_storyline_sparse_scope,
+            storyline_scope_seed_top_k=storyline_scope_seed_top_k,
+            storyline_sparse_scope_min_ratio=storyline_sparse_scope_min_ratio,
             reranker_candidate_top_k=reranker_candidate_top_k,
             enable_neighbor_expansion=enable_neighbor_expansion,
             neighbor_max_seed_docs=neighbor_max_seed_docs,
@@ -549,12 +596,14 @@ def main() -> None:
         enable_mmr=enable_mmr,
         mmr_lambda=mmr_lambda,
         enable_pyramid_order=enable_pyramid_order,
+        enable_evidence_pinning=enable_evidence_pinning,
         enable_crag_refinement=enable_crag_refinement,
         crag_refine_top_sentences=crag_refine_top_sentences,
         crag_refine_max_sentences=crag_refine_max_sentences,
         self_consistency_samples=self_consistency_samples,
         self_consistency_temperature=self_consistency_temperature,
         answer_grounding_mode=answer_grounding_mode,
+        conclusion_prompt_mode=conclusion_prompt_mode,
         use_model_hypothesis=use_model_hypothesis,
         use_model_conclusion_generation=use_model_conclusion_generation,
         web_context_config=web_context_cfg,

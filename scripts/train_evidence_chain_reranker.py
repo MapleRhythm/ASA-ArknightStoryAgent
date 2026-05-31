@@ -30,6 +30,7 @@ HARD_NEGATIVE_TYPES = {
     "same_entity_distractor",
     "partial_answer",
     "misleading_chain",
+    "weak_original_gold",
 }
 ANSWERABILITY_QUERY_TYPES = {"causality", "reasoning", "reveal", "mystery", "answerability"}
 

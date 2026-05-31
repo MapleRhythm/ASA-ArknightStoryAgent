@@ -52,7 +52,7 @@ fi
   --output "$OUTPUT" \
   --sample 50 \
   --planner-mode conclusion \
-  --max-rounds 3 \
+  --max-rounds 2 \
   --device cuda:0 \
   --base-model "$FULL_RUNTIME" \
   --no-lora \

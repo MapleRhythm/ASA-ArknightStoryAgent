@@ -31,7 +31,7 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" \
   --parallel 4 \
   --parallel-retrieval \
   --device cuda:0 \
-  --max-rounds 3 \
+  --max-rounds 2 \
   --validation-retries 2 \
   --api-retries 3 \
   --retry-sleep 30 \

@@ -9,6 +9,26 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
+TRAIN_PYTHON_OVERLAY_DIR = PROJECT_ROOT / ".python_packages" / "train"
+
+
+def should_use_train_overrides() -> bool:
+    override_flag = os.environ.get("GOLDENGLOW_USE_TRAIN_OVERRIDE")
+    if override_flag is not None:
+        return override_flag.lower() in {"1", "true", "yes", "on"}
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV", "").strip().lower()
+    if conda_env == "train":
+        return True
+    executable = Path(sys.executable).as_posix().lower()
+    return "/envs/train/" in executable or executable.endswith("/envs/train/bin/python")
+
+
+if should_use_train_overrides():
+    if TRAIN_PYTHON_OVERLAY_DIR.exists():
+        sys.path.insert(0, str(TRAIN_PYTHON_OVERLAY_DIR))
+    if TRAIN_OVERRIDE_DIR.exists():
+        sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 import faiss
@@ -41,6 +61,42 @@ def save_jsonl(path: Path, records: list[dict]) -> None:
             handle.write("\n")
 
 
+def load_jsonl(path: Path) -> list[dict]:
+    records: list[dict] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            payload = json.loads(stripped)
+            if not isinstance(payload, dict):
+                raise ValueError(f"{path}:{line_number} is not a JSON object")
+            records.append(payload)
+    return records
+
+
+def load_extra_documents(paths: list[Path]) -> list[dict]:
+    documents: list[dict] = []
+    seen_ids: set[str] = set()
+    for path in paths:
+        resolved = path if path.is_absolute() else PROJECT_ROOT / path
+        if not resolved.exists():
+            raise FileNotFoundError(f"Extra documents file not found: {resolved}")
+        for document in load_jsonl(resolved):
+            document_id = str(document.get("id") or "").strip()
+            clean_text = str(document.get("clean_text") or "").strip()
+            search_text = str(document.get("search_text") or clean_text).strip()
+            if not document_id or not clean_text or not search_text:
+                raise ValueError(f"Extra document in {resolved} is missing id/clean_text/search_text")
+            if document_id in seen_ids:
+                continue
+            seen_ids.add(document_id)
+            normalized = dict(document)
+            normalized["search_text"] = search_text
+            documents.append(normalized)
+    return documents
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build FAISS + BM25 retrieval index.")
     parser.add_argument("--max-chars", type=int, default=420)
@@ -52,6 +108,13 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=EMBEDDING_MODEL_DIR,
         help="Local path to the embedding model.",
+    )
+    parser.add_argument(
+        "--extra-documents",
+        type=Path,
+        action="append",
+        default=[],
+        help="Additional JSONL documents to append before building FAISS/BM25. Can be passed multiple times.",
     )
     return parser.parse_args()
 
@@ -70,6 +133,8 @@ def main() -> None:
         max_chars=config.max_chars,
         overlap_segments=config.overlap_segments,
     )
+    extra_documents = load_extra_documents(args.extra_documents)
+    documents.extend(extra_documents)
     operator_alias_map = build_operator_alias_lookup(EXCEL_ROOT)
     if not documents:
         raise RuntimeError("No story documents were parsed from the source data.")
@@ -109,6 +174,11 @@ def main() -> None:
         "max_chars": config.max_chars,
         "overlap_segments": config.overlap_segments,
         "operator_aliases": len(operator_alias_map),
+        "extra_documents": len(extra_documents),
+        "extra_document_files": [
+            str(path if path.is_absolute() else PROJECT_ROOT / path)
+            for path in args.extra_documents
+        ],
     }
     CORPUS_METADATA_PATH.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),

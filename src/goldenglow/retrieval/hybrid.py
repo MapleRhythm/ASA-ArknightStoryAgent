@@ -16,6 +16,7 @@ from sentence_transformers import SentenceTransformer
 from goldenglow.config import BM25_TOKENS_PATH, DOCUMENTS_PATH, FAISS_INDEX_PATH, QueryConfig
 from goldenglow.retrieval.minirag import MiniRAGIndex
 from goldenglow.retrieval.reranker import CrossEncoderReranker
+from goldenglow.retrieval.storyline import document_storyline_scopes
 
 
 ASCII_TOKEN_RE = re.compile(r"[a-z0-9_]+", re.IGNORECASE)
@@ -348,12 +349,15 @@ class ArknightsHybridRetriever:
         self.reranker = reranker
         self.minirag_index = minirag_index
         self.story_doc_indices: dict[str, list[int]] = {}
+        self.storyline_doc_indices: dict[str, list[int]] = {}
         self.stage_doc_indices: dict[tuple[str, str], list[int]] = {}
         self.activity_story_sort_doc_indices: dict[str, dict[int, list[int]]] = {}
         for doc_index, document in enumerate(documents):
             story_id = str(document.get("story_id") or "").strip()
             if story_id:
                 self.story_doc_indices.setdefault(story_id, []).append(doc_index)
+            for storyline_scope in document_storyline_scopes(document):
+                self.storyline_doc_indices.setdefault(storyline_scope, []).append(doc_index)
             activity_id = str(document.get("activity_id") or "").strip()
             stage_code = str(document.get("stage_code") or "").strip()
             if activity_id and stage_code:
@@ -432,10 +436,36 @@ class ArknightsHybridRetriever:
             )
         return hits
 
-    def sparse_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+    def sparse_search(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        storyline_scope: str | None = None,
+    ) -> list[dict[str, Any]]:
         tokens = tokenize_for_bm25(query)
         scores = self.bm25.get_scores(tokens)
-        if top_k >= len(scores):
+        allowed_indices: list[int] | None = None
+        if storyline_scope:
+            allowed_indices = self.storyline_doc_indices.get(storyline_scope, [])
+            if not allowed_indices:
+                return []
+
+        if allowed_indices is not None:
+            candidate_indices = np.array(allowed_indices, dtype=np.int64)
+            candidate_scores = scores[candidate_indices]
+            positive_mask = candidate_scores > 0
+            candidate_indices = candidate_indices[positive_mask]
+            candidate_scores = candidate_scores[positive_mask]
+            if len(candidate_indices) <= 0:
+                return []
+            if top_k >= len(candidate_indices):
+                order = np.argsort(candidate_scores)[::-1]
+            else:
+                order = np.argpartition(candidate_scores, -top_k)[-top_k:]
+                order = order[np.argsort(candidate_scores[order])[::-1]]
+            top_indices = candidate_indices[order]
+        elif top_k >= len(scores):
             top_indices = np.argsort(scores)[::-1]
         else:
             top_indices = np.argpartition(scores, -top_k)[-top_k:]

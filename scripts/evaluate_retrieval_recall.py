@@ -187,6 +187,11 @@ def parse_args() -> argparse.Namespace:
             "MiniRAG, fused pre-rerank, and source union pools."
         ),
     )
+    parser.add_argument(
+        "--include-records",
+        action="store_true",
+        help="Include per-query first-hit rank diagnostics in the output JSON.",
+    )
     parser.add_argument("--tag", type=str, default="", help="Free-form tag stored in output JSON.")
     return parser.parse_args()
 
@@ -299,6 +304,7 @@ def evaluate(
     min_overlap_grams: int,
     min_candidate_grams: int,
     skip_rerank: bool = False,
+    include_records: bool = False,
 ) -> dict[str, Any]:
     max_k = max(top_ks)
     overall_hits: dict[int, int] = {k: 0 for k in top_ks}
@@ -308,6 +314,7 @@ def evaluate(
     overall_missed = 0
     per_type: dict[str, dict[str, Any]] = {}
     misses: list[dict[str, Any]] = []
+    record_diagnostics: list[dict[str, Any]] = []
 
     started = time.time()
     for index, record in enumerate(records):
@@ -355,6 +362,19 @@ def evaluate(
         if first_hit_rank is None:
             overall_missed += 1
             per_type_stats["missed"] += 1
+            if include_records:
+                record_diagnostics.append(
+                    {
+                        "index": index,
+                        "query": query,
+                        "query_type": query_type,
+                        "source_name": record.get("source_name"),
+                        "first_hit_rank": None,
+                        "hit_source": "",
+                        "hit_score": 0.0,
+                        "gold_excerpt": normalize_text(gold_text)[:200],
+                    }
+                )
             if len(misses) < 20:
                 misses.append(
                     {
@@ -371,6 +391,19 @@ def evaluate(
         per_type_stats.setdefault("hit_sources", {})
         per_type_stats["hit_sources"][hit_source] = per_type_stats["hit_sources"].get(hit_source, 0) + 1
         per_type_stats["best_hit_score_sum"] = per_type_stats.get("best_hit_score_sum", 0.0) + hit_score
+        if include_records:
+            record_diagnostics.append(
+                {
+                    "index": index,
+                    "query": query,
+                    "query_type": query_type,
+                    "source_name": record.get("source_name"),
+                    "first_hit_rank": first_hit_rank,
+                    "hit_source": hit_source,
+                    "hit_score": round(hit_score, 6),
+                    "gold_excerpt": normalize_text(gold_text)[:200],
+                }
+            )
         for k in top_ks:
             if first_hit_rank <= k:
                 overall_hits[k] += 1
@@ -413,7 +446,7 @@ def evaluate(
         },
     }
 
-    return {
+    payload = {
         "overall": overall_summary,
         "by_query_type": {
             qt: finalize_bucket(stats) for qt, stats in sorted(per_type.items())
@@ -421,6 +454,9 @@ def evaluate(
         "sample_misses": misses,
         "wall_seconds": round(time.time() - started, 2),
     }
+    if include_records:
+        payload["records"] = record_diagnostics
+    return payload
 
 
 def _first_hit_rank(
@@ -694,6 +730,7 @@ def main() -> int:
         min_overlap_grams=args.min_overlap_grams,
         min_candidate_grams=args.min_candidate_grams,
         skip_rerank=args.skip_rerank,
+        include_records=args.include_records,
     )
     source_oracle = None
     if args.oracle_sources:

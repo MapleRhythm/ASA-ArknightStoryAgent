@@ -608,7 +608,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sample", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260523)
     parser.add_argument("--samples-per-prompt", type=int, default=4)
-    parser.add_argument("--max-rounds", type=int, default=3)
+    parser.add_argument("--max-rounds", type=int, default=2)
     parser.add_argument("--dialogue-context", default="")
     parser.add_argument("--device", default=None)
     parser.add_argument("--index-dir", type=Path, default=INDEX_ROOT)
@@ -691,6 +691,7 @@ def main() -> int:
     index_dir = args.index_dir if args.index_dir.is_absolute() else PROJECT_ROOT / args.index_dir
     device = str(config_value(args.device, retrieval_cfg, "device", "cuda"))
     max_k = int(args.rerank_top_k)
+    args.max_rounds = min(2, max(1, int(args.max_rounds)))
 
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True)) and not args.no_reranker
     configured_reranker = retrieval_cfg.get("reranker_model_path") or retrieval_cfg.get("reranker_model")

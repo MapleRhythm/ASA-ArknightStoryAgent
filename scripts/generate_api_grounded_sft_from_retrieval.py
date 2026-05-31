@@ -1338,7 +1338,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Generate full-chain SFT records: initial hypothesis, per-round conclusion, and follow-up hypothesis when retrieving more.",
     )
-    parser.add_argument("--max-rounds", type=int, default=3, help="Maximum retrieval rounds in --full-chain mode.")
+    parser.add_argument("--max-rounds", type=int, default=2, help="Maximum retrieval rounds in --full-chain mode.")
     parser.add_argument(
         "--allow-retrieve-more",
         action="store_true",
@@ -1416,7 +1416,7 @@ def main() -> int:
     if args.dry_run and (args.generate_questions > 0 or args.generate_theme_questions > 0) and not items:
         raise SystemExit("--dry-run cannot generate questions without calling API. Pass --question/--questions-file or remove --dry-run.")
     full_chain = bool(args.full_chain)
-    max_rounds = max(1, int(args.max_rounds if full_chain else 1))
+    max_rounds = min(2, max(1, int(args.max_rounds if full_chain else 1)))
     allow_retrieve_more = bool(args.allow_retrieve_more or full_chain)
 
     retriever, query_config, _retrieval_cfg = build_retriever(args, runtime_config)

@@ -61,7 +61,16 @@ API_MODE_SYSTEM_APPENDIX = """你正在替代本地微调 4B 模型，为一个�
 - 需要 JSON 时只输出一个 JSON 对象，不要 markdown，不要解释，不要输出思维过程。
 - 不要输出或展开 reasoning_content / chain-of-thought；最终内容必须写在 assistant message 的 content 字段中。
 - 不要把缺证据时的推测写成事实；证据不足时按 schema 选择 retrieve_more 或 abstain。
+- 如果证据能支持部分回答，应优先给出“可确认部分”，不要因为缺少完整背景直接 abstain；但不能把未被证据支持的内容写成确定事实。
 - 多轮上下文只能用于消歧，不得把上一轮 assistant 的错误结论当作事实。"""
+
+API_MODE_QA_SYSTEM_APPENDIX = """你正在替代本地微调 4B 模型，为一个《明日方舟》RAG 检索管线生成最终自然语言答案。
+硬性要求：
+- 只依据用户消息中的检索证据回答，不要使用训练记忆补证据。
+- 不要输出 JSON、markdown 表格、schema 字段或链路分析。
+- 如果证据不足，明确说明哪些部分不足以确认。
+- 如果证据能支持部分回答，应优先给出“可确认部分”，不要因为缺少完整背景直接 abstain；但不能把未被证据支持的内容写成确定事实。
+- 不要输出或展开 reasoning_content / chain-of-thought；最终内容必须写在 assistant message 的 content 字段中。"""
 
 
 def load_runtime_config(path: Path) -> dict[str, Any]:
@@ -188,6 +197,7 @@ def build_revision_prompt(question: str, initial_answer: str, evidence_text: str
 
 def chatml_prompt_to_messages(prompt: str) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
+    system_appendix = API_MODE_SYSTEM_APPENDIX if prompt_wants_json(prompt) else API_MODE_QA_SYSTEM_APPENDIX
     for role, content in CHATML_MESSAGE_RE.findall(prompt):
         cleaned = content.strip()
         if not cleaned:
@@ -198,18 +208,34 @@ def chatml_prompt_to_messages(prompt: str) -> list[dict[str, str]]:
         if role == "assistant":
             continue
         if role == "system":
-            cleaned = cleaned + "\n\n" + API_MODE_SYSTEM_APPENDIX
+            cleaned = cleaned + "\n\n" + system_appendix
         messages.append({"role": role, "content": cleaned})
     if messages:
         return messages
     return [
-        {"role": "system", "content": API_MODE_SYSTEM_APPENDIX},
+        {"role": "system", "content": system_appendix},
         {"role": "user", "content": prompt},
     ]
 
 
 def prompt_wants_json(prompt: str) -> bool:
-    return "JSON" in prompt or "json" in prompt or "输出必须是单个" in prompt or "schema" in prompt
+    if "请直接回答用户问题" in prompt or "最终校正答案" in prompt:
+        return False
+    return any(
+        marker in prompt
+        for marker in (
+            "output_schema:",
+            "输出必须是单个 JSON",
+            "只输出 JSON",
+            "必须输出 JSON",
+            "字段严格包含",
+            "schema: hypothesis",
+            "schema: conclusion",
+            "task: user_question_hypothesis_generation",
+            "task: follow_up_hypothesis_generation",
+            "task: conclusion_generation",
+        )
+    )
 
 
 def validate_api_key(api_key: str, api_key_env: str) -> None:
@@ -412,7 +438,8 @@ class OpenAICompatibleAPIRunner:
             self._write_request_log(payload=payload, response=response)
 
         try:
-            content = response["choices"][0]["message"]["content"]
+            message = response["choices"][0]["message"]
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             try:
                 message = response["choices"][0]["message"]
@@ -428,6 +455,31 @@ class OpenAICompatibleAPIRunner:
                 ) from exc
             raise RuntimeError(f"Unexpected chat completion response: {json.dumps(response, ensure_ascii=False)[:1000]}") from exc
         if not isinstance(content, str) or not content.strip():
+            reasoning = message.get("reasoning_content") if isinstance(message, dict) else None
+            if reasoning:
+                retry_payload = dict(payload)
+                retry_messages = list(payload.get("messages") or [])
+                retry_messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "上一条响应没有 assistant content。请只输出符合 schema 的单个 JSON 对象，不要解释。"
+                            if wants_json
+                            else "上一条响应没有 assistant content。请只输出最终答案正文，不要解释推理过程。"
+                        ),
+                    }
+                )
+                retry_payload["messages"] = retry_messages
+                retry_response = self._post_chat_completion(retry_payload)
+                self._write_request_log(payload=retry_payload, response=retry_response)
+                try:
+                    retry_content = retry_response["choices"][0]["message"]["content"]
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise RuntimeError(
+                        f"Unexpected chat completion retry response: {json.dumps(retry_response, ensure_ascii=False)[:1000]}"
+                    ) from exc
+                if isinstance(retry_content, str) and retry_content.strip():
+                    return retry_content.strip()
             raise RuntimeError(f"API returned empty content: {json.dumps(response, ensure_ascii=False)[:1000]}")
         return content.strip()
 
@@ -498,6 +550,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--minirag-top-k", type=int, default=None)
     parser.add_argument("--minirag-weight", type=float, default=None)
     parser.add_argument("--minirag-fusion-mode", choices=("score", "append"), default=None)
+    parser.add_argument("--enable-minirag-chapter-isolation", dest="minirag_chapter_isolation", action="store_true", default=None)
+    parser.add_argument("--disable-minirag-chapter-isolation", dest="minirag_chapter_isolation", action="store_false")
+    parser.add_argument("--enable-minirag-auto-second-retrieval", dest="minirag_auto_second_retrieval", action="store_true", default=None)
+    parser.add_argument("--disable-minirag-auto-second-retrieval", dest="minirag_auto_second_retrieval", action="store_false")
+    parser.add_argument("--minirag-scope-seed-top-k", type=int, default=None)
+    parser.add_argument("--minirag-expansion-query-top-k", type=int, default=None)
+    parser.add_argument("--minirag-graph-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--minirag-second-pass-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_true", default=None)
+    parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
+    parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
+    parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
     parser.add_argument("--reranker-candidate-top-k", type=int, default=None)
     parser.add_argument("--enable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_true", default=None)
     parser.add_argument("--disable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_false")
@@ -509,12 +573,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mmr-lambda", type=float, default=None)
     parser.add_argument("--enable-pyramid-order", dest="enable_pyramid_order", action="store_true", default=None)
     parser.add_argument("--disable-pyramid-order", dest="enable_pyramid_order", action="store_false")
+    parser.add_argument("--enable-evidence-pinning", dest="enable_evidence_pinning", action="store_true", default=None)
+    parser.add_argument("--disable-evidence-pinning", dest="enable_evidence_pinning", action="store_false")
     parser.add_argument("--enable-crag-refinement", dest="enable_crag_refinement", action="store_true", default=None)
     parser.add_argument("--disable-crag-refinement", dest="enable_crag_refinement", action="store_false")
     parser.add_argument("--crag-refine-top-sentences", type=int, default=None)
     parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
+    parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
+    parser.add_argument("--max-retrieval-rounds", type=int, default=None)
+    parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
     parser.add_argument("--answer-grounding-mode", choices=("off", "weak", "strict"), default=None)
@@ -578,6 +647,38 @@ def main() -> None:
     minirag_fusion_mode = str(
         resolve_config_value(args.minirag_fusion_mode, retrieval_cfg, "minirag_fusion_mode", "score")
     )
+    minirag_chapter_isolation = bool(
+        resolve_config_value(args.minirag_chapter_isolation, retrieval_cfg, "minirag_chapter_isolation", True)
+    )
+    minirag_auto_second_retrieval = bool(
+        resolve_config_value(args.minirag_auto_second_retrieval, retrieval_cfg, "minirag_auto_second_retrieval", True)
+    )
+    minirag_scope_seed_top_k = int(
+        resolve_config_value(args.minirag_scope_seed_top_k, retrieval_cfg, "minirag_scope_seed_top_k", 40)
+    )
+    minirag_expansion_query_top_k = int(
+        resolve_config_value(args.minirag_expansion_query_top_k, retrieval_cfg, "minirag_expansion_query_top_k", 8)
+    )
+    minirag_graph_scope_min_ratio = float(
+        resolve_config_value(args.minirag_graph_scope_min_ratio, retrieval_cfg, "minirag_graph_scope_min_ratio", 1.0)
+    )
+    minirag_second_pass_scope_min_ratio = float(
+        resolve_config_value(
+            args.minirag_second_pass_scope_min_ratio,
+            retrieval_cfg,
+            "minirag_second_pass_scope_min_ratio",
+            1.0,
+        )
+    )
+    enable_storyline_sparse_scope = bool(
+        resolve_config_value(args.enable_storyline_sparse_scope, retrieval_cfg, "enable_storyline_sparse_scope", True)
+    )
+    storyline_scope_seed_top_k = int(
+        resolve_config_value(args.storyline_scope_seed_top_k, retrieval_cfg, "storyline_scope_seed_top_k", 40)
+    )
+    storyline_sparse_scope_min_ratio = float(
+        resolve_config_value(args.storyline_sparse_scope_min_ratio, retrieval_cfg, "storyline_sparse_scope_min_ratio", 1.5)
+    )
     reranker_candidate_top_k = int(
         resolve_config_value(args.reranker_candidate_top_k, retrieval_cfg, "reranker_candidate_top_k", 120)
     )
@@ -592,12 +693,20 @@ def main() -> None:
                 "MiniRAG index is enabled but missing. Build it with "
                 "`python scripts/build_minirag_index.py` or disable retrieval.enable_minirag."
             )
-    max_retrieval_rounds = int(inference_cfg.get("max_retrieval_rounds", 3))
-    prompt_evidence_top_k = int(inference_cfg.get("prompt_evidence_top_k", 12))
+    max_retrieval_rounds = int(
+        resolve_config_value(args.max_retrieval_rounds, inference_cfg, "max_retrieval_rounds", 2)
+    )
+    max_retrieval_rounds = min(2, max(1, max_retrieval_rounds))
+    prompt_evidence_top_k = int(
+        resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 12)
+    )
     enable_mmr = bool(resolve_config_value(args.enable_mmr, inference_cfg, "enable_mmr", False))
     mmr_lambda = float(resolve_config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72))
     enable_pyramid_order = bool(
         resolve_config_value(args.enable_pyramid_order, inference_cfg, "enable_pyramid_order", False)
+    )
+    enable_evidence_pinning = bool(
+        resolve_config_value(args.enable_evidence_pinning, inference_cfg, "enable_evidence_pinning", False)
     )
     enable_crag_refinement = bool(
         resolve_config_value(args.enable_crag_refinement, inference_cfg, "enable_crag_refinement", False)
@@ -632,6 +741,9 @@ def main() -> None:
     )
     answer_grounding_mode = str(
         resolve_config_value(args.answer_grounding_mode, inference_cfg, "answer_grounding_mode", "weak")
+    )
+    conclusion_prompt_mode = str(
+        resolve_config_value(args.conclusion_prompt_mode, inference_cfg, "conclusion_prompt_mode", "full")
     )
     pipeline_mode = str(resolve_config_value(args.pipeline_mode, inference_cfg, "pipeline_mode", "standard"))
     initial_prompt_hint = str(inference_cfg.get("initial_prompt_hint", "") or "")
@@ -711,6 +823,15 @@ def main() -> None:
             minirag_weight=minirag_weight,
             minirag_mode_weights={str(key): float(value) for key, value in minirag_mode_weights.items()},
             minirag_fusion_mode=minirag_fusion_mode,
+            minirag_chapter_isolation=minirag_chapter_isolation,
+            minirag_auto_second_retrieval=minirag_auto_second_retrieval,
+            minirag_scope_seed_top_k=minirag_scope_seed_top_k,
+            minirag_expansion_query_top_k=minirag_expansion_query_top_k,
+            minirag_graph_scope_min_ratio=minirag_graph_scope_min_ratio,
+            minirag_second_pass_scope_min_ratio=minirag_second_pass_scope_min_ratio,
+            enable_storyline_sparse_scope=enable_storyline_sparse_scope,
+            storyline_scope_seed_top_k=storyline_scope_seed_top_k,
+            storyline_sparse_scope_min_ratio=storyline_sparse_scope_min_ratio,
             reranker_candidate_top_k=reranker_candidate_top_k,
             enable_neighbor_expansion=enable_neighbor_expansion,
             neighbor_max_seed_docs=neighbor_max_seed_docs,
@@ -725,14 +846,17 @@ def main() -> None:
         enable_mmr=enable_mmr,
         mmr_lambda=mmr_lambda,
         enable_pyramid_order=enable_pyramid_order,
+        enable_evidence_pinning=enable_evidence_pinning,
         enable_crag_refinement=enable_crag_refinement,
         crag_refine_top_sentences=crag_refine_top_sentences,
         crag_refine_max_sentences=crag_refine_max_sentences,
         self_consistency_samples=self_consistency_samples,
         self_consistency_temperature=self_consistency_temperature,
+        conclusion_prompt_mode=conclusion_prompt_mode,
         answer_grounding_mode=answer_grounding_mode,
         use_model_hypothesis=bool(inference_cfg.get("use_model_hypothesis", True)),
         use_model_conclusion_generation=bool(inference_cfg.get("use_model_conclusion_generation", True)),
+        web_context_config=inference_cfg.get("web_context") if isinstance(inference_cfg.get("web_context"), dict) else None,
     )
 
     dialogue_history: list[str] = []

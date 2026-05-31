@@ -1155,7 +1155,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--neighbor-story-window", type=int, default=2)
     parser.add_argument("--neighbor-activity-story-sort-window", type=int, default=1)
 
-    parser.add_argument("--max-rounds", type=int, default=3)
+    parser.add_argument("--max-rounds", type=int, default=2)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=8)
     parser.add_argument("--max-evidence-items", type=int, default=6)
     parser.add_argument("--max-evidence-chars", type=int, default=220)
@@ -1252,7 +1252,7 @@ def main() -> None:
             retriever=retriever,
             query_config=query_config,
             output_dir=output_dir,
-            max_rounds=args.max_rounds,
+            max_rounds=min(2, max(1, int(args.max_rounds))),
             api_retries=args.api_retries,
             retry_sleep=args.retry_sleep,
             validation_retries=args.validation_retries,

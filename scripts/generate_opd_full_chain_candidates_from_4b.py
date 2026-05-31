@@ -308,7 +308,7 @@ def main() -> int:
     index_dir = args.index_dir if args.index_dir.is_absolute() else PROJECT_ROOT / args.index_dir
     device = str(config_value(args.device, retrieval_cfg, "device", "cuda"))
     max_k = int(args.rerank_top_k)
-    max_rounds = int(config_value(args.max_rounds, inference_cfg, "max_retrieval_rounds", 3))
+    max_rounds = min(2, max(1, int(config_value(args.max_rounds, inference_cfg, "max_retrieval_rounds", 2))))
 
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True)) and not args.no_reranker
     configured_reranker = retrieval_cfg.get("reranker_model_path") or retrieval_cfg.get("reranker_model")
