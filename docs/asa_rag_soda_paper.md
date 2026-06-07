@@ -1,0 +1,398 @@
+# 面向长剧情问答的证据约束 RAG Agent 与 verifier-aware SODA 蒸馏
+
+## 摘要
+
+长篇游戏剧情问答要求系统在大量叙事文本、角色档案和事件线索中定位证据，并在证据不足时避免将模型先验写成确定事实。本文以《明日方舟》剧情问答为场景，构建了一个本地 / API 混合的证据约束 RAG Agent。系统使用 dense 检索、BM25、MiniRAG 图扩展、故事线 scope、邻居扩展与证据链 reranker 组成混合检索栈，并通过两轮结构化推理决定 `answer_directly`、`retrieve_more`、`clarify_user` 或 `abstain`。为缓解小模型在 RAG 中的过早回答、过度检索和无证据幻觉，本文进一步提出 verifier-aware SODA 数据构造流程：先让 4B student 按真实 runtime 生成完整轨迹，再让 API teacher replay 相同 prompt，最后由 evidence-only verifier 根据当前证据重标正确动作，而不是直接模仿 teacher 原始输出。实验显示，v6 证据链 reranker 是最稳定的检索收益来源；在 50 条静态召回评测上，相比跳过 rerank，MRR 从 0.4262 提升到 0.6046，R@1 从 0.32 提升到 0.54。最新 50 问 verifier-aware SODA 数据集生成 208 条 KTO 记录，其中 verifier 识别出 18 条 student unsupported answer、7 条 over-retrieve、2 条 premature answer，以及 9 次 teacher prior knowledge 风险。消融结果表明，MiniRAG 对普通随机样本有时有小幅收益，但在 failure hard pool 中会引入排序噪声，后续应改为条件启用和 hard-negative reranker 补训。
+
+## 1. 引言
+
+面向剧情问答的 RAG 系统不同于开放域事实问答。用户常询问角色关系、事件动机、伏笔揭示、阴谋真相和跨章节时间线，这些问题通常需要多个证据片段共同支撑。若系统只依赖模型内部知识，会出现三类问题：把百科或二创误读写成官方剧情、在证据不足时过早回答、在证据足够时又过度拒答或反复检索。
+
+本文项目的目标是在本地 4B 模型规模下实现可运行的剧情 Agent。核心原则是：答案优先基于检索证据；证据支持部分回答时输出可确认部分；证据不足时明确说明缺口；训练数据必须保留 runtime 状态，而不是只蒸馏最终答案。
+
+本文贡献如下：
+
+- 构建了一个面向长剧情文本的多源混合检索和两轮推理 Agent，统一本地 4B 与 API teacher 的 runtime 链路。
+- 实现了 verifier-aware SODA 数据生成流程，用 evidence-only verifier 重标 student/teacher 候选输出，降低 teacher 先验知识污染。
+- 在 release 召回集、easy/hard 切分和 failure-driven hard pool 上完成检索消融，定位 reranker、MiniRAG、邻居扩展的真实贡献。
+- 生成并审计了最新 50 问 verifier-aware SODA 数据集，为后续 KTO 训练提供可复现数据基础。
+
+## 2. 系统架构
+
+### 2.1 任务定义
+
+给定用户问题 `q`，系统需要在剧情原文、角色档案、语音、元数据和可选网络上下文中检索证据集合 `E`，并生成最终回答 `a`。回答必须满足三项约束：
+
+- Faithfulness：确定性陈述必须能由 `E` 支持。
+- Completeness under evidence：若 `E` 支持部分答案，应回答可确认部分，而不是直接 abstain。
+- Action correctness：若 `E` 不足，应生成具体 `retrieve_more` 缺口，而不是凭模型先验补全。
+
+### 2.2 Runtime 链路
+
+当前标准链路如下：
+
+```text
+question
+-> user_question_hypothesis_generation
+-> dense + BM25 + MiniRAG retrieval
+-> MiniRAG chapter isolation / graph expansion / scoped second retrieval
+-> storyline sparse scope / neighbor expansion / same-story sweep
+-> fusion + reranker
+-> prompt evidence selection
+-> conclusion_generation
+-> answer_directly | retrieve_more | clarify_user | abstain
+-> follow_up_hypothesis_generation if needed
+```
+
+实现对应文件：
+
+- `src/goldenglow/retrieval/hybrid.py`：dense、BM25、MiniRAG、reranker 融合。
+- `src/goldenglow/retrieval/minirag.py`：活动级图扩展与章节 scope。
+- `src/goldenglow/retrieval/storyline.py`：故事线 sparse scope。
+- `src/goldenglow/inference/cpu_pipeline.py`：本地/API 共用多轮 RAG pipeline。
+- `api-mode/run_api_inference.py`：API teacher 生成器入口。
+
+当前核心链路将最大检索轮次限制为 2。达到轮次上限后，系统基于已有证据输出可确认部分或证据不足说明，避免机械返回“轮次耗尽”。
+
+### 2.3 检索模块
+
+本项目的检索模块不是单次 top-k retrieval，而是围绕剧情问答任务设计的 Agent RAG 检索栈。它将 4B 模型生成的结构化 hypothesis 作为 query planner，将多路召回、章节级 scope、图扩展和 reranker 组合成可追踪的 evidence pipeline。核心目标不是最大化语义相似度，而是让最终 prompt 中出现“足以回答问题的剧情证据”。
+
+#### 2.3.1 Query Planning
+
+用户原始问题通常较短，例如“炎景公主一事具体是什么”或“博士为什么要关闭全舰防御系统”。直接用原问题检索容易被泛词、别名或跨章节背景干扰。因此系统先调用 `user_question_hypothesis_generation` 将问题转为结构化检索假设：
+
+```json
+{
+  "question": "...",
+  "intent": "plot_reasoning",
+  "query_type": "causality",
+  "entities": ["角色", "事件", "地点"],
+  "keywords": ["动机", "真相", "具体事件"],
+  "expected_answer_type": "因果解释",
+  "dialogue_context": ""
+}
+```
+
+检索 query 由原问题、实体、关键词、答案类型和对话上下文拼接而成。这样做有三个作用：第一，保留用户原始表述，避免 planner 误改问题；第二，显式提升角色名、事件名和章节线索的权重；第三，为后续 `retrieve_more` 提供可解释的 missing slots。若第一轮证据不足，`follow_up_hypothesis_generation` 会根据当前 evidence trace 和缺口生成第二轮 query，而不是简单重复原问题。
+
+#### 2.3.2 多路候选召回
+
+候选生成阶段使用 dense、sparse、MiniRAG 和局部扩展四类信号。
+
+| 通道 | 作用 | 主要失败模式 |
+|---|---|---|
+| Dense / FAISS | 捕捉同义表述、剧情语义近邻 | 容易召回同主题但不同章节的背景 |
+| BM25 | 精确匹配角色名、地名、招式名、事件短语 | 对别名和改写不敏感 |
+| MiniRAG | 用预构建图关系扩展因果、关系、揭示线索 | 图扩展可能串章节或带入噪声 |
+| Scoped chapter search | 在命中章节内二次 dense/sparse 检索 | scope 错误时会放大错章 |
+| Neighbor / same-story sweep | 补齐相邻 chunk 和同 story 证据链 | 对静态 top-k 指标收益不稳定 |
+
+当前 release 配置中，dense 和 sparse 各取 `120`，MiniRAG 取 `120`，融合后保留 `80`，进入 reranker 的候选上限为 `120`，最终 rerank top-k 为 `32`。MiniRAG 权重为 `0.35`，并按 query type 调整：`relation`、`causality`、`reveal` 权重较高，`fact` 权重较低。这反映了一个工程判断：事实题更依赖精确文本命中，因果/揭示题更需要图关系补充。
+
+#### 2.3.3 章节与故事线 Scope
+
+长剧情文本中最常见的召回错误是“同角色错章”。例如同一角色在多个活动、档案和主线中反复出现，普通语义召回会把角色背景压过用户实际询问的剧情片段。为此系统引入三层 scope：
+
+- MiniRAG chapter isolation：从 seed evidence 推断活动/章节 scope，只在可信章节内做图扩展。
+- Storyline sparse scope：根据文档 metadata 的故事线标签约束 BM25 候选，减少跨主线污染。
+- Scoped chapter search：当 seed docs 形成稳定章节信号时，在该章节内追加 dense/sparse 检索，补齐前后文。
+
+Scope 只约束候选生成，不直接写入答案逻辑。这样可以降低错章风险，同时保留 reranker 对跨章节补充证据的最终裁决权。
+
+#### 2.3.4 Fusion 与 Reranking
+
+不同召回通道的候选先通过加权融合聚合。默认 dense 权重为 `1.0`，sparse 权重为 `0.8`，MiniRAG 权重为 `0.35`。融合不是简单拼接 top-k，而是保留每个候选的来源、rank、score 和 supplemental metadata，方便后续审计。
+
+融合后进入 evidence-chain reranker。当前 release 使用 `model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch`，训练目标更接近“证据是否足以回答问题”，而不是普通 query-document 相关性。reranker 之后还会应用少量结构化分数修正，例如剧情原文优先、过泛网页或百科降权、证据链 bridge term 加权等。最终排序结果保留完整 trace，包括 doc id、chunk id、来源通道和 rerank score。
+
+消融实验显示 reranker 是当前最稳定的收益来源。在 release 50 问上，跳过 rerank 时 MRR 为 `0.4262`，使用 v6 reranker 后提升到 `0.6046`；R@1 从 `0.32` 提升到 `0.54`。这说明剧情问答的关键瓶颈不只是“召回到候选池”，而是“把可回答证据排到 prompt 前部”。
+
+#### 2.3.5 Prompt Evidence Selection
+
+最终给 4B 模型的不是全部 rerank top-32，而是经过 prompt evidence selector 压缩后的 evidence brief。当前本地链路默认选 top-12，每条 evidence 最多 `1800` 字符，结论 prompt 总证据上限为 `24000` 字符。selector 会做以下处理：
+
+- 去重：合并重复 chunk、近邻 chunk 和同文本来源。
+- 来源保留：优先保留剧情原文，同时允许档案、语音、网页 context 作为辅助。
+- 可选 MMR：在 API 模式中可启用，降低 top-k 全部来自同一段背景的风险。
+- 可选 pyramid order：将高分证据和补充证据交错排列，避免模型只读前几条。
+- 可选 evidence pinning：对问题实体、揭示证据和动作证据做 anchor pinning。
+
+这一步的设计直接影响模型 action。若 evidence brief 只覆盖部分 gold evidence，模型应学会输出“可确认部分 + 缺口”或 `retrieve_more`；若 evidence brief 已足够，则应 `answer_directly`，避免过度检索。
+
+#### 2.3.6 多轮 Requery
+
+Agent 最多执行两轮检索。第一轮根据 user hypothesis 检索；若 conclusion 认为证据不足，则输出 `retrieve_more`、`missing_slots` 和 follow-up hypothesis，第二轮检索会继承当前证据 trace 和 missing slots。多轮的关键不是增加轮数，而是让第二轮 query 针对第一轮没有解决的槽位。例如第一轮只找到“某事件发生”，但缺少“谁策划”或“为什么”，第二轮 query 会显式加入策划者、动机、直接原因等词。
+
+实测中第三轮召回的边际收益较低，且会明显增加延迟和错误扩展风险。因此当前核心链路将最大轮次 clamp 到 `2`。当第二轮后仍证据不足，系统不再机械请求第三轮，而是基于当前证据回答可确认部分，并明确说明缺少哪些直接证据。
+
+#### 2.3.7 检索失败模式
+
+当前 RAG 检索的主要失败模式包括：
+
+- 同实体错章：同一角色在多个故事中出现，dense 召回相似背景但非目标事件。
+- 图扩展污染：MiniRAG 在关系或因果边上扩展到相邻但非答案章节。
+- 泛词压实体：问题中的“为什么”“是什么”“关系”等泛词影响 sparse 排名。
+- 证据覆盖不全：prompt top-12 命中部分 gold evidence，但不足以支持完整因果链。
+- 早答截断检索：4B 在第一轮证据局部相关时直接回答，导致第二轮没有机会补证据。
+
+后续优化方向对应这些失败模式：一方面用 failure hard pool 补 reranker hard negatives，另一方面用 verifier-aware SODA 训练 action boundary，让模型在证据不足时更愿意 requery，在证据足够时不拖延。
+
+### 2.4 Prompt 与动作空间
+
+本地 4B 负责三个结构化任务：
+
+- `user_question_hypothesis_generation`：抽取 intent、query_type、entities、keywords 和 expected_answer_type。
+- `follow_up_hypothesis_generation`：在证据不足时生成下一轮检索假设。
+- `conclusion_generation`：根据当前 evidence 选择 `answer_directly`、`retrieve_more`、`clarify_user` 或 `abstain`。
+
+关键设计是不要求模型输出 chain-of-thought，只输出可解析 JSON。`retrieve_more` 必须包含可检索的 `missing_slots` 和 follow-up hypothesis。
+
+## 3. Verifier-Aware SODA 数据构造
+
+### 3.1 动机
+
+普通 teacher-student 蒸馏容易把 teacher 的内部知识和少检索习惯传给 student。对于剧情 RAG，这会造成 retrieval laziness：student 在首轮证据不足时仍然直接回答，导致幻觉和错章证据。本文采用 verifier-aware SODA：teacher 原始输出只是候选，最终训练标签由 evidence-only verifier 决定。
+
+### 3.2 五步流程
+
+第一步，student 真实 rollout。当前 4B LoRA 按 runtime 运行，记录每次模型调用的 exact prompt、retrieval trace、evidence brief、student output 和 action。
+
+第二步，teacher replay。API teacher 接收与 student 完全相同的 prompt，输出候选动作或答案。该步骤不直接生成训练标签。
+
+第三步，evidence-only verifier。再次调用 teacher，但 prompt 改为裁判任务：只能根据当前 evidence 判断 student 和 teacher 哪个动作正确，并标记 unsupported answer、premature answer、over-retrieve、over-abstain 或 teacher prior knowledge。
+
+第四步，重标训练对。若 verifier 判断证据不足，则 chosen 为 `retrieve_more`，即使 teacher 原始输出选择回答；若证据足够且 student 仍检索，则 chosen 为 `answer_directly`；若 teacher answer 含隐藏知识，则不把 teacher answer 当正样本。
+
+第五步，teacher full-chain 只作 oracle 分析。teacher 自己跑完整链路用于定位 student 没召回到的证据和生成 hard case，不直接作为正样本，除非这些证据也进入 student prompt。
+
+### 3.3 最新数据产物
+
+最新运行 ID 为 `v2_scoped_sweep_soda_lora_gpu3`，输入问题为 `data/processed/eval50_recall_questions_for_soda.jsonl` 的 50 问。三张 GPU 分片运行后合并得到：
+
+- Rollout 数据：`data/processed/llama_factory/soda_eval50_len1800_blackbox_v2_scoped_sweep_soda_lora_gpu3_merged`
+- Verifier 数据：`data/processed/llama_factory/soda_eval50_len1800_api_verifier_v2_scoped_sweep_soda_lora_gpu3_merged`
+- 审计报告：`outputs/soda_flow_reports/eval50_len1800_v2_scoped_sweep_soda_lora_gpu3_merged_api_verifier_audit.md`
+- Gold evidence 覆盖：`outputs/soda_flow_reports/eval50_len1800_v2_scoped_sweep_soda_lora_gpu3_merged_gold_topk.json`
+
+数据统计如下：
+
+| 项目 | 数值 |
+|---|---:|
+| 问题数 | 50 |
+| Rollout raw pairs | 119 |
+| Rollout KTO records | 237 |
+| Verifier records | 69 |
+| Teacher full-chain records | 50 |
+| Final KTO records | 208 |
+| Train records | 190 |
+| Val records | 18 |
+| `user_question_hypothesis_generation` records | 100 |
+| `conclusion_generation` records | 108 |
+
+Verifier 判定如下：
+
+| 判定项 | 数值 |
+|---|---:|
+| correct_action = `answer_directly` | 50 |
+| correct_action = `retrieve_more` | 19 |
+| evidence_sufficient = true | 50 |
+| evidence_sufficient = false | 19 |
+| student unsupported answer | 18 |
+| student over-retrieve | 7 |
+| student premature answer | 2 |
+| student invalid output | 1 |
+| teacher prior knowledge risk | 9 |
+| teacher unsupported answer | 5 |
+| teacher over-retrieve | 1 |
+| teacher premature answer | 1 |
+| teacher over-abstain | 1 |
+
+该分布说明 student 的主要错误不是不会检索，而是在证据不足或证据局部相关时生成 unsupported details；同时 teacher 也存在先验知识污染，因此必须以 verifier 为准。
+
+## 4. 实验设置
+
+### 4.1 数据
+
+检索索引包含 54,252 个剧情相关 documents/chunks。主要来源包括游戏剧情原文、角色档案、语音、元数据和 MiniRAG v3 图。静态召回评测使用 listwise gold evidence 样本，指标衡量 gold 证据是否进入 top-k 证据池。
+
+### 4.2 指标
+
+静态检索指标包括：
+
+- MRR：gold evidence 首次命中排名的倒数均值。
+- R@k：gold evidence 是否进入 top-k。
+- Missed：top-32 或指定候选池内未命中 gold evidence 的样本数。
+- Mean first hit rank：命中样本中首次命中的平均排名。
+
+SODA 数据质量指标包括：
+
+- verifier correct action 分布。
+- student/teacher error type 分布。
+- prompt gold coverage：当前 prompt evidence 中 gold unit 覆盖比例。
+
+### 4.3 变体
+
+消融包含五个检索变体：
+
+| Variant | 描述 |
+|---|---|
+| `full_current_v6` | 当前 release 检索链路，MiniRAG v3，邻居扩展，v6 reranker |
+| `no_neighbor_v6` | 关闭邻居扩展 |
+| `no_minirag_v6` | 关闭 MiniRAG 扩展 |
+| `old_reranker_full` | 保留当前检索特性，但换回旧 reranker |
+| `skip_rerank_full` | 保留当前检索特性，但跳过 rerank |
+
+## 5. 结果与分析
+
+### 5.1 Release 50 问静态召回消融
+
+| Variant | MRR | Missed | Mean First Hit Rank | R@1 | R@5 | R@10 | R@20 | R@32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `full_current_v6` | 0.6046 | 11/50 | 2.231 | 0.54 | 0.72 | 0.76 | 0.78 | 0.78 |
+| `no_neighbor_v6` | 0.6046 | 11/50 | 2.231 | 0.54 | 0.72 | 0.76 | 0.78 | 0.78 |
+| `no_minirag_v6` | 0.6180 | 11/50 | 2.179 | 0.56 | 0.72 | 0.76 | 0.78 | 0.78 |
+| `old_reranker_full` | 0.5360 | 11/50 | 3.667 | 0.44 | 0.64 | 0.70 | 0.76 | 0.78 |
+| `skip_rerank_full` | 0.4262 | 15/50 | 4.486 | 0.32 | 0.60 | 0.60 | 0.66 | 0.70 |
+
+结论是 v6 reranker 是最确定的收益来源。相对旧 reranker，MRR 提升 0.0686，R@1 提升 0.10；相对跳过 rerank，MRR 提升 0.1784，missed 从 15/50 降到 11/50。邻居扩展在该评测中没有可测贡献。MiniRAG 在该随机集上没有提升静态排序，关闭后 MRR 小幅上升，但 R@5 以上基本不变。
+
+### 5.2 Easy/Hard 切分消融
+
+按 `query_type` 将 fact/relation 作为 easy，将 causality/reasoning/reveal/mystery/answerability 作为 hard 后，各抽样 50 条。
+
+| Split | Variant | MRR | Missed | R@1 | R@5 | R@10 | R@32 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Easy | `full_current_v6` | 0.5804 | 10/50 | 0.50 | 0.66 | 0.72 | 0.80 |
+| Easy | `no_minirag_v6` | 0.5723 | 12/50 | 0.50 | 0.64 | 0.70 | 0.76 |
+| Easy | `old_reranker_full` | 0.5358 | 12/50 | 0.44 | 0.64 | 0.68 | 0.76 |
+| Easy | `skip_rerank_full` | 0.3298 | 15/50 | 0.22 | 0.48 | 0.52 | 0.70 |
+| Hard | `full_current_v6` | 0.6870 | 7/50 | 0.60 | 0.82 | 0.86 | 0.86 |
+| Hard | `no_minirag_v6` | 0.6606 | 7/50 | 0.56 | 0.82 | 0.86 | 0.86 |
+| Hard | `old_reranker_full` | 0.6347 | 8/50 | 0.52 | 0.78 | 0.84 | 0.84 |
+| Hard | `skip_rerank_full` | 0.2361 | 14/50 | 0.12 | 0.38 | 0.56 | 0.72 |
+
+该结果说明 `query_type` 不是可靠难度标签。Hard 组反而强于 Easy 组，原因是本次随机样本中的 reveal/mystery 并不难。v6 reranker 在 easy 和 hard 上均稳定优于旧 reranker 和 skip rerank。MiniRAG 在该切分中有小幅正收益，说明它在某些样本上能提供有效扩展，但收益不稳定。
+
+### 5.3 Failure-Driven Hard Pool 消融
+
+为获得更真实的困难题，先对 200 条随机样本运行 current full v6，再筛选 `first_hit_rank is null` 或 `first_hit_rank > 5` 的样本，共得到 59 条 failure hard。
+
+| Variant | MRR | Missed | Mean First Hit Rank | R@1 | R@5 | R@10 | R@20 | R@32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `failure_full_current_v6` | 0.0474 | 32/59 | 12.519 | 0.0000 | 0.0000 | 0.2712 | 0.3898 | 0.4576 |
+| `failure_no_neighbor_v6` | 0.0474 | 32/59 | 12.519 | 0.0000 | 0.0000 | 0.2712 | 0.3898 | 0.4576 |
+| `failure_no_minirag_v6` | 0.0882 | 31/59 | 10.107 | 0.0339 | 0.0847 | 0.3051 | 0.4237 | 0.4746 |
+| `failure_old_reranker_full` | 0.0488 | 33/59 | 13.962 | 0.0000 | 0.0678 | 0.1864 | 0.3390 | 0.4407 |
+| `failure_skip_rerank_full` | 0.0509 | 37/59 | 12.909 | 0.0000 | 0.1017 | 0.1525 | 0.3051 | 0.3729 |
+
+failure hard pool 是从 current full 的失败样本中筛出的，因此 full v6 的 R@5 为 0 是预期结果。重要发现是关闭 MiniRAG 后在该 pool 上反而提升，MRR 从 0.0474 到 0.0882，R@32 从 0.4576 到 0.4746。这表明 MiniRAG 在困难样本上可能把相关章节外的叙事背景拉入候选池，增加 reranker 排序噪声。
+
+### 5.4 Prompt Gold Coverage
+
+最新 verifier-aware SODA 数据中，69 个 conclusion prompts 对应 183 个 gold units。基于 evidence brief 行级 rank 的 trigram overlap 评估如下：
+
+| 指标 | 数值 |
+|---|---:|
+| Gold unit @1 | 19.13% |
+| Gold unit @5 | 33.33% |
+| Gold unit @12 | 55.19% |
+| Prompt any gold @12 | 68.12% |
+| Prompt all gold @12 | 36.23% |
+| Question any gold @12 | 76.00% |
+| Question all gold @12 | 42.00% |
+| Prompt mean coverage | 53.94% |
+| Prompt zero coverage | 31.88% |
+| Prompt full coverage | 36.23% |
+
+该结果解释了为什么 student 和 teacher 都可能出错：即使 evidence prompt top-12 中经常包含部分 gold evidence，但完整覆盖比例仍然偏低。训练时不能只教 answer imitation，还需要教模型在证据不足时明确 `retrieve_more`。
+
+### 5.5 历史训练与在线检索评测
+
+已有的 SFT / KTO 历史评测显示，改进 SFT 和 API-grounded conclusion 数据可提升在线多轮召回；但此前 SODA 550 KTO 对检索召回本身并未稳定超越 SFT。
+
+| Model / Runtime | Count | Missed | MRR | R@1 | R@5 | R@10 | R@50 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `sft_quality_fix3_plus_api175_brief_v2` | 50 | 8 | 0.5517 | 0.52 | 0.74 | 0.78 | 0.84 |
+| `sft_quality_fix3` | 50 | 10 | 0.5280 | 0.46 | 0.72 | 0.78 | 0.80 |
+| `sft_baseline` | 50 | 11 | 0.5295 | 0.44 | 0.68 | 0.74 | 0.78 |
+| `kto_v2_full_runtime` | 50 | 10 | 0.4829 | 0.40 | 0.64 | 0.78 | 0.80 |
+| `kto_v3_full_runtime` | 50 | 11 | 0.4823 | 0.38 | 0.62 | 0.74 | 0.78 |
+
+因此，新版 verifier-aware SODA 的目标不是继续复制 teacher 最终答案，而是补动作边界：减少 unsupported answer、premature answer 和 over-retrieve。新数据已生成，但尚未在本文中报告基于该数据重新训练后的最终回答质量。
+
+## 6. 讨论
+
+### 6.1 Reranker 是当前最确定收益
+
+三个消融集合均表明，reranker 对 top-rank 质量至关重要。跳过 rerank 会显著降低 MRR 和 R@1，即使有时在 failure pool 的 R@5 上碰巧更高，也会导致 missed 增加，整体不可取。
+
+### 6.2 MiniRAG 应条件启用
+
+MiniRAG 在 easy/hard 随机切分中有小幅正收益，但在 release 50 问和 failure hard pool 中可能引入噪声。这说明图扩展适合作为补充证据来源，而不应无条件强参与排序。更合理策略是：
+
+- 首轮 dense/sparse/rerank 高置信命中时降低 MiniRAG pre-rerank 权重。
+- 对因果、关系、揭示类问题保留 MiniRAG 扩展，但结合章节 scope 和 same-story sweep。
+- 在 failure pool 上补训练同实体错章、同角色背景压过剧情原文的 hard negatives。
+
+### 6.3 Verifier 可以减少 teacher 污染
+
+最新数据中 teacher prior knowledge risk 出现 9 次，teacher unsupported answer 出现 5 次。如果直接把 teacher replay 输出当 chosen，会把这些错误注入 student。Evidence-only verifier 将 teacher 从“标签来源”降级为“候选生成器”，更符合 RAG 蒸馏需求。
+
+### 6.4 数据瓶颈是 prompt evidence 覆盖
+
+Question any gold @12 为 76%，但 question all gold @12 只有 42%。这说明对多证据问题，top-12 evidence 经常只能覆盖一部分答案。模型需要学会“部分回答 + 明确缺口”，而不是二选一地完全回答或 abstain。
+
+## 7. 局限
+
+本文当前实验仍有明显局限：
+
+- 样本规模较小，release 召回评测和 SODA 数据均基于 50 问。
+- 静态召回指标不能直接等价于最终回答正确率。
+- Prompt gold coverage 使用字符 trigram overlap，是近似自动评估，仍需人工复核。
+- 最新 verifier-aware SODA 数据已生成，但尚未完成基于该数据的重新训练和最终回答人工评测。
+- MiniRAG 的收益依赖问题分布，当前结论只能支持“条件启用”，不能证明全局关闭或全局开启最优。
+
+## 8. 结论
+
+本文构建了一个面向长剧情问答的证据约束 RAG Agent，并完成了检索栈和 verifier-aware SODA 数据生成的工程闭环。实验表明，当前系统最稳定的提升来自证据链 reranker；MiniRAG 与邻居扩展的收益依赖样本分布，尤其在 failure hard pool 上 MiniRAG 可能引入排序噪声。Verifier-aware SODA 数据揭示了 student 的主要错误类型是 unsupported answer、over-retrieve 和 premature answer，也验证了 teacher 存在 prior knowledge 污染风险。下一步应基于最新 208 条 KTO 记录进行训练，并围绕 failure hard pool 补充 reranker hard negatives 与最终回答人工评测。
+
+## 9. 可复现命令
+
+生成三卡 verifier-aware SODA 数据：
+
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate train
+
+export DEEPSEEK_API_KEY="sk-..."
+export PYTHONPATH=.python_packages/train:src
+export DISABLE_VERSION_CHECK=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+SODA_PARALLEL_RUN_ID=v2_scoped_sweep_soda_lora_gpu3 \
+SODA_PARALLEL_GPUS=0,1,2 \
+SODA_PARALLEL_GPU_MEMORY_UTILIZATION=0.52 \
+SODA_PARALLEL_MAX_ROUNDS=2 \
+bash scripts/run_soda_eval50_len1800_api_verifier_flow_3gpu.sh
+```
+
+重新生成数据审计：
+
+```bash
+python scripts/analyze_soda_api_verifier_dataset.py \
+  --dataset-dir data/processed/llama_factory/soda_eval50_len1800_api_verifier_v2_scoped_sweep_soda_lora_gpu3_merged \
+  --output outputs/soda_flow_reports/eval50_len1800_v2_scoped_sweep_soda_lora_gpu3_merged_api_verifier_audit.md
+
+python scripts/analyze_soda_gold_evidence_topk.py \
+  --audit-records data/processed/llama_factory/soda_eval50_len1800_blackbox_v2_scoped_sweep_soda_lora_gpu3_merged/audit_records.jsonl \
+  --output outputs/soda_flow_reports/eval50_len1800_v2_scoped_sweep_soda_lora_gpu3_merged_gold_topk.json
+```
+
+已使用的消融报告：
+
+```text
+outputs/ablation_release_20260531/report.md
+outputs/ablation_easy_hard_20260531/report.md
+outputs/ablation_failure_hard_20260531/report.md
+```

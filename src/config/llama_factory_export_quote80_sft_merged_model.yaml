@@ -1,0 +1,11 @@
+model_name_or_path: model/qwen3.5-4b
+adapter_name_or_path: model/lora/teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_qwen35_4b_lr2e6_epoch2_rank8_cutoff10000
+template: qwen3_nothink
+trust_remote_code: true
+finetuning_type: lora
+
+infer_dtype: float16
+export_dir: model/merged/teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_qwen35_4b
+export_size: 5
+export_device: auto
+export_legacy_format: false

@@ -51,6 +51,8 @@ STUDENT_LLAMA_DEVICE="${SODA_FLOW_LLAMA_DEVICE:-}"
 STUDENT_LLAMA_GPU_LAYERS="${SODA_FLOW_LLAMA_GPU_LAYERS:-}"
 STUDENT_CTX_SIZE="${SODA_FLOW_CTX_SIZE:-}"
 STUDENT_MAX_TOKENS="${SODA_FLOW_MAX_TOKENS:-}"
+STUDENT_MAX_NUM_BATCHED_TOKENS="${SODA_FLOW_MAX_NUM_BATCHED_TOKENS:-}"
+STUDENT_ENFORCE_EAGER="${SODA_FLOW_ENFORCE_EAGER:-0}"
 STUDENT_NO_RERANKER="${SODA_FLOW_NO_RERANKER:-0}"
 
 RUN_RECALL_EVAL="${SODA_FLOW_RUN_RECALL_EVAL:-0}"
@@ -119,6 +121,8 @@ if [[ "$RUN_RECALL_EVAL" == "1" ]]; then
   if [[ -n "$STUDENT_LLAMA_GPU_LAYERS" ]]; then recall_cmd+=(--llama-gpu-layers "$STUDENT_LLAMA_GPU_LAYERS"); fi
   if [[ -n "$STUDENT_CTX_SIZE" ]]; then recall_cmd+=(--ctx-size "$STUDENT_CTX_SIZE"); fi
   if [[ -n "$STUDENT_MAX_TOKENS" ]]; then recall_cmd+=(--max-tokens "$STUDENT_MAX_TOKENS"); fi
+  if [[ -n "$STUDENT_MAX_NUM_BATCHED_TOKENS" ]]; then recall_cmd+=(--max-num-batched-tokens "$STUDENT_MAX_NUM_BATCHED_TOKENS"); fi
+  if [[ "$STUDENT_ENFORCE_EAGER" == "1" ]]; then recall_cmd+=(--enforce-eager); fi
   if [[ "$STUDENT_NO_RERANKER" == "1" ]]; then recall_cmd+=(--no-reranker); fi
   CUDA_VISIBLE_DEVICES="$GEN_CUDA_VISIBLE_DEVICES" "${recall_cmd[@]}" \
     2>&1 | tee "logs/${LOG_PREFIX}_full_runtime_round${MAX_ROUNDS}.log"
@@ -154,6 +158,8 @@ if [[ -n "$STUDENT_LLAMA_DEVICE" ]]; then rollout_cmd+=(--llama-device "$STUDENT
 if [[ -n "$STUDENT_LLAMA_GPU_LAYERS" ]]; then rollout_cmd+=(--llama-gpu-layers "$STUDENT_LLAMA_GPU_LAYERS"); fi
 if [[ -n "$STUDENT_CTX_SIZE" ]]; then rollout_cmd+=(--ctx-size "$STUDENT_CTX_SIZE"); fi
 if [[ -n "$STUDENT_MAX_TOKENS" ]]; then rollout_cmd+=(--max-tokens "$STUDENT_MAX_TOKENS"); fi
+if [[ -n "$STUDENT_MAX_NUM_BATCHED_TOKENS" ]]; then rollout_cmd+=(--max-num-batched-tokens "$STUDENT_MAX_NUM_BATCHED_TOKENS"); fi
+if [[ "$STUDENT_ENFORCE_EAGER" == "1" ]]; then rollout_cmd+=(--enforce-eager); fi
 if [[ "$STUDENT_NO_RERANKER" == "1" ]]; then rollout_cmd+=(--no-reranker); fi
 
 if [[ "$RUN_ROLLOUT" == "1" ]]; then

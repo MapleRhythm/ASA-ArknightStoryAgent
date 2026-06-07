@@ -414,6 +414,11 @@ class OpenAICompatibleAPIRunner:
             # The shared pipeline uses small local-4B budgets for JSON tasks.
             # Remote models may emit longer valid JSON, so keep a safer floor.
             requested_max_tokens = max(requested_max_tokens, self.max_tokens, 4096)
+        else:
+            # Local 4B prompts often pass 512-token answer budgets. Remote API
+            # models answer more verbosely and can otherwise stop mid-sentence,
+            # which contaminates evaluation as a false RAG failure.
+            requested_max_tokens = max(requested_max_tokens, min(self.max_tokens, 1536))
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -440,6 +445,7 @@ class OpenAICompatibleAPIRunner:
         try:
             message = response["choices"][0]["message"]
             content = message["content"]
+            finish_reason = response["choices"][0].get("finish_reason")
         except (KeyError, IndexError, TypeError) as exc:
             try:
                 message = response["choices"][0]["message"]
@@ -481,6 +487,25 @@ class OpenAICompatibleAPIRunner:
                 if isinstance(retry_content, str) and retry_content.strip():
                     return retry_content.strip()
             raise RuntimeError(f"API returned empty content: {json.dumps(response, ensure_ascii=False)[:1000]}")
+        if finish_reason == "length":
+            retry_payload = dict(payload)
+            retry_payload["max_tokens"] = max(
+                int(payload.get("max_tokens") or requested_max_tokens) * 2,
+                min(self.max_tokens, 2048),
+            )
+            retry_payload["max_tokens"] = min(max(retry_payload["max_tokens"], requested_max_tokens), self.max_tokens)
+            if retry_payload["max_tokens"] > int(payload.get("max_tokens") or 0):
+                retry_response = self._post_chat_completion(retry_payload)
+                self._write_request_log(payload=retry_payload, response=retry_response)
+                try:
+                    retry_message = retry_response["choices"][0]["message"]
+                    retry_content = retry_message["content"]
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise RuntimeError(
+                        f"Unexpected chat completion length-retry response: {json.dumps(retry_response, ensure_ascii=False)[:1000]}"
+                    ) from exc
+                if isinstance(retry_content, str) and retry_content.strip():
+                    return retry_content.strip()
         return content.strip()
 
 
@@ -513,6 +538,8 @@ class ResponsesAPIRunner(OpenAICompatibleAPIRunner):
         requested_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
         if wants_json:
             requested_max_tokens = max(requested_max_tokens, self.max_tokens, 4096)
+        else:
+            requested_max_tokens = max(requested_max_tokens, min(self.max_tokens, 1536))
         payload: dict[str, Any] = {
             "model": self.model,
             "input": response_input,
@@ -602,7 +629,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--answer-only", action="store_true")
     parser.add_argument(
         "--pipeline-mode",
-        choices=("standard", "answer_then_retrieve_refine"),
+        choices=("standard", "answer_then_retrieve_refine", "question_retrieve_answer_retrieve_refine"),
         default=None,
         help="API mode pipeline. answer_then_retrieve_refine first asks the LLM directly, retrieves with that answer, then asks it to correct hallucinations.",
     )
@@ -801,7 +828,14 @@ def main() -> None:
     )
 
     from goldenglow.inference import CPUInferencePipeline  # noqa: E402
-    from goldenglow.inference.cpu_pipeline import InferenceResult  # noqa: E402
+    from goldenglow.inference.cpu_pipeline import (  # noqa: E402
+        InferenceResult,
+        build_answer_prompt,
+        build_follow_up_hypothesis_queries,
+        build_retrieval_query,
+        merge_evidence_keep_order,
+        summarize_evidence_for_trace,
+    )
     from goldenglow.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
     retriever = ArknightsHybridRetriever.from_paths(
@@ -948,6 +982,156 @@ def main() -> None:
                         },
                         {
                             "stage": "evidence_grounded_revision",
+                        },
+                    ],
+                    evidence=simplified_evidence,
+                    answer=final_answer,
+                )
+            elif pipeline_mode == "question_retrieve_answer_retrieve_refine":
+                print("[stage] hypothesis", file=sys.stderr, flush=True)
+                current_hypothesis = pipeline.build_hypothesis(question, dialogue_context)
+                first_round_queries = [question, build_retrieval_query(current_hypothesis)]
+                first_round_queries.extend(build_follow_up_hypothesis_queries(question, current_hypothesis))
+
+                print("[stage] retrieval_round1_from_question", file=sys.stderr, flush=True)
+                minirag_expansion_record = None
+                retained_chapter_scope = None
+                retained_storyline_scope = None
+                scope_retention_enabled = False
+                if (
+                    pipeline.query_config.minirag_chapter_isolation
+                    and pipeline.query_config.minirag_auto_second_retrieval
+                ):
+                    _, _, first_evidence, minirag_expansion_record = (
+                        pipeline._retrieve_first_round_with_scoped_minirag_expansion(
+                            question,
+                            current_hypothesis,
+                            first_round_queries,
+                        )
+                    )
+                    if minirag_expansion_record is not None:
+                        retained_chapter_scope = str(minirag_expansion_record.get("chapter_scope") or "").strip() or None
+                        retained_storyline_scope = (
+                            str(minirag_expansion_record.get("storyline_scope") or "").strip() or None
+                        )
+                        scope_retention_enabled = bool(
+                            minirag_expansion_record.get("use_scoped_candidates")
+                            and retained_chapter_scope
+                        )
+                else:
+                    _, _, first_evidence = pipeline._retrieve_round(
+                        question,
+                        current_hypothesis,
+                        first_round_queries,
+                )
+
+                print("[stage] draft_answer_from_round1_evidence", file=sys.stderr, flush=True)
+                first_prompt_evidence = pipeline.prepare_prompt_evidence(
+                    question,
+                    current_hypothesis,
+                    first_evidence,
+                )
+                draft_answer = generator.generate(
+                    build_answer_prompt(
+                        question,
+                        current_hypothesis,
+                        first_evidence,
+                        prompt_evidence_top_k=prompt_evidence_top_k,
+                        prompt_evidence=first_prompt_evidence,
+                        evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
+                        evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
+                    ),
+                    max_tokens=initial_answer_max_tokens,
+                    temperature=0.1,
+                    top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
+                ).strip()
+                draft_for_query = re.sub(r"\s+", " ", draft_answer).strip()[:900]
+                second_round_queries = [
+                    question,
+                    build_retrieval_query(current_hypothesis),
+                    f"{question}\n初步答案待核验，不一定正确：{draft_for_query}",
+                    f"{question} 直接证据 具体行动 亲口承认 结果 反证",
+                ]
+
+                print("[stage] retrieval_round2_from_draft_answer", file=sys.stderr, flush=True)
+                _, _, second_evidence = pipeline._retrieve_round(
+                    question,
+                    current_hypothesis,
+                    second_round_queries,
+                    minirag_chapter_scope=retained_chapter_scope if scope_retention_enabled else None,
+                    candidate_chapter_scope=retained_chapter_scope if scope_retention_enabled else None,
+                    sparse_storyline_scope=retained_storyline_scope if scope_retention_enabled else None,
+                )
+                combined_evidence = merge_evidence_keep_order(
+                    first_evidence,
+                    second_evidence,
+                    limit=max(pipeline.query_config.reranker_candidate_top_k, prompt_evidence_top_k * 3),
+                )
+                final_prompt_evidence = pipeline.prepare_prompt_evidence(
+                    question,
+                    current_hypothesis,
+                    combined_evidence,
+                )
+                evidence_text, simplified_evidence = evidence_text_from_hits(
+                    final_prompt_evidence,
+                    top_k=len(final_prompt_evidence),
+                    max_chars_per_doc=prompt_evidence_max_chars_per_doc,
+                    max_total_chars=prompt_conclusion_evidence_max_total_chars,
+                )
+
+                print("[stage] final_answer_from_combined_evidence", file=sys.stderr, flush=True)
+                final_answer = generator.generate(
+                    build_revision_prompt(question, draft_answer, evidence_text, dialogue_context),
+                    max_tokens=refine_answer_max_tokens,
+                    temperature=0.1,
+                    top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
+                )
+                retrieval_query = "\n\n".join(
+                    [
+                        "[round 1]",
+                        "\n".join(first_round_queries),
+                        "[round 2]",
+                        "\n".join(second_round_queries),
+                    ]
+                )
+                result = InferenceResult(
+                    question=question,
+                    intent="api_question_retrieve_answer_retrieve_refine",
+                    hypothesis={
+                        **asdict(current_hypothesis),
+                        "draft_answer": draft_answer,
+                    },
+                    model_runtime={
+                        **generator.describe_runtime(),
+                        "api_pipeline_mode": pipeline_mode,
+                        "initial_answer_max_tokens": initial_answer_max_tokens,
+                        "refine_answer_max_tokens": refine_answer_max_tokens,
+                    },
+                    retrieval_query=retrieval_query,
+                    retrieval_trace=[
+                        {
+                            "round": 1,
+                            "stage": "retrieval_round1_from_question",
+                            "queries": first_round_queries,
+                            "evidence_summary": summarize_evidence_for_trace(first_evidence),
+                            "minirag_chapter_expansion": minirag_expansion_record,
+                        },
+                        {
+                            "round": 1,
+                            "stage": "draft_answer_from_round1_evidence",
+                            "draft_answer": draft_answer,
+                        },
+                        {
+                            "round": 2,
+                            "stage": "retrieval_round2_from_draft_answer",
+                            "queries": second_round_queries,
+                            "evidence_summary": summarize_evidence_for_trace(second_evidence),
+                        },
+                        {
+                            "round": 2,
+                            "stage": "final_answer_from_combined_evidence",
+                            "prompt_evidence_count": len(simplified_evidence),
+                            "top_doc_ids": [item.get("id") for item in simplified_evidence[:5]],
                         },
                     ],
                     evidence=simplified_evidence,

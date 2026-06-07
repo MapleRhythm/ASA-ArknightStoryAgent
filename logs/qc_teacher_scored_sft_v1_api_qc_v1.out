@@ -1,0 +1,100 @@
+{
+  "input_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1",
+  "output_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1_api_qc_v1",
+  "dataset_name": "teacher_scored_sft_v1_api_qc_v1",
+  "splits": {
+    "train.json": 1864,
+    "val.json": 133
+  },
+  "records_to_score": 1997,
+  "batch_size": 8,
+  "model": "deepseek-chat",
+  "max_input_chars": 6500,
+  "max_output_chars": 2500
+}
+[resume] existing=0 pending=1997
+[batch] 8/1997
+[batch] 16/1997
+[batch] 24/1997
+[batch] 32/1997
+[batch] 40/1997
+[batch] 48/1997
+[batch] 56/1997
+[batch] 64/1997
+[batch] 72/1997
+[batch] 80/1997
+[batch] 88/1997
+[batch] 96/1997
+[batch] 104/1997
+[batch] 112/1997
+[batch] 120/1997
+[batch] 128/1997
+[batch] 136/1997
+[batch] 144/1997
+[batch] 152/1997
+[batch] 160/1997
+[batch] 168/1997
+[batch] 176/1997
+[batch] 184/1997
+[batch] 192/1997
+[batch] 200/1997
+[batch] 208/1997
+[batch] 216/1997
+[batch] 224/1997
+[batch] 232/1997
+[batch] 240/1997
+[batch] 248/1997
+[batch] 256/1997
+[batch] 264/1997
+[batch] 272/1997
+[batch] 280/1997
+[batch] 288/1997
+[batch] 296/1997
+[batch] 304/1997
+[batch] 312/1997
+[batch] 320/1997
+[batch] 328/1997
+[batch] 336/1997
+[batch] 344/1997
+[batch] 352/1997
+[batch] 360/1997
+[batch] 368/1997
+[batch] 376/1997
+[batch] 384/1997
+[batch] 392/1997
+[batch] 400/1997
+[batch] 408/1997
+[batch] 416/1997
+[batch] 424/1997
+[batch] 432/1997
+[batch] 440/1997
+[batch] 448/1997
+[batch] 456/1997
+[batch] 464/1997
+[batch] 472/1997
+[batch] 480/1997
+[batch] 488/1997
+[batch] 496/1997
+[batch] 504/1997
+[batch] 512/1997
+[batch] 520/1997
+[batch] 528/1997
+[batch] 536/1997
+[batch] 544/1997
+[batch] 552/1997
+[batch] 560/1997
+[batch] 568/1997
+[batch] 576/1997
+[batch] 584/1997
+[batch] 592/1997
+[batch] 600/1997
+[batch] 608/1997
+[batch] 616/1997
+[batch] 624/1997
+[batch] 632/1997
+[batch] 640/1997
+[batch] 648/1997
+[batch] 656/1997
+[batch] 664/1997
+[batch] 672/1997
+[batch] 680/1997

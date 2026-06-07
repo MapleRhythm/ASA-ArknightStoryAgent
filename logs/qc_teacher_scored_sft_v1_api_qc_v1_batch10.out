@@ -1,0 +1,491 @@
+{
+  "input_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1",
+  "output_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1_api_qc_v1",
+  "dataset_name": "teacher_scored_sft_v1_api_qc_v1",
+  "splits": {
+    "train.json": 1864,
+    "val.json": 133
+  },
+  "records_to_score": 1997,
+  "batch_size": 10,
+  "model": "deepseek-chat",
+  "max_input_chars": 4500,
+  "max_output_chars": 1800
+}
+[resume] existing=952 pending=1045
+[batch] 10/1045
+[batch] 20/1045
+[batch] 30/1045
+[batch] 40/1045
+[batch] 50/1045
+[batch] 60/1045
+[batch] 70/1045
+[batch] 80/1045
+[batch] 90/1045
+[batch] 100/1045
+[batch] 110/1045
+[batch] 120/1045
+[batch] 130/1045
+[batch] 140/1045
+[batch] 150/1045
+[batch] 160/1045
+[batch] 170/1045
+[batch] 180/1045
+[batch] 190/1045
+[batch] 200/1045
+[batch] 210/1045
+[batch] 220/1045
+[batch] 230/1045
+[batch] 240/1045
+[batch] 250/1045
+[batch] 260/1045
+[batch] 270/1045
+[batch] 280/1045
+[batch] 290/1045
+[batch] 300/1045
+[batch] 310/1045
+[batch] 320/1045
+[batch] 330/1045
+[batch] 340/1045
+[batch] 350/1045
+[batch] 360/1045
+[batch] 370/1045
+[batch] 380/1045
+[batch] 390/1045
+[batch] 400/1045
+[batch] 410/1045
+[batch] 420/1045
+[batch] 430/1045
+[batch] 440/1045
+[batch] 450/1045
+[batch] 460/1045
+[batch] 470/1045
+[batch] 480/1045
+[batch] 490/1045
+[batch] 500/1045
+[batch] 510/1045
+[batch] 520/1045
+[batch] 530/1045
+[batch] 540/1045
+[batch] 550/1045
+[batch] 560/1045
+[batch] 570/1045
+[batch] 580/1045
+[batch] 590/1045
+[batch] 600/1045
+[batch] 610/1045
+[batch] 620/1045
+[batch] 630/1045
+[batch] 640/1045
+[batch] 650/1045
+[batch] 660/1045
+[batch] 670/1045
+[batch] 680/1045
+[batch] 690/1045
+[batch] 700/1045
+[batch] 710/1045
+[batch] 720/1045
+[batch] 730/1045
+[batch] 740/1045
+[batch] 750/1045
+[batch] 760/1045
+[batch] 770/1045
+[batch] 780/1045
+[batch] 790/1045
+[batch] 800/1045
+[batch] 810/1045
+[batch] 820/1045
+[batch] 830/1045
+[batch] 840/1045
+[batch] 850/1045
+[batch] 860/1045
+[batch] 870/1045
+[batch] 880/1045
+[batch] 890/1045
+[batch] 900/1045
+[batch] 910/1045
+[batch] 920/1045
+[batch] 930/1045
+[batch] 940/1045
+[batch] 950/1045
+[batch] 960/1045
+[batch] 970/1045
+[batch] 980/1045
+[batch] 990/1045
+[batch] 1000/1045
+[batch] 1010/1045
+[batch] 1020/1045
+[batch] 1030/1045
+[batch] 1040/1045
+[batch] 1045/1045
+{
+  "input_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1",
+  "output_dir": "/home/zhb/ASA-ArknightStoryAgent/data/processed/llama_factory/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_plus_detail_conclusion_patch_v1_abstain_mini8_retrieval_trim_v1_plus_teacher_scored_sft_v1_api_qc_v1",
+  "dataset_name": "teacher_scored_sft_v1_api_qc_v1",
+  "splits": {
+    "train.json": 1864,
+    "val.json": 133
+  },
+  "records_to_score": 1997,
+  "batch_size": 10,
+  "model": "deepseek-chat",
+  "max_input_chars": 4500,
+  "max_output_chars": 1800,
+  "output_splits": {
+    "train.json": 1863,
+    "val.json": 133
+  },
+  "rejected_splits": {
+    "train.json": 1,
+    "val.json": 0
+  },
+  "actions": {
+    "fix": 1482,
+    "keep": 514,
+    "drop": 1
+  },
+  "issue_tags": {
+    "redundant_keywords": 142,
+    "断词残片": 139,
+    "unsupported_claim": 134,
+    "entities/keywords含断词残片": 87,
+    "redundant_entities": 79,
+    "entities/keywords包含断词残片": 75,
+    "冗余关键词": 67,
+    "冗余实体": 53,
+    "redundant_keyword": 53,
+    "entities_contain_fragments": 46,
+    "keywords_contain_fragments": 42,
+    "redundant_entity": 37,
+    "keywords_redundant": 37,
+    "dirty_keywords": 32,
+    "过度检索": 31,
+    "泛词": 23,
+    "missing_slots不具体": 22,
+    "unsupported claim": 22,
+    "keywords冗余": 22,
+    "entities/keywords含冗余短语": 22,
+    "关键词冗余": 21,
+    "evidence_insufficient": 21,
+    "keywords包含断词残片": 21,
+    "entities_contain_phrases": 21,
+    "broken_entities": 21,
+    "follow_up_hypothesis含断词残片": 20,
+    "entities包含非实体词": 20,
+    "entities包含非实体短语": 19,
+    "entities/keywords含残片": 18,
+    "evidence_sufficient": 17,
+    "keywords_contain_phrases": 17,
+    "keywords包含冗余词": 16,
+    "entities包含断词残片": 16,
+    "missing_slots_too_general": 16,
+    "unsupported_entity": 15,
+    "broken_entity": 14,
+    "keywords_contains_fragments": 13,
+    "entities/keywords含泛词": 12,
+    "entities含断词残片": 12,
+    "keywords_contain_noise": 12,
+    "should_answer_directly": 12,
+    "entities包含短语": 11,
+    "entities/keywords含冗余词": 11,
+    "entities_contain_phrase": 11,
+    "over_retrieve": 11,
+    "实体冗余": 10,
+    "keyword_noise": 10,
+    "follow_up_hypothesis含冗余词": 9,
+    "broken_phrases": 9,
+    "entities_contains_fragments": 9,
+    "entities_contain_noise": 9,
+    "keywords冗余重复": 8,
+    "dirty_entities": 8,
+    "follow_up_hypothesis含残片": 8,
+    "重复冗余": 8,
+    "entities/keywords冗余": 8,
+    "unsupported_entities": 8,
+    "entities/keywords包含泛词": 7,
+    "keywords含冗余短语": 7,
+    "keywords含冗余词": 7,
+    "冗余实体/关键词": 7,
+    "missing_slots不够具体": 7,
+    "answer包含unsupported claim": 7,
+    "entities含泛词": 6,
+    "keywords含泛词": 6,
+    "keywords包含冗余": 6,
+    "实体/关键词含断词残片": 6,
+    "entities/keywords含长短语": 6,
+    "entities_contains_non_entity": 6,
+    "entities含冗余短语": 6,
+    "entities_contain_question_fragment": 6,
+    "entities/keywords含断词": 6,
+    "entities/keywords含冗余": 6,
+    "entities/keywords包含冗余片段": 6,
+    "含断词残片": 6,
+    "实体不精确": 5,
+    "entities_include_question_fragments": 5,
+    "entities/keywords包含冗余词": 5,
+    "follow_up_hypothesis含断词": 5,
+    "keywords_contains_non_entity": 5,
+    "实体含非实体词": 5,
+    "entities/keywords包含非实体泛词": 5,
+    "重复关键词": 5,
+    "entities包含冗余词": 5,
+    "entities含冗余词": 5,
+    "follow_up_hypothesis包含断词残片": 5,
+    "keywords_too_general": 5,
+    "entities/keywords包含断词或冗余": 5,
+    "over_retrieval": 5,
+    "missing_slots_vague": 5,
+    "redundant_entities_keywords": 4,
+    "answer_directly含unsupported claim": 4,
+    "entities包含断词": 4,
+    "keywords包含断词": 4,
+    "follow_up_hypothesis entities/keywords冗余": 4,
+    "missing_entity": 4,
+    "follow_up_hypothesis中entities/keywords包含断词残片": 4,
+    "entities_include_non_entity": 4,
+    "keywords_include_non_keyword": 4,
+    "follow_up_hypothesis中entities/keywords含断词残片": 4,
+    "无关实体": 4,
+    "unsupported_keyword": 4,
+    "entity_noise": 4,
+    "keywords_contain_irrelevant_entity": 4,
+    "follow_up_hypothesis含冗余实体/关键词": 4,
+    "entities_include_question_phrase": 4,
+    "entities/keywords包含未出现词": 4,
+    "answer含unsupported claim": 4,
+    "keywords含断词残片": 4,
+    "follow_up_hypothesis_redundant": 4,
+    "follow_up_hypothesis_entities_noise": 4,
+    "keyword_redundant": 3,
+    "实体缺失": 3,
+    "follow_up_hypothesis关键词冗余": 3,
+    "keywords包含残片": 3,
+    "keywords包含冗余短语": 3,
+    "实体提取错误": 3,
+    "实体错误": 3,
+    "keywords_contains_redundant_phrase": 3,
+    "missing_slots含非具体项": 3,
+    "follow_up_hypothesis含冗余": 3,
+    "missing_slots_unspecific": 3,
+    "follow_up_hypothesis_entities_phrases": 3,
+    "entity_redundancy": 3,
+    "entity_overload": 3,
+    "follow_up_hypothesis冗余": 3,
+    "entities/keywords含冗余重复项": 3,
+    "entities/keywords包含冗余泛词": 3,
+    "entities含短语": 3,
+    "keywords含短语": 3,
+    "evidence_sufficient_for_answer": 3,
+    "entities_include_question_words": 3,
+    "entities包含无关角色": 3,
+    "keywords包含无关变体": 3,
+    "entities_contain_question_phrase": 3,
+    "entities/keywords包含冗余短语": 3,
+    "keywords包含短语": 3,
+    "hypothesis_entities_contain_noise": 3,
+    "hypothesis_keywords_contain_noise": 3,
+    "follow_up_hypothesis entities/keywords含非实体词": 3,
+    "entity_redundant": 2,
+    "关键词不完整": 2,
+    "follow_up_hypothesis_entities_include_fragments": 2,
+    "entities/keywords含无关实体": 2,
+    "entities包含残片": 2,
+    "entities含冗余/断词": 2,
+    "keywords含冗余/断词": 2,
+    "follow_up_hypothesis含无效关键词": 2,
+    "关键词含推测性内容": 2,
+    "entities_contains_fragment": 2,
+    "keywords_contains_fragment": 2,
+    "missing_evidence": 2,
+    "follow_up_hypothesis实体/关键词含断词残片": 2,
+    "entities缺失关键实体": 2,
+    "follow_up_hypothesis中entities包含非实体词": 2,
+    "证据不足直接回答": 2,
+    "follow_up_hypothesis含长短语": 2,
+    "missing_slots可更简洁": 2,
+    "keywords含冗余重复": 2,
+    "unsupported_claim_in_follow_up": 2,
+    "关键词含冗余": 2,
+    "entities/keywords包含未在证据中出现的实体": 2,
+    "evidence_brief已包含直接回答的证据但输出retrieve_more": 2,
+    "follow_up_hypothesis中entities包含短语": 2,
+    "expected_answer_type_not_standard": 2,
+    "keywords_contain_question_fragment": 2,
+    "entities/keywords冗余断词": 2,
+    "keywords包含非检索词": 2,
+    "query_type错误": 2,
+    "关键词含未出现内容": 2,
+    "answer_directly证据不足": 2,
+    "重复实体": 2,
+    "entities含问题片段": 2,
+    "keywords含问题片段": 2,
+    "missing_slots过于泛化": 2,
+    "follow_up_hypothesis entities/keywords含冗余短语": 2,
+    "follow_up_hypothesis entities/keywords含断词残片": 2,
+    "含无关别名": 2,
+    "follow_up_hypothesis_entities_contain_fragments": 2,
+    "retrieve_more但证据已足够回答": 2,
+    "redundant_keywords_in_follow_up": 2,
+    "follow_up_hypothesis的entities/keywords含断词残片": 2,
+    "follow_up_hypothesis_entities_fragments": 2,
+    "follow_up_hypothesis_keywords_fragments": 2,
+    "entities/keywords包含冗余或断词": 2,
+    "keywords包含无关词": 2,
+    "entities/keywords包含未在问题中出现的角色名": 2,
+    "dirty_follow_up_hypothesis": 2,
+    "follow_up_hypothesis中entities/keywords包含冗余片段": 2,
+    "follow_up_hypothesis entities/keywords包含短语": 2,
+    "entities_contain_verb_phrase": 2,
+    "keywords_missing_important_terms": 2,
+    "follow_up_hypothesis_entities_redundant": 2,
+    "follow_up_hypothesis_keywords_redundant": 2,
+    "entities_redundant": 2,
+    "dirty_entities_keywords": 2,
+    "follow_up_hypothesis entities/keywords含冗余": 2,
+    "answer_contains_unsupported_claim": 2,
+    "follow_up_hypothesis_entities_noisy": 2,
+    "follow_up_hypothesis entities/keywords不干净": 2,
+    "abstain_with_missing_slots": 2,
+    "entity_fragment": 2,
+    "follow_up_hypothesis实体/关键词过长": 2,
+    "broken_keywords": 2,
+    "follow_up_hypothesis关键词含重复": 2,
+    "follow_up_hypothesis问题过长": 2,
+    "dialogue_context不应包含推理": 2,
+    "entities/keywords包含无关实体": 2,
+    "evidence不足但输出retrieve_more合理": 2,
+    "insufficient_evidence": 2,
+    "证据不足": 1,
+    "unnecessary_retrieve": 1,
+    "follow_up_hypothesis中entities/keywords含残词": 1,
+    "answer_directly_correct": 1,
+    "entities/keywords过于泛化": 1,
+    "follow_up_hypothesis含无关实体": 1,
+    "entities包含冗余短语": 1,
+    "follow_up_hypothesis entities/keywords包含冗余": 1,
+    "entities包含冗余": 1,
+    "keywords包含剧情名": 1,
+    "follow_up_hypothesis包含未在evidence中出现的实体": 1,
+    "entities/keywords包含未在evidence中出现的实体": 1,
+    "answer过于简单，未充分利用证据": 1,
+    "follow_up_hypothesis包含过多实体和关键词": 1,
+    "keywords_contains_unsupported_terms": 1,
+    "keywords_contains_redundant_term": 1,
+    "entities_contains_unsupported_terms": 1,
+    "entities_contains_redundant_phrase": 1,
+    "evidence_brief已包含直接回答证据但输出retrieve_more": 1,
+    "follow_up_hypothesis的entities/keywords包含断词残片": 1,
+    "missing_slots过于笼统": 1,
+    "missing_slots重复": 1,
+    "entities缺少关键实体": 1,
+    "missing_slots可更具体": 1,
+    "follow_up_hypothesis含冗余实体": 1,
+    "entities含冗余实体": 1,
+    "答案含unsupported claim": 1,
+    "keywords缺失关键实体": 1,
+    "expected_answer_type不规范": 1,
+    "follow_up_hypothesis_entities_include_non_entity": 1,
+    "follow_up_hypothesis_keywords_include_non_keyword": 1,
+    "follow_up_hypothesis中entities/keywords含冗余重复": 1,
+    "keywords_contains_question_words": 1,
+    "follow_up_hypothesis_entities_contains_non_entity": 1,
+    "evidence_mismatch": 1,
+    "answer部分内容证据不足": 1,
+    "关键词含断词残片": 1,
+    "answer包含证据未明确支持的内容": 1,
+    "entities含未出现在evidence的实体": 1,
+    "retrieve_more_correct": 1,
+    "entities_missing": 1,
+    "entities_not_in_evidence": 1,
+    "entities包含重复项": 1,
+    "follow_up_hypothesis中entities/keywords冗余断词": 1,
+    "entities/keywords断词": 1,
+    "keyword_redundancy": 1,
+    "evidence不足": 1,
+    "follow_up_hypothesis中entities和keywords冗余": 1,
+    "follow_up_hypothesis_entities_keywords_contain_fragments": 1,
+    "entities_contain_irrelevant_entity": 1,
+    "答案不匹配问题": 1,
+    "follow_up_hypothesis冗余关键词": 1,
+    "entities包含无关实体": 1,
+    "follow_up_hypothesis含冗余短语": 1,
+    "证据不足，答案unsupported": 1,
+    "答案部分unsupported": 1,
+    "expected_answer_type不当": 1,
+    "follow_up_hypothesis含问题片段": 1,
+    "entities/keywords含问题片段": 1,
+    "follow_up_hypothesis含冗余关键词": 1,
+    "entities断词错误": 1,
+    "keywords断词错误": 1,
+    "expected_answer_type错误": 1,
+    "entities包含泛词": 1,
+    "follow_up_hypothesis含无关别名": 1,
+    "entities含断词": 1,
+    "keywords含断词": 1,
+    "unnecessary_retrieve_more": 1,
+    "incorrect_entity": 1,
+    "follow_up_hypothesis中冗余实体/关键词": 1,
+    "keywords_include_unsupported_terms": 1,
+    "follow_up_hypothesis_entities_include_question_phrase": 1,
+    "follow_up_hypothesis包含无关实体和断词": 1,
+    "follow_up_hypothesis包含无关变体": 1,
+    "evidence_brief不包含可露希尔对话内容": 1,
+    "entities/keywords包含重复和断词": 1,
+    "answer包含证据未支持的内容": 1,
+    "follow_up_hypothesis_keywords_contain_fragments": 1,
+    "query_type_invalid": 1,
+    "missing_field": 1,
+    "incomplete_keywords": 1,
+    "证据足够却检索": 1,
+    "follow_up_hypothesis中entities/keywords含断词残片和泛词": 1,
+    "entities含推测性内容": 1,
+    "缺失实体": 1,
+    "query_type不合理": 1,
+    "follow_up_hypothesis中entities/keywords冗余": 1,
+    "entities/keywords包含错误实体": 1,
+    "answer不完全基于证据": 1,
+    "keywords含无关词": 1,
+    "follow_up_hypothesis实体关键词冗余": 1,
+    "keywords过长冗余": 1,
+    "keywords含断词残片且冗余": 1,
+    "答案过于简单，但证据支持": 1,
+    "follow_up_hypothesis包含冗余短语": 1,
+    "keywords包含无关角色名": 1,
+    "follow_up_hypothesis中entities/keywords含冗余和断词残片": 1,
+    "answer_directly使用了uc证据": 1,
+    "keywords_contain_irrelevant": 1,
+    "missing_slots_redundant": 1,
+    "abstain_inappropriate": 1,
+    "abstain_correct": 1,
+    "retrieve_more_inappropriate": 1,
+    "keywords含长短语": 1,
+    "follow_up_hypothesis中entities/keywords重复": 1,
+    "follow_up_hypothesis包含非法字段existing_answer": 1,
+    "answer_unsupported": 1,
+    "evidence_contradicts": 1,
+    "follow_up_hypothesis_entities_too_general": 1,
+    "follow_up_hypothesis query_type不当": 1,
+    "entities/keywords不干净": 1,
+    "follow_up_hypothesis_poor": 1,
+    "dialogue_context值错误": 1,
+    "keywords含重复词": 1,
+    "follow_up_hypothesis_entities_keywords_dirty": 1,
+    "follow_up_hypothesis的dialogue_context含多余信息": 1,
+    "wrong_action": 1,
+    "evidence_not_support": 1,
+    "expected_answer_type_format": 1,
+    "follow_up_hypothesis_entities_contains_long_phrase": 1,
+    "follow_up_hypothesis_question_repeats_original": 1,
+    "answer_contains_unsupported_detail": 1,
+    "answer_too_vague": 1,
+    "retrieve_more_unnecessary": 1,
+    "answer不完整，证据支持更详细原因": 1,
+    "contradicts_evidence": 1,
+    "answer_not_supported": 1,
+    "missing_reasoning": 1,
+    "follow_up_hypothesis含未出现实体": 1,
+    "evidence足够但输出retrieve_more": 1,
+    "hallucination": 1,
+    "vague_answer": 1
+  }
+}

@@ -123,12 +123,43 @@ def build_query_config(
         storyline_sparse_scope_min_ratio=float(
             config_value(args.storyline_sparse_scope_min_ratio, retrieval_cfg, "storyline_sparse_scope_min_ratio", 1.5)
         ),
+        enable_scoped_chapter_search=bool(
+            config_value(getattr(args, "enable_scoped_chapter_search", None), retrieval_cfg, "enable_scoped_chapter_search", True)
+        ),
+        scoped_chapter_dense_top_k=int(
+            config_value(getattr(args, "scoped_chapter_dense_top_k", None), retrieval_cfg, "scoped_chapter_dense_top_k", 160)
+        ),
+        scoped_chapter_sparse_top_k=int(
+            config_value(getattr(args, "scoped_chapter_sparse_top_k", None), retrieval_cfg, "scoped_chapter_sparse_top_k", 160)
+        ),
         reranker_candidate_top_k=int(config_value(args.reranker_candidate_top_k, retrieval_cfg, "reranker_candidate_top_k", 120)),
         enable_neighbor_expansion=bool(config_value(args.enable_neighbor_expansion, retrieval_cfg, "enable_neighbor_expansion", False)),
         neighbor_max_seed_docs=int(config_value(args.neighbor_max_seed_docs, retrieval_cfg, "neighbor_max_seed_docs", 24)),
         neighbor_story_window=int(config_value(args.neighbor_story_window, retrieval_cfg, "neighbor_story_window", 2)),
         neighbor_activity_story_sort_window=int(
             config_value(args.neighbor_activity_story_sort_window, retrieval_cfg, "neighbor_activity_story_sort_window", 1)
+        ),
+        enable_same_story_sweep=bool(
+            config_value(getattr(args, "enable_same_story_sweep", None), retrieval_cfg, "enable_same_story_sweep", True)
+        ),
+        same_story_sweep_max_seed_docs=int(
+            config_value(getattr(args, "same_story_sweep_max_seed_docs", None), retrieval_cfg, "same_story_sweep_max_seed_docs", 8)
+        ),
+        same_story_sweep_max_docs_per_story=int(
+            config_value(
+                getattr(args, "same_story_sweep_max_docs_per_story", None),
+                retrieval_cfg,
+                "same_story_sweep_max_docs_per_story",
+                24,
+            )
+        ),
+        same_story_sweep_extra_candidates=int(
+            config_value(
+                getattr(args, "same_story_sweep_extra_candidates", None),
+                retrieval_cfg,
+                "same_story_sweep_extra_candidates",
+                80,
+            )
         ),
         rerank_batch_size=int(config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8)),
     )
@@ -281,6 +312,222 @@ def build_fallback_follow_up(question: str, prompt: str, missing_slots: list[str
         "keywords": list(dict.fromkeys(keywords))[:24],
         "expected_answer_type": str(hypothesis.get("expected_answer_type") or "剧情问答"),
         "dialogue_context": str(hypothesis.get("dialogue_context") or ""),
+    }
+
+
+def normalize_string_list(value: Any, *, limit: int) -> list[str]:
+    if isinstance(value, str):
+        items = re.split(r"[、,，;；]\s*", value)
+    elif isinstance(value, list):
+        items = value
+    else:
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        output.append(text)
+        seen.add(text)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def normalize_follow_up_payload(payload: dict[str, Any] | None, *, question: str, prompt: str) -> dict[str, Any]:
+    hypothesis = extract_hypothesis(prompt)
+    source = payload if isinstance(payload, dict) else {}
+    entities = normalize_string_list(source.get("entities"), limit=12) or normalize_string_list(hypothesis.get("entities"), limit=12)
+    keywords = normalize_string_list(source.get("keywords"), limit=24) or normalize_string_list(hypothesis.get("keywords"), limit=24)
+    if not entities:
+        entities = tokenize(question)[:6]
+    if not keywords:
+        keywords = tokenize(question)[:12]
+    return {
+        "question": str(source.get("question") or question).strip(),
+        "query_type": str(source.get("query_type") or hypothesis.get("query_type") or "reasoning").strip(),
+        "entities": entities[:12],
+        "keywords": list(dict.fromkeys(keywords))[:24],
+        "expected_answer_type": str(source.get("expected_answer_type") or hypothesis.get("expected_answer_type") or "剧情问答").strip(),
+        "dialogue_context": str(source.get("dialogue_context") or hypothesis.get("dialogue_context") or "").strip(),
+    }
+
+
+def iter_evidence_items(prompt: str) -> list[tuple[str, str]]:
+    evidence = extract_evidence_brief(prompt)
+    if not evidence:
+        return []
+    pattern = re.compile(r"(?ms)^\s*\d+\.\s+([^:\n]+):\s*(.*?)(?=^\s*\d+\.\s+[^:\n]+:|\Z)")
+    items: list[tuple[str, str]] = []
+    for match in pattern.finditer(evidence):
+        evidence_id = match.group(1).strip()
+        text = re.sub(r"\s+", " ", match.group(2)).strip()
+        if evidence_id and text:
+            items.append((evidence_id, text))
+    return items
+
+
+def quote_candidates(text: str) -> list[str]:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if not text:
+        return []
+    parts = [part.strip() for part in re.split(r"(?<=[。！？；;.!?])\s*|\s{2,}", text) if part.strip()]
+    if not parts:
+        parts = [text]
+    candidates: list[str] = []
+    for part in parts:
+        if len(part) <= 80:
+            candidates.append(part)
+            continue
+        for start in range(0, len(part), 60):
+            chunk = part[start : start + 80].strip()
+            if chunk:
+                candidates.append(chunk)
+    return candidates
+
+
+def quote_score(answer: str, quote: str) -> float:
+    answer_tokens = set(tokenize(answer))
+    quote_tokens = set(tokenize(quote))
+    token_overlap = len(answer_tokens & quote_tokens)
+    answer_chars = {char for char in answer if "\u4e00" <= char <= "\u9fff" or char.isalnum()}
+    quote_chars = {char for char in quote if "\u4e00" <= char <= "\u9fff" or char.isalnum()}
+    char_overlap = len(answer_chars & quote_chars)
+    return token_overlap * 3.0 + char_overlap * 0.2
+
+
+def select_evidence_refs(answer: str, prompt: str, *, max_refs: int = 2) -> list[dict[str, str]]:
+    scored: list[tuple[float, str, str]] = []
+    for evidence_id, text in iter_evidence_items(prompt):
+        for quote in quote_candidates(text):
+            if len(quote) < 8:
+                continue
+            scored.append((quote_score(answer, quote), evidence_id, quote[:80]))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    refs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    seen_quotes: set[str] = set()
+    for score, evidence_id, quote in scored:
+        if score <= 0:
+            continue
+        key = (evidence_id, quote)
+        normalized_quote = re.sub(r"\s+", "", quote)
+        if key in seen or normalized_quote in seen_quotes:
+            continue
+        refs.append({"evidence_id": evidence_id, "quote": quote})
+        seen.add(key)
+        seen_quotes.add(normalized_quote)
+        if len(refs) >= max_refs:
+            break
+    return refs
+
+
+def normalize_evidence_refs(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    refs: list[dict[str, str]] = []
+    total = 0
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        evidence_id = str(item.get("evidence_id") or "").strip()
+        quote = re.sub(r"\s+", " ", str(item.get("quote") or "")).strip()
+        if not evidence_id or not quote:
+            continue
+        quote = quote[:80]
+        if total + len(quote) > 160:
+            break
+        refs.append({"evidence_id": evidence_id, "quote": quote})
+        total += len(quote)
+        if len(refs) >= 2:
+            break
+    return refs
+
+
+def normalize_supported_facts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    facts: list[dict[str, Any]] = []
+    quote_budget = 400
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        fact = str(item.get("fact") or "").strip()
+        refs = normalize_evidence_refs(item.get("evidence_refs"))
+        if not fact:
+            continue
+        kept_refs: list[dict[str, str]] = []
+        for ref in refs:
+            quote_len = len(ref["quote"])
+            if quote_len > quote_budget:
+                continue
+            kept_refs.append(ref)
+            quote_budget -= quote_len
+        facts.append({"fact": fact, "evidence_refs": kept_refs})
+        if len(facts) >= 6 or quote_budget <= 0:
+            break
+    return facts
+
+
+def normalize_inferred_facts(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    output: list[Any] = []
+    for item in value[:6]:
+        if isinstance(item, dict):
+            fact = str(item.get("fact") or "").strip()
+            if fact:
+                normalized = {"fact": fact}
+                premise_ids = normalize_string_list(item.get("premise_fact_ids"), limit=6)
+                if premise_ids:
+                    normalized["premise_fact_ids"] = premise_ids
+                output.append(normalized)
+        else:
+            fact = str(item or "").strip()
+            if fact:
+                output.append(fact)
+    return output
+
+
+def normalize_grounded_action_payload(
+    payload: dict[str, Any] | None,
+    *,
+    question: str,
+    prompt: str,
+    force_action: str | None = None,
+    fallback_answer: str = "",
+    missing_slots: list[str] | None = None,
+) -> dict[str, Any]:
+    source = payload if isinstance(payload, dict) else {}
+    next_action = str(force_action or source.get("next_action") or "retrieve_more").strip()
+    if next_action not in {"answer_directly", "retrieve_more", "abstain", "clarify_user"}:
+        next_action = "retrieve_more"
+    if next_action == "clarify_user":
+        next_action = "abstain"
+
+    if next_action == "answer_directly":
+        final_answer = str(source.get("final_answer") or source.get("answer") or fallback_answer or "").strip()
+        supported_facts = normalize_supported_facts(source.get("supported_facts"))
+        return {
+            "next_action": "answer_directly",
+            "supported_facts": supported_facts,
+            "inferred_facts": normalize_inferred_facts(source.get("inferred_facts")),
+            "final_answer": final_answer or "现有证据不足以确认。",
+        }
+
+    if next_action == "retrieve_more":
+        follow_up = source.get("follow_up_hypothesis") if isinstance(source.get("follow_up_hypothesis"), dict) else None
+        if follow_up is None:
+            follow_up = build_fallback_follow_up(question, prompt, missing_slots or [])
+        return {
+            "next_action": "retrieve_more",
+            "follow_up_hypothesis": normalize_follow_up_payload(follow_up, question=question, prompt=prompt),
+        }
+
+    return {
+        "next_action": "abstain",
+        "final_answer": str(source.get("final_answer") or source.get("answer") or fallback_answer or "现有证据不足以确认。").strip(),
     }
 
 
@@ -501,67 +748,83 @@ def relabel_group(prompt_key: str, group: list[dict[str, Any]], verifier_record:
         stats["override:actionable_use_for_training_false"] += 1
     chosen_payload: dict[str, Any]
     if correct_action == "answer_directly":
-        chosen_payload = normalize_conclusion_payload(
-            {
-                "question": question,
-                "next_action": "answer_directly",
-                "answer": str(verdict.get("supported_answer") or teacher_payload.get("answer") or "").strip(),
-                "missing_slots": [],
-                "clarification_question": "",
-                "follow_up_hypothesis": None,
-            },
-            question=question,
-            prompt=prompt,
-        )
+        candidate = None
+        for payload in (teacher_payload, student_payload):
+            if isinstance(payload, dict) and action(payload) == "answer_directly" and payload.get("supported_facts"):
+                candidate = payload
+                break
+        if candidate is None:
+            stats["skip:answer_directly_no_grounded_candidate"] += 1
+            chosen_payload = {}
+        else:
+            chosen_payload = normalize_grounded_action_payload(
+                candidate,
+                question=question,
+                prompt=prompt,
+                force_action="answer_directly",
+            )
     elif correct_action == "retrieve_more":
-        candidate = teacher_payload if action(teacher_payload) == "retrieve_more" else student_payload
+        teacher_error = str(verdict.get("teacher_action_error") or "none")
+        student_error = str(verdict.get("student_action_error") or "none")
+        teacher_prior = bool(verdict.get("teacher_answer_uses_prior_knowledge"))
+        candidate = None
+        if (
+            action(teacher_payload) == "retrieve_more"
+            and teacher_error in {"", "none"}
+            and not teacher_prior
+        ):
+            candidate = teacher_payload
+        elif (
+            isinstance(student_payload, dict)
+            and action(student_payload) == "retrieve_more"
+            and student_error in {"", "none"}
+        ):
+                candidate = student_payload
         if not isinstance(candidate, dict) or action(candidate) != "retrieve_more":
             candidate = {
-                "question": question,
                 "next_action": "retrieve_more",
-                "answer": "",
-                "missing_slots": missing_slots,
-                "clarification_question": "",
                 "follow_up_hypothesis": build_fallback_follow_up(question, prompt, missing_slots),
             }
-        chosen_payload = normalize_conclusion_payload(candidate, question=question, prompt=prompt)
+        chosen_payload = normalize_grounded_action_payload(
+            candidate,
+            question=question,
+            prompt=prompt,
+            force_action="retrieve_more",
+            missing_slots=missing_slots,
+        )
     elif correct_action == "abstain":
-        chosen_payload = normalize_conclusion_payload(
+        chosen_payload = normalize_grounded_action_payload(
             {
-                "question": question,
                 "next_action": "abstain",
-                "answer": str(verdict.get("supported_answer") or "现有证据不足以确认。"),
-                "missing_slots": missing_slots,
-                "clarification_question": "",
-                "follow_up_hypothesis": None,
+                "final_answer": str(verdict.get("supported_answer") or "现有证据不足以确认。"),
             },
             question=question,
             prompt=prompt,
+            force_action="abstain",
         )
     else:
-        chosen_payload = normalize_conclusion_payload(
+        chosen_payload = normalize_grounded_action_payload(
             {
-                "question": question,
-                "next_action": "clarify_user",
-                "answer": "",
-                "missing_slots": missing_slots,
-                "clarification_question": "请补充你想确认的具体剧情范围。",
-                "follow_up_hypothesis": None,
+                "next_action": "abstain",
+                "final_answer": "现有证据不足以确认。",
             },
             question=question,
             prompt=prompt,
+            force_action="abstain",
         )
 
-    output = [
-        make_kto_record(
-            teacher,
-            record_id=f"{prompt_key}-verifier-chosen",
-            response=chosen_payload,
-            kto_tag=True,
-            reason=f"verifier_chosen_{correct_action}",
-            verifier=verdict,
+    output = []
+    if chosen_payload:
+        output.append(
+            make_kto_record(
+                teacher,
+                record_id=f"{prompt_key}-verifier-chosen",
+                response=chosen_payload,
+                kto_tag=True,
+                reason=f"verifier_chosen_{correct_action}",
+                verifier=verdict,
+            )
         )
-    ]
     for role, record, payload, error_field in (
         ("student", student, student_payload, "student_action_error"),
         ("teacher", teacher, teacher_payload, "teacher_action_error"),
@@ -573,11 +836,18 @@ def relabel_group(prompt_key: str, group: list[dict[str, Any]], verifier_record:
         prior = bool(verdict.get("teacher_answer_uses_prior_knowledge")) and role == "teacher"
         if record_action == correct_action and error in {"", "none"} and not prior:
             continue
+        rejected_payload = normalize_grounded_action_payload(
+            payload,
+            question=question,
+            prompt=prompt,
+            force_action=record_action if record_action in {"answer_directly", "retrieve_more", "abstain"} else None,
+            missing_slots=missing_slots,
+        )
         output.append(
             make_kto_record(
                 record,
                 record_id=f"{prompt_key}-{role}-verifier-rejected",
-                response=payload,
+                response=rejected_payload,
                 kto_tag=False,
                 reason=f"reject_{role}_{error or 'wrong_action'}",
                 verifier=verdict,
@@ -747,10 +1017,17 @@ def build_teacher_full_chain_pipeline(args: argparse.Namespace, output_dir: Path
         enable_storyline_sparse_scope=args.enable_storyline_sparse_scope,
         storyline_scope_seed_top_k=args.storyline_scope_seed_top_k,
         storyline_sparse_scope_min_ratio=args.storyline_sparse_scope_min_ratio,
+        enable_scoped_chapter_search=args.enable_scoped_chapter_search,
+        scoped_chapter_dense_top_k=args.scoped_chapter_dense_top_k,
+        scoped_chapter_sparse_top_k=args.scoped_chapter_sparse_top_k,
         enable_neighbor_expansion=args.enable_neighbor_expansion,
         neighbor_max_seed_docs=args.neighbor_max_seed_docs,
         neighbor_story_window=args.neighbor_story_window,
         neighbor_activity_story_sort_window=args.neighbor_activity_story_sort_window,
+        enable_same_story_sweep=args.enable_same_story_sweep,
+        same_story_sweep_max_seed_docs=args.same_story_sweep_max_seed_docs,
+        same_story_sweep_max_docs_per_story=args.same_story_sweep_max_docs_per_story,
+        same_story_sweep_extra_candidates=args.same_story_sweep_extra_candidates,
     )
     rerank_top_k = int(config_value(args.rerank_top_k, retrieval_cfg, "rerank_top_k", 32))
     generator = build_teacher_generator(args, output_dir)
@@ -934,11 +1211,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
     parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
     parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_true", default=None)
+    parser.add_argument("--disable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_false")
+    parser.add_argument("--scoped-chapter-dense-top-k", type=int, default=None)
+    parser.add_argument("--scoped-chapter-sparse-top-k", type=int, default=None)
     parser.add_argument("--enable-neighbor-expansion", action="store_true", default=None)
     parser.add_argument("--disable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_false")
     parser.add_argument("--neighbor-max-seed-docs", type=int, default=None)
     parser.add_argument("--neighbor-story-window", type=int, default=None)
     parser.add_argument("--neighbor-activity-story-sort-window", type=int, default=None)
+    parser.add_argument("--enable-same-story-sweep", dest="enable_same_story_sweep", action="store_true", default=None)
+    parser.add_argument("--disable-same-story-sweep", dest="enable_same_story_sweep", action="store_false")
+    parser.add_argument("--same-story-sweep-max-seed-docs", type=int, default=None)
+    parser.add_argument("--same-story-sweep-max-docs-per-story", type=int, default=None)
+    parser.add_argument("--same-story-sweep-extra-candidates", type=int, default=None)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)

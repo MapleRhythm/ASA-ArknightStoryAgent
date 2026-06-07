@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/home/zhb/ASA-ArknightStoryAgent/scripts/qc_repair_sft_dataset_with_api.py", line 424, in <module>
+    main()
+    ~~~~^^
+  File "/home/zhb/ASA-ArknightStoryAgent/scripts/qc_repair_sft_dataset_with_api.py", line 352, in main
+    response = call_chat_api(messages, cfg)
+  File "/home/zhb/ASA-ArknightStoryAgent/scripts/qc_repair_sft_dataset_with_api.py", line 192, in call_chat_api
+    raise RuntimeError(f"API call failed after retries: {last_error}")
+RuntimeError: API call failed after retries: HTTP Error 402: Payment Required

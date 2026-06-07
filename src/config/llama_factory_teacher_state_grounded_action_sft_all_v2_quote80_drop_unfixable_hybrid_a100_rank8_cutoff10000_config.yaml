@@ -1,0 +1,50 @@
+model_name_or_path: model/qwen3.5-4b
+trust_remote_code: true
+
+stage: sft
+do_train: true
+do_eval: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 8
+lora_alpha: 16
+lora_dropout: 0.05
+
+dataset_dir: data/processed/llama_factory/teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid
+dataset: teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_train
+eval_dataset: teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_val
+template: qwen3_nothink
+cutoff_len: 10000
+max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 4
+dataloader_num_workers: 1
+
+output_dir: model/lora/teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_qwen35_4b_lr2e6_epoch2_rank8_cutoff10000
+run_name: teacher_state_grounded_action_sft_all_v2_quote80_drop_unfixable_hybrid_qwen35_4b_lr2e6_epoch2_rank8_cutoff10000
+logging_steps: 2
+save_strategy: steps
+save_steps: 25
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: false
+report_to: none
+
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-6
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+max_grad_norm: 1.0
+bf16: true
+fp16: false
+gradient_checkpointing: true
+ddp_timeout: 180000000
+
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 25
+predict_with_generate: false
+do_sample: false
+packing: false

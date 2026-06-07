@@ -202,11 +202,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
     parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
     parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_true", default=None)
+    parser.add_argument("--disable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_false")
+    parser.add_argument("--scoped-chapter-dense-top-k", type=int, default=None)
+    parser.add_argument("--scoped-chapter-sparse-top-k", type=int, default=None)
     parser.add_argument("--enable-neighbor-expansion", action="store_true", default=None)
     parser.add_argument("--disable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_false")
     parser.add_argument("--neighbor-max-seed-docs", type=int, default=None)
     parser.add_argument("--neighbor-story-window", type=int, default=None)
     parser.add_argument("--neighbor-activity-story-sort-window", type=int, default=None)
+    parser.add_argument("--enable-same-story-sweep", dest="enable_same_story_sweep", action="store_true", default=None)
+    parser.add_argument("--disable-same-story-sweep", dest="enable_same_story_sweep", action="store_false")
+    parser.add_argument("--same-story-sweep-max-seed-docs", type=int, default=None)
+    parser.add_argument("--same-story-sweep-max-docs-per-story", type=int, default=None)
+    parser.add_argument("--same-story-sweep-extra-candidates", type=int, default=None)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
     parser.add_argument("--enable-mmr", action="store_true", default=None)
     parser.add_argument("--disable-mmr", dest="enable_mmr", action="store_false")
@@ -237,6 +246,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tensor-parallel-size", type=int, default=None)
     parser.add_argument("--gpu-memory-utilization", type=float, default=None)
     parser.add_argument("--max-num-batched-tokens", type=int, default=None)
+    parser.add_argument("--enforce-eager", action="store_true", default=None)
     parser.add_argument("--dtype", default=None)
     parser.add_argument("--llama-cli", type=Path, default=None)
     parser.add_argument("--gguf-model", type=Path, default=None)
@@ -342,6 +352,7 @@ def build_generator(args: argparse.Namespace, generator_cfg: dict[str, Any]) -> 
             max_num_batched_tokens=(
                 int(config_value(args.max_num_batched_tokens, vllm_cfg, "max_num_batched_tokens", 0)) or None
             ),
+            enforce_eager=bool(config_value(getattr(args, "enforce_eager", None), vllm_cfg, "enforce_eager", False)),
         )
 
     if backend in {"api", "openai_compatible_api", "chat_completions", "responses_api", "responses"}:
@@ -485,6 +496,15 @@ def build_query_config(
         storyline_sparse_scope_min_ratio=float(
             config_value(args.storyline_sparse_scope_min_ratio, retrieval_cfg, "storyline_sparse_scope_min_ratio", 1.5)
         ),
+        enable_scoped_chapter_search=bool(
+            config_value(getattr(args, "enable_scoped_chapter_search", None), retrieval_cfg, "enable_scoped_chapter_search", True)
+        ),
+        scoped_chapter_dense_top_k=int(
+            config_value(getattr(args, "scoped_chapter_dense_top_k", None), retrieval_cfg, "scoped_chapter_dense_top_k", 160)
+        ),
+        scoped_chapter_sparse_top_k=int(
+            config_value(getattr(args, "scoped_chapter_sparse_top_k", None), retrieval_cfg, "scoped_chapter_sparse_top_k", 160)
+        ),
         reranker_candidate_top_k=int(
             config_value(args.reranker_candidate_top_k, retrieval_cfg, "reranker_candidate_top_k", 120)
         ),
@@ -501,6 +521,28 @@ def build_query_config(
                 retrieval_cfg,
                 "neighbor_activity_story_sort_window",
                 1,
+            )
+        ),
+        enable_same_story_sweep=bool(
+            config_value(getattr(args, "enable_same_story_sweep", None), retrieval_cfg, "enable_same_story_sweep", True)
+        ),
+        same_story_sweep_max_seed_docs=int(
+            config_value(getattr(args, "same_story_sweep_max_seed_docs", None), retrieval_cfg, "same_story_sweep_max_seed_docs", 8)
+        ),
+        same_story_sweep_max_docs_per_story=int(
+            config_value(
+                getattr(args, "same_story_sweep_max_docs_per_story", None),
+                retrieval_cfg,
+                "same_story_sweep_max_docs_per_story",
+                24,
+            )
+        ),
+        same_story_sweep_extra_candidates=int(
+            config_value(
+                getattr(args, "same_story_sweep_extra_candidates", None),
+                retrieval_cfg,
+                "same_story_sweep_extra_candidates",
+                80,
             )
         ),
         rerank_batch_size=int(config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8)),

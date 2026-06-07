@@ -97,6 +97,7 @@ CONCLUSION_FIELDS = (
     "clarification_question",
     "follow_up_hypothesis",
 )
+GROUNDED_CONCLUSION_ACTIONS = {"answer_directly", "retrieve_more", "abstain"}
 
 
 def compact_json(payload: Any) -> str:
@@ -256,6 +257,36 @@ def normalize_json_payload(payload: dict[str, Any], *, task_type: str, question:
                 output["next_action"] = mapped
         output["question"] = str(output.get("question") or question).strip()
         output["next_action"] = str(output.get("next_action") or "").strip()
+        if output["next_action"] == "clarify_user":
+            output["next_action"] = "abstain"
+        if output["next_action"] in GROUNDED_CONCLUSION_ACTIONS:
+            if output["next_action"] == "answer_directly":
+                final_answer = str(payload.get("final_answer") or payload.get("answer") or "").strip()
+                supported_facts = payload.get("supported_facts") if isinstance(payload.get("supported_facts"), list) else []
+                inferred_facts = payload.get("inferred_facts") if isinstance(payload.get("inferred_facts"), list) else []
+                if not final_answer:
+                    return None
+                return {
+                    "next_action": "answer_directly",
+                    "supported_facts": supported_facts,
+                    "inferred_facts": inferred_facts,
+                    "final_answer": final_answer,
+                }
+            if output["next_action"] == "retrieve_more":
+                follow_up = payload.get("follow_up_hypothesis")
+                if not isinstance(follow_up, dict):
+                    return None
+                return {
+                    "next_action": "retrieve_more",
+                    "follow_up_hypothesis": follow_up,
+                }
+            final_answer = str(payload.get("final_answer") or payload.get("answer") or "").strip()
+            if not final_answer:
+                final_answer = "现有证据不足以确认。"
+            return {
+                "next_action": "abstain",
+                "final_answer": final_answer,
+            }
         output["answer"] = str(output.get("answer") or "").strip()
         output["missing_slots"] = clean_string_list(output.get("missing_slots"), limit=8)
         output["clarification_question"] = str(output.get("clarification_question") or "").strip()
@@ -366,6 +397,7 @@ def make_pipeline_args(args: argparse.Namespace) -> SimpleNamespace:
         tensor_parallel_size=args.tensor_parallel_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_num_batched_tokens=args.max_num_batched_tokens,
+        enforce_eager=args.enforce_eager,
         dtype=args.dtype,
         llama_cli=args.llama_cli,
         gguf_model=args.gguf_model,
@@ -407,10 +439,17 @@ def make_pipeline_args(args: argparse.Namespace) -> SimpleNamespace:
         enable_storyline_sparse_scope=args.enable_storyline_sparse_scope,
         storyline_scope_seed_top_k=args.storyline_scope_seed_top_k,
         storyline_sparse_scope_min_ratio=args.storyline_sparse_scope_min_ratio,
+        enable_scoped_chapter_search=args.enable_scoped_chapter_search,
+        scoped_chapter_dense_top_k=args.scoped_chapter_dense_top_k,
+        scoped_chapter_sparse_top_k=args.scoped_chapter_sparse_top_k,
         enable_neighbor_expansion=args.enable_neighbor_expansion,
         neighbor_max_seed_docs=args.neighbor_max_seed_docs,
         neighbor_story_window=args.neighbor_story_window,
         neighbor_activity_story_sort_window=args.neighbor_activity_story_sort_window,
+        enable_same_story_sweep=args.enable_same_story_sweep,
+        same_story_sweep_max_seed_docs=args.same_story_sweep_max_seed_docs,
+        same_story_sweep_max_docs_per_story=args.same_story_sweep_max_docs_per_story,
+        same_story_sweep_extra_candidates=args.same_story_sweep_extra_candidates,
         enable_mmr=args.enable_mmr,
         mmr_lambda=args.mmr_lambda,
         enable_pyramid_order=args.enable_pyramid_order,
@@ -719,11 +758,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-storyline-sparse-scope", dest="enable_storyline_sparse_scope", action="store_false")
     parser.add_argument("--storyline-scope-seed-top-k", type=int, default=None)
     parser.add_argument("--storyline-sparse-scope-min-ratio", type=float, default=None)
+    parser.add_argument("--enable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_true", default=None)
+    parser.add_argument("--disable-scoped-chapter-search", dest="enable_scoped_chapter_search", action="store_false")
+    parser.add_argument("--scoped-chapter-dense-top-k", type=int, default=None)
+    parser.add_argument("--scoped-chapter-sparse-top-k", type=int, default=None)
     parser.add_argument("--enable-neighbor-expansion", action="store_true", default=None)
     parser.add_argument("--disable-neighbor-expansion", dest="enable_neighbor_expansion", action="store_false")
     parser.add_argument("--neighbor-max-seed-docs", type=int, default=None)
     parser.add_argument("--neighbor-story-window", type=int, default=None)
     parser.add_argument("--neighbor-activity-story-sort-window", type=int, default=None)
+    parser.add_argument("--enable-same-story-sweep", dest="enable_same_story_sweep", action="store_true", default=None)
+    parser.add_argument("--disable-same-story-sweep", dest="enable_same_story_sweep", action="store_false")
+    parser.add_argument("--same-story-sweep-max-seed-docs", type=int, default=None)
+    parser.add_argument("--same-story-sweep-max-docs-per-story", type=int, default=None)
+    parser.add_argument("--same-story-sweep-extra-candidates", type=int, default=None)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
@@ -750,6 +798,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tensor-parallel-size", type=int, default=None)
     parser.add_argument("--gpu-memory-utilization", type=float, default=None)
     parser.add_argument("--max-num-batched-tokens", type=int, default=None)
+    parser.add_argument("--enforce-eager", action="store_true", default=None)
     parser.add_argument("--dtype", default=None)
     parser.add_argument("--llama-cli", type=Path, default=None)
     parser.add_argument("--gguf-model", type=Path, default=None)
