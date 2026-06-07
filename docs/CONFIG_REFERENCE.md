@@ -16,11 +16,11 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
 {
   "device": "cpu",
   "enable_reranker": false,
-  "reranker_model_path": "model/reranker/bge-reranker-v2-m3-evidence-chain-answerability",
+  "reranker_model_path": "model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch",
   "dense_top_k": 80,
   "sparse_top_k": 80,
   "enable_minirag": true,
-  "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+  "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
   "fusion_top_k": 50,
   "rerank_top_k": 20,
   "rerank_batch_size": 4,
