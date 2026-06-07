@@ -93,6 +93,43 @@ src/asa_arknight_story_agent/     # 推理最小源码
 web/                              # 本地浏览器前端
 ```
 
+## 一键部署（GPU 推荐）
+
+以下命令适用于从发布版仓库根目录开始的首次 GPU 部署。它会在本地克隆 `ArknightsGameData`、安装 GPU 环境、下载模型、构建主检索索引，并跑一次测试问题。
+
+`ArknightsGameData` 来自第三方公开仓库，本发布包不内置原始游戏文本；执行下面命令即表示你确认在本地获取并使用该数据。若不希望脚本克隆游戏数据，请跳过其中的 `git clone` 部分，按下一节手动准备。
+
+```bash
+set -euo pipefail
+
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
+
+if [[ -d data/ArknightsGameData/zh_CN/gamedata/story && -d data/ArknightsGameData/zh_CN/gamedata/excel ]]; then
+  echo "[bootstrap] game data already exists"
+elif [[ ! -e data/ArknightsGameData ]]; then
+  mkdir -p data
+  git clone --depth 1 https://github.com/Kengxxiao/ArknightsGameData.git data/ArknightsGameData
+else
+  echo "[bootstrap] data/ArknightsGameData exists but is incomplete; fix or remove it first" >&2
+  exit 1
+fi
+
+bash scripts/setup_gpu_reranker_qwen35_4b.sh
+source .venv-gpu/bin/activate
+
+python scripts/build_retrieval_index.py --device cuda
+bash scripts/run_gpu_reranker_qwen35_4b.sh --answer-only "岁兽是什么？"
+```
+
+完成后可直接提问：
+
+```bash
+bash scripts/run_gpu_reranker_qwen35_4b.sh "炎景公主一事具体指什么"
+```
+
+如果没有可用 CUDA/vLLM 环境，使用下面的 CPU 本地或 CPU API 分步流程。
+
 ## 1. 准备游戏文本
 
 游戏文本数据来自：
