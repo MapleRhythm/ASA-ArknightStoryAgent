@@ -132,6 +132,13 @@ bash scripts/setup_cpu_qwen35_4b_no_reranker.sh
 source .venv-cpu/bin/activate
 ```
 
+如需同时准备 llama.cpp：
+
+```bash
+BUILD_LLAMA_CPP=1 bash scripts/setup_cpu_qwen35_4b_no_reranker.sh
+source .venv-cpu/bin/activate
+```
+
 CPU API 版本：
 
 ```bash
