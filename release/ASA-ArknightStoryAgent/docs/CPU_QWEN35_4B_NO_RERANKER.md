@@ -12,9 +12,10 @@ source .venv-cpu/bin/activate
 如需顺带编译 CPU 版 llama.cpp：
 
 ```bash
-git clone https://github.com/ggml-org/llama.cpp.git third_party/llama.cpp
 BUILD_LLAMA_CPP=1 bash scripts/setup_cpu_qwen35_4b_no_reranker.sh
 ```
+
+当 `third_party/llama.cpp` 不存在时，构建脚本会自动 shallow clone `https://github.com/ggml-org/llama.cpp.git`。
 
 ## 必要文件
 
