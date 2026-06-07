@@ -19,8 +19,8 @@ from huggingface_hub import snapshot_download
 from asa_arknight_story_agent.config import (
     BASE_RERANKER_MODEL_DIR,
     EMBEDDING_MODEL_DIR,
-    EVIDENCE_CHAIN_RERANKER_MODEL_DIR,
     MODEL_ROOT,
+    RANK_MIX_RERANKER_MODEL_DIR,
 )
 
 
@@ -176,7 +176,7 @@ def main() -> None:
     if need_lora and not args.skip_lora:
         download_snapshot(args.lora_repo, DEFAULT_LORA_DIR)
     if need_finetuned_reranker and not args.skip_finetuned_reranker:
-        download_snapshot(args.reranker_repo, EVIDENCE_CHAIN_RERANKER_MODEL_DIR)
+        download_snapshot(args.reranker_repo, RANK_MIX_RERANKER_MODEL_DIR)
     if need_gguf and not args.skip_gguf:
         download_large_file(args.gguf_repo, DEFAULT_GGUF_DIR, args.gguf_filename)
 
