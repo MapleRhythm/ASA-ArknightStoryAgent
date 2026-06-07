@@ -10,7 +10,7 @@ cat <<'MSG'
    bash scripts/setup_gpu_reranker_qwen35_4b.sh
    source .venv-gpu/bin/activate
 
-2. CPU：Qwen3.5 4B，无 reranker
+2. CPU：Qwen3.5 4B + LoRA，无 reranker
    bash scripts/setup_cpu_qwen35_4b_no_reranker.sh
    source .venv-cpu/bin/activate
 

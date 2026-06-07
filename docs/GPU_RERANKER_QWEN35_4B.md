@@ -21,11 +21,13 @@ SKIP_VLLM_INSTALL=1 bash scripts/setup_gpu_reranker_qwen35_4b.sh
 data/ArknightsGameData/zh_CN/gamedata/story/
 data/ArknightsGameData/zh_CN/gamedata/excel/
 indexes/arknights_story/
-indexes/arknights_story_minirag/graph.json
+indexes/arknights_story_minirag_v3/graph.json
 model/qwen3.5-4b/
 model/lora/asa-arknightstoryagent-4b-lora/
-model/reranker/bge-reranker-v2-m3-evidence-chain-answerability/
+model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch/
 ```
+
+当前 `model/lora/asa-arknightstoryagent-4b-lora/` 对应 HF 稳定仓库 `MapleRhythm/asa-arknightstoryagent-4b-lora`，内容版本为 `20260607-cutoff6656`。
 
 主索引构建：
 
@@ -61,9 +63,11 @@ question    可选。传入时直接回答一次；不传时进入交互模式�
 --runtime-config configs/runtime_gpu_reranker_qwen35_4b.json
 --base-model model/qwen3.5-4b
 --lora-path model/lora/asa-arknightstoryagent-4b-lora
---reranker-model model/reranker/bge-reranker-v2-m3-evidence-chain-answerability
+--reranker-model model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch
 --tensor-parallel-size 1
---gpu-memory-utilization 0.62
+--gpu-memory-utilization 0.52
+--max-tokens 1536
+--ctx-size 10000
 ```
 
 默认配置文件：
@@ -73,3 +77,5 @@ configs/runtime_gpu_reranker_qwen35_4b.json
 ```
 
 输出：默认输出完整 JSON，包含 `question`、`hypothesis`、`retrieval_trace`、`evidence`、`answer`。加 `--answer-only` 只输出最终回答。
+
+当前默认关闭 web context，并使用 `answer_grounding_mode=quote`。如果显存不足，优先降低 `--gpu-memory-utilization`、`--ctx-size` 或 `retrieval.rerank_top_k`。

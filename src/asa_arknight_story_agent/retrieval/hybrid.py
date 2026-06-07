@@ -14,8 +14,9 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from asa_arknight_story_agent.config import BM25_TOKENS_PATH, DOCUMENTS_PATH, FAISS_INDEX_PATH, QueryConfig
-from asa_arknight_story_agent.retrieval.minirag import MiniRAGIndex
+from asa_arknight_story_agent.retrieval.minirag import MiniRAGIndex, document_chapter_scope_key
 from asa_arknight_story_agent.retrieval.reranker import CrossEncoderReranker
+from asa_arknight_story_agent.retrieval.storyline import document_storyline_scopes
 
 
 ASCII_TOKEN_RE = re.compile(r"[a-z0-9_]+", re.IGNORECASE)
@@ -25,12 +26,25 @@ REVEAL_QUERY_RE = re.compile(r"阴谋|真相|秘密|识破|揭穿|曝光|暴露|
 CONCEPT_CRISIS_QUERY_RE = re.compile(r"是什么|本质|来历|为何成为|为什么成为|为什么会成为|危机|祸|患|威胁")
 LINE_SPLIT_RE = re.compile(r"[\n\r。！？；]+")
 STAGE_NUMBER_RE = re.compile(r"(?:^|[_\-/])(?:level_)?[a-z0-9]+_(\d{2})(?:[_a-z\-/]|$)", re.IGNORECASE)
+MAIN_CHAPTER_REF_RE = re.compile(
+    r"(?:第\s*([一二三四五六七八九十百零〇两0-9]{1,4})\s*章|([0-9]{1,2})\s*章|level_main[_-]([0-9]{1,2})|main[_-]([0-9]{1,2})|EPISODE\s*([0-9]{1,2}))",
+    re.IGNORECASE,
+)
+MAIN_CHAPTER_SOURCE_RE = re.compile(r"(?:^|[/_])(?:level_)?main[_-](\d{1,2})(?:[-_/]|$)", re.IGNORECASE)
 QUERY_CHAR_STOP_CHARS = set("的是了嘛吗呢啊吧呀么什怎为哪件这那其一在和与及或把被让给从向对将会要请问具体指")
 LOW_RERANK_QUERY_TYPES = {"fact", "relation"}
 HIGH_RERANK_QUERY_TYPES = {"causality", "reasoning", "reveal", "mystery", "answerability"}
 QUERY_TYPES = LOW_RERANK_QUERY_TYPES | HIGH_RERANK_QUERY_TYPES
 PROFILE_SOURCE_MARKERS = ("handbook_info_table.json", "charword_table.json")
 BRANCH_SOURCE_MARKERS = ("/rogue/", "/roguelike/", "/endbook/")
+MOEGIRL_SOURCE_MARKERS = ("moegirl.icu", "moegirl/", "萌百世界观资料")
+STORY_SOURCE_MARKERS = (
+    "activities/",
+    "obt/main/",
+    "obt/memory/",
+    "obt/rogue/",
+    "[uc]info/activities/",
+)
 CONCEPT_DEFINITION_TERMS = {
     "本质",
     "原本",
@@ -122,6 +136,19 @@ ACTION_HINT_TERMS = {
     "解除",
     "开启",
     "启动",
+    "启用",
+    "动用",
+    "使用",
+    "发动",
+    "打开",
+    "建造",
+    "修建",
+    "建设",
+    "制造",
+    "改造",
+    "布局",
+    "设下",
+    "安排",
     "进入",
     "离开",
     "杀死",
@@ -246,6 +273,16 @@ REVEAL_SUPPORT_TERMS = {
     "钱",
     "计划",
 }
+REVEAL_DIRECT_CONTEXT_TERMS = {
+    "澄闪",
+    "苏茜",
+    "苏茜·格里特",
+    "卡拉顿",
+    "卡拉顿城",
+    "贝希曼",
+    "贝希曼伯爵",
+    "阴云火花",
+}
 
 
 def tokenize_for_bm25(text: str) -> list[str]:
@@ -264,6 +301,37 @@ def load_jsonl(path: Path) -> list[dict]:
     ]
 
 
+def parse_main_chapter_number(value: str) -> int | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        number = int(raw)
+        return number if 0 < number < 100 else None
+    digits = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if raw == "十":
+        return 10
+    if "十" in raw:
+        left, _, right = raw.partition("十")
+        tens = digits.get(left, 1) if left else 1
+        ones = digits.get(right, 0) if right else 0
+        number = tens * 10 + ones
+        return number if 0 < number < 100 else None
+    if len(raw) == 1 and raw in digits:
+        return digits[raw]
+    return None
+
+
+def extract_main_chapter_numbers(text: str) -> list[int]:
+    numbers: list[int] = []
+    for match in MAIN_CHAPTER_REF_RE.finditer(text or ""):
+        raw_number = next((group for group in match.groups() if group), "")
+        number = parse_main_chapter_number(raw_number)
+        if number is not None:
+            numbers.append(number)
+    return list(dict.fromkeys(numbers))
+
+
 class ArknightsHybridRetriever:
     def __init__(
         self,
@@ -280,13 +348,21 @@ class ArknightsHybridRetriever:
         self.embedding_model = embedding_model
         self.reranker = reranker
         self.minirag_index = minirag_index
+        self.chapter_doc_indices: dict[str, list[int]] = {}
         self.story_doc_indices: dict[str, list[int]] = {}
+        self.storyline_doc_indices: dict[str, list[int]] = {}
         self.stage_doc_indices: dict[tuple[str, str], list[int]] = {}
         self.activity_story_sort_doc_indices: dict[str, dict[int, list[int]]] = {}
+        self._dense_scope_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for doc_index, document in enumerate(documents):
+            chapter_scope = document_chapter_scope_key(document)
+            if chapter_scope:
+                self.chapter_doc_indices.setdefault(chapter_scope, []).append(doc_index)
             story_id = str(document.get("story_id") or "").strip()
             if story_id:
                 self.story_doc_indices.setdefault(story_id, []).append(doc_index)
+            for storyline_scope in document_storyline_scopes(document):
+                self.storyline_doc_indices.setdefault(storyline_scope, []).append(doc_index)
             activity_id = str(document.get("activity_id") or "").strip()
             stage_code = str(document.get("stage_code") or "").strip()
             if activity_id and stage_code:
@@ -365,10 +441,104 @@ class ArknightsHybridRetriever:
             )
         return hits
 
-    def sparse_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+    def dense_search_chapter(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        chapter_scope: str,
+    ) -> list[dict[str, Any]]:
+        if top_k <= 0 or not chapter_scope:
+            return []
+        doc_indices = self.chapter_doc_indices.get(chapter_scope, [])
+        if not doc_indices:
+            return []
+        scoped_indices, scoped_vectors = self._dense_scope_vectors(chapter_scope, doc_indices)
+        if scoped_vectors.size == 0:
+            return []
+        vector = self.embedding_model.encode(
+            [query],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        ).astype(np.float32)[0]
+        scores = scoped_vectors @ vector
+        take = min(top_k, len(scores))
+        if take <= 0:
+            return []
+        if take >= len(scores):
+            order = np.argsort(scores)[::-1]
+        else:
+            order = np.argpartition(scores, -take)[-take:]
+            order = order[np.argsort(scores[order])[::-1]]
+        hits: list[dict[str, Any]] = []
+        for offset in order.tolist():
+            doc_index = int(scoped_indices[offset])
+            hits.append(
+                {
+                    "doc_index": doc_index,
+                    "score": float(scores[offset]),
+                    "document": self.documents[doc_index],
+                    "scoped_source": "chapter_dense",
+                }
+            )
+        return hits
+
+    def _dense_scope_vectors(
+        self,
+        chapter_scope: str,
+        doc_indices: list[int],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        cached = self._dense_scope_cache.get(chapter_scope)
+        if cached is not None:
+            return cached
+        valid_indices: list[int] = []
+        vectors: list[np.ndarray] = []
+        for doc_index in doc_indices:
+            try:
+                vector = self.index.reconstruct(int(doc_index))
+            except Exception:
+                continue
+            valid_indices.append(int(doc_index))
+            vectors.append(np.asarray(vector, dtype=np.float32))
+        if vectors:
+            payload = (np.asarray(valid_indices, dtype=np.int64), np.vstack(vectors).astype(np.float32))
+        else:
+            payload = (np.asarray([], dtype=np.int64), np.zeros((0, 0), dtype=np.float32))
+        if len(self._dense_scope_cache) >= 32:
+            self._dense_scope_cache.pop(next(iter(self._dense_scope_cache)))
+        self._dense_scope_cache[chapter_scope] = payload
+        return payload
+
+    def sparse_search(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        storyline_scope: str | None = None,
+    ) -> list[dict[str, Any]]:
         tokens = tokenize_for_bm25(query)
         scores = self.bm25.get_scores(tokens)
-        if top_k >= len(scores):
+        allowed_indices: list[int] | None = None
+        if storyline_scope:
+            allowed_indices = self.storyline_doc_indices.get(storyline_scope, [])
+            if not allowed_indices:
+                return []
+
+        if allowed_indices is not None:
+            candidate_indices = np.array(allowed_indices, dtype=np.int64)
+            candidate_scores = scores[candidate_indices]
+            positive_mask = candidate_scores > 0
+            candidate_indices = candidate_indices[positive_mask]
+            candidate_scores = candidate_scores[positive_mask]
+            if len(candidate_indices) <= 0:
+                return []
+            if top_k >= len(candidate_indices):
+                order = np.argsort(candidate_scores)[::-1]
+            else:
+                order = np.argpartition(candidate_scores, -top_k)[-top_k:]
+                order = order[np.argsort(candidate_scores[order])[::-1]]
+            top_indices = candidate_indices[order]
+        elif top_k >= len(scores):
             top_indices = np.argsort(scores)[::-1]
         else:
             top_indices = np.argpartition(scores, -top_k)[-top_k:]
@@ -387,10 +557,60 @@ class ArknightsHybridRetriever:
             )
         return hits
 
-    def minirag_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+    def sparse_search_chapter(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        chapter_scope: str,
+    ) -> list[dict[str, Any]]:
+        if top_k <= 0 or not chapter_scope:
+            return []
+        allowed_indices = self.chapter_doc_indices.get(chapter_scope, [])
+        if not allowed_indices:
+            return []
+        tokens = tokenize_for_bm25(query)
+        scores = self.bm25.get_scores(tokens)
+        candidate_indices = np.array(allowed_indices, dtype=np.int64)
+        candidate_scores = scores[candidate_indices]
+        positive_mask = candidate_scores > 0
+        candidate_indices = candidate_indices[positive_mask]
+        candidate_scores = candidate_scores[positive_mask]
+        if len(candidate_indices) <= 0:
+            return []
+        if top_k >= len(candidate_indices):
+            order = np.argsort(candidate_scores)[::-1]
+        else:
+            order = np.argpartition(candidate_scores, -top_k)[-top_k:]
+            order = order[np.argsort(candidate_scores[order])[::-1]]
+        hits: list[dict[str, Any]] = []
+        for offset in order.tolist():
+            doc_index = int(candidate_indices[offset])
+            hits.append(
+                {
+                    "doc_index": doc_index,
+                    "score": float(candidate_scores[offset]),
+                    "document": self.documents[doc_index],
+                    "scoped_source": "chapter_sparse",
+                }
+            )
+        return hits
+
+    def minirag_search(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        chapter_scope: str | None = None,
+    ) -> list[dict[str, Any]]:
         if self.minirag_index is None:
             return []
-        return self.minirag_index.search(query, self.documents, top_k=top_k)
+        return self.minirag_index.search(
+            query,
+            self.documents,
+            top_k=top_k,
+            chapter_scope=chapter_scope,
+        )
 
     def reciprocal_rank_fusion(
         self,
@@ -495,6 +715,9 @@ class ArknightsHybridRetriever:
         max_seed_docs: int = 24,
         story_window: int = 2,
         activity_story_sort_window: int = 1,
+        same_story_sweep: bool = False,
+        same_story_max_seed_docs: int = 8,
+        same_story_max_docs_per_story: int = 24,
         top_k: int = 120,
     ) -> list[dict[str, Any]]:
         if not hits:
@@ -504,6 +727,9 @@ class ArknightsHybridRetriever:
             max_seed_docs=max_seed_docs,
             story_window=story_window,
             activity_story_sort_window=activity_story_sort_window,
+            same_story_sweep=same_story_sweep,
+            same_story_max_seed_docs=same_story_max_seed_docs,
+            same_story_max_docs_per_story=same_story_max_docs_per_story,
         )
         merged = [dict(item) for item in hits]
         seen = {int(item["doc_index"]) for item in merged}
@@ -536,9 +762,136 @@ class ArknightsHybridRetriever:
         return bool(REVEAL_QUERY_RE.search(query))
 
     def _is_concept_crisis_query(self, query: str) -> bool:
-        has_concept = any(term in query for term in ("是什么", "本质", "来历"))
+        detail_markers = (
+            "本名",
+            "分别",
+            "具体",
+            "问题",
+            "表现",
+            "看待",
+            "关系",
+            "为什么",
+            "为何",
+            "如何",
+            "怎么",
+            "怎样",
+        )
+        if any(marker in query for marker in detail_markers):
+            return False
+        has_concept = any(
+            term in query
+            for term in (
+                "是什么组织",
+                "是什么势力",
+                "是什么国家",
+                "是什么地区",
+                "是什么种族",
+                "是什么概念",
+                "是什么设定",
+                "本质",
+                "来历",
+            )
+        )
         has_crisis = any(term in query for term in ("危机", "祸", "患", "威胁", "为什么会成为", "为何成为", "为什么成为"))
         return bool(CONCEPT_CRISIS_QUERY_RE.search(query) and (has_concept or has_crisis))
+
+    def _document_source_type(self, document: dict) -> str:
+        fields = " ".join(
+            str(document.get(key) or "")
+            for key in ("id", "source_path", "activity_name", "story_id", "activity_id", "avg_tag")
+        )
+        if any(marker in fields for marker in MOEGIRL_SOURCE_MARKERS):
+            return "moegirl_background"
+        if any(marker in fields for marker in PROFILE_SOURCE_MARKERS):
+            return "profile"
+        if "charword/" in fields:
+            return "voice"
+        if any(marker in fields for marker in STORY_SOURCE_MARKERS):
+            return "story_text"
+        return "other"
+
+    def _is_background_query(self, query: str) -> bool:
+        original_query = self._original_query_text(query)
+        detail_markers = (
+            "本名",
+            "分别",
+            "具体",
+            "为什么",
+            "为何",
+            "如何",
+            "怎么",
+            "怎样",
+            "关系",
+            "扮演",
+            "表现",
+            "看待",
+            "发生",
+            "做了",
+            "说了",
+            "同意",
+            "拒绝",
+            "决定",
+            "目的",
+            "动机",
+        )
+        explicit_background_markers = ("世界观", "背景", "设定", "介绍", "资料")
+        if any(marker in original_query for marker in detail_markers) and not any(
+            marker in original_query for marker in explicit_background_markers
+        ):
+            return False
+        background_markers = (
+            "是什么组织",
+            "是什么势力",
+            "是什么国家",
+            "是什么地区",
+            "是什么种族",
+            "是什么概念",
+            "是什么设定",
+            "介绍",
+            "背景",
+            "世界观",
+            "设定",
+            "组织",
+            "国家",
+            "地区",
+            "种族",
+            "概念",
+            "资料",
+            "势力",
+        )
+        return any(marker in original_query for marker in background_markers) or self._is_concept_crisis_query(original_query)
+
+    def _is_story_detail_query(self, query: str, query_mode: str | None = None) -> bool:
+        if self._is_background_query(query):
+            return False
+        mode = query_mode or self._infer_query_mode(query)
+        if mode not in {"fact", "relation", "causality", "reasoning", "reveal", "mystery"}:
+            return False
+        detail_markers = (
+            "为什么",
+            "为何",
+            "如何",
+            "怎么",
+            "怎样",
+            "具体",
+            "本名",
+            "分别",
+            "关系",
+            "扮演",
+            "成为",
+            "表现",
+            "看待",
+            "发生",
+            "做了",
+            "说了",
+            "同意",
+            "拒绝",
+            "决定",
+            "目的",
+            "动机",
+        )
+        original_query = self._original_query_text(query)
+        return any(marker in original_query for marker in detail_markers)
 
     def _concept_query_subjects(self, query: str) -> list[str]:
         original_query = self._original_query_text(query)
@@ -614,9 +967,12 @@ class ArknightsHybridRetriever:
         max_seed_docs: int = 6,
         story_window: int = 2,
         activity_story_sort_window: int = 1,
+        same_story_sweep: bool = False,
+        same_story_max_seed_docs: int = 8,
+        same_story_max_docs_per_story: int = 24,
     ) -> list[int]:
         candidate_indices: list[int] = []
-        for hit in seed_hits[:max_seed_docs]:
+        for seed_rank, hit in enumerate(seed_hits[:max_seed_docs]):
             doc = hit["document"]
             doc_index = int(hit["doc_index"])
             if doc_index not in candidate_indices:
@@ -635,6 +991,18 @@ class ArknightsHybridRetriever:
                     for neighbor in story_indices[start:end]:
                         if neighbor not in candidate_indices:
                             candidate_indices.append(neighbor)
+                    if same_story_sweep and seed_rank < same_story_max_seed_docs:
+                        for neighbor in self._story_sweep_indices(
+                            story_indices,
+                            current_pos,
+                            max_docs=max(1, same_story_max_docs_per_story),
+                        ):
+                            if neighbor not in candidate_indices:
+                                candidate_indices.append(neighbor)
+                elif same_story_sweep and seed_rank < same_story_max_seed_docs:
+                    for neighbor in story_indices[: max(1, same_story_max_docs_per_story)]:
+                        if neighbor not in candidate_indices:
+                            candidate_indices.append(neighbor)
 
             activity_id = str(doc.get("activity_id") or "").strip()
             stage_code = str(doc.get("stage_code") or "").strip()
@@ -651,6 +1019,22 @@ class ArknightsHybridRetriever:
                             candidate_indices.append(neighbor)
         return candidate_indices
 
+    @staticmethod
+    def _story_sweep_indices(story_indices: list[int], center_pos: int, *, max_docs: int) -> list[int]:
+        if center_pos < 0 or not story_indices or max_docs <= 0:
+            return []
+        ordered: list[int] = []
+        for distance in range(len(story_indices)):
+            positions = [center_pos] if distance == 0 else [center_pos - distance, center_pos + distance]
+            for pos in positions:
+                if 0 <= pos < len(story_indices):
+                    doc_index = story_indices[pos]
+                    if doc_index not in ordered:
+                        ordered.append(doc_index)
+                        if len(ordered) >= max_docs:
+                            return ordered
+        return ordered
+
     def _extract_query_terms(self, query: str) -> list[str]:
         terms: list[str] = []
         for token in ENTITY_TOKEN_RE.findall(query):
@@ -665,6 +1049,28 @@ class ArknightsHybridRetriever:
                 continue
             terms.append(normalized)
         return list(dict.fromkeys(terms))
+
+    def extract_bridge_terms(self, query: str, candidates: list[dict[str, Any]], *, limit: int = 24) -> list[str]:
+        terms = list(self._extract_query_terms(query))
+        counts: dict[str, int] = {}
+        known = set(terms)
+        for item in candidates[:40]:
+            text = self._document_text(item["document"])
+            weight = 2 if float(item.get("rerank_score") or item.get("fusion_score") or 0.0) > 0 else 1
+            for token in ENTITY_TOKEN_RE.findall(text):
+                normalized = token.strip()
+                if (
+                    not normalized
+                    or normalized in EXPANSION_STOP_WORDS
+                    or normalized in known
+                    or len(normalized) == 1
+                    or (normalized.isascii() and len(normalized) < 3)
+                ):
+                    continue
+                counts[normalized] = counts.get(normalized, 0) + weight
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        terms.extend(term for term, _count in ranked[: max(0, limit - len(terms))])
+        return list(dict.fromkeys(terms))[:limit]
 
     def _original_query_text(self, query: str) -> str:
         return query.split("\n", 1)[0].strip()
@@ -925,6 +1331,7 @@ class ArknightsHybridRetriever:
         bonus = 0.0
         text = str(document.get("search_text") or document.get("clean_text") or "")
         source_path = str(document.get("source_path") or "")
+        source_type = self._document_source_type(document)
         query_terms = self._extract_chain_query_terms(query)
         query_overlap = sum(1 for term in query_terms if term in text)
         long_exact_overlap = sum(1 for term in query_terms if len(term) >= 4 and term in text)
@@ -950,6 +1357,15 @@ class ArknightsHybridRetriever:
         if query_mode == "answerability" or self._is_concept_crisis_query(query):
             bonus += self._compute_concept_crisis_support_bonus(query, document)
         bonus += self._compute_answerability_bonus(query, document)
+        if source_type == "moegirl_background":
+            if self._is_background_query(query):
+                bonus += 0.75
+            elif self._is_story_detail_query(query, query_mode=query_mode):
+                bonus -= 1.0
+                if long_exact_overlap == 0:
+                    bonus -= 0.45
+        elif source_type == "story_text" and self._is_story_detail_query(query, query_mode=query_mode):
+            bonus += 0.55
         return bonus
 
     def _compute_answerability_bonus(self, query: str, document: dict) -> float:
@@ -959,19 +1375,84 @@ class ArknightsHybridRetriever:
         source_path = str(document.get("source_path") or "")
         strong_hits = sum(1 for term in REVEAL_ANSWER_TERMS if term in text)
         support_hits = sum(1 for term in REVEAL_SUPPORT_TERMS if term in text)
-        if strong_hits == 0 and support_hits < 2:
+        direct_hits = sum(1 for term in REVEAL_DIRECT_CONTEXT_TERMS if term in query and term in text)
+        if strong_hits == 0 and support_hits < 2 and direct_hits < 2:
             return 0.0
-        bonus = min(strong_hits, 5) * 0.85 + min(support_hits, 4) * 0.22
+        bonus = min(strong_hits, 5) * 0.85 + min(support_hits, 4) * 0.22 + min(direct_hits, 4) * 0.2
         if "阴谋" in text or "真相" in text:
             bonus += 0.45
         if "[uc]info" in source_path and ("阴谋" in text or "曝光" in text or "真相" in text):
             bonus += 1.25
+        if "[uc]info" in source_path and direct_hits >= 2:
+            bonus += 0.8
         if strong_hits >= 2 and support_hits >= 2:
             bonus += 1.0
         return min(bonus, 6.0)
 
     def _document_text(self, document: dict) -> str:
         return str(document.get("search_text") or document.get("clean_text") or "")
+
+    def _document_main_chapter_number(self, document: dict) -> int | None:
+        fields = " ".join(
+            str(document.get(key) or "")
+            for key in ("activity_id", "story_id", "story_key", "source_path", "id", "search_text")
+        )
+        match = MAIN_CHAPTER_SOURCE_RE.search(fields)
+        if match:
+            return int(match.group(1))
+        numbers = extract_main_chapter_numbers(fields)
+        return numbers[0] if numbers else None
+
+    def _apply_main_chapter_focus_adjustment(self, query: str, candidates: list[dict[str, Any]]) -> None:
+        query_chapters = extract_main_chapter_numbers(query)
+        if not query_chapters:
+            return
+        target_chapter = query_chapters[0]
+        for item in candidates:
+            document = item["document"]
+            doc_chapter = self._document_main_chapter_number(document)
+            if doc_chapter == target_chapter:
+                item["rerank_score"] = float(item.get("rerank_score") or 0.0) + 3.0
+                item["main_chapter_focus"] = f"match:{target_chapter}"
+            elif doc_chapter is not None:
+                item["rerank_score"] = float(item.get("rerank_score") or 0.0) - 2.5
+                item["main_chapter_focus"] = f"mismatch:{doc_chapter}!={target_chapter}"
+
+    def _apply_source_type_focus_adjustment(
+        self,
+        query: str,
+        candidates: list[dict[str, Any]],
+        *,
+        query_mode: str | None,
+    ) -> None:
+        background_query = self._is_background_query(query)
+        detail_query = self._is_story_detail_query(query, query_mode=query_mode)
+        reveal_query = self._is_reveal_query(query)
+        if not background_query and not detail_query and not reveal_query:
+            return
+        for item in candidates:
+            document = item["document"]
+            source_type = self._document_source_type(document)
+            item["source_type"] = source_type
+            score = float(item.get("rerank_score") or 0.0)
+            if background_query and source_type == "moegirl_background":
+                item["rerank_score"] = score + 0.8
+                item["source_type_focus"] = "background_boost"
+            elif detail_query and source_type == "story_text":
+                item["rerank_score"] = score + 0.8
+                item["source_type_focus"] = "story_detail_boost"
+            elif detail_query and source_type == "moegirl_background":
+                item["rerank_score"] = score - 1.1
+                item["source_type_focus"] = "background_context_only"
+            if reveal_query:
+                answerability = self._compute_answerability_bonus(query, document)
+                if answerability > 0:
+                    reveal_bonus = answerability * 1.35
+                    item["rerank_score"] = float(item.get("rerank_score") or 0.0) + reveal_bonus
+                    item["reveal_answerability_focus"] = round(answerability, 3)
+                elif source_type == "profile":
+                    item["rerank_score"] = float(item.get("rerank_score") or 0.0) - 3.0
+                    item["reveal_answerability_focus"] = "profile_demote"
 
     def _document_stage_number(self, document: dict) -> int | None:
         stage_code = str(document.get("stage_code") or "")
@@ -1015,6 +1496,12 @@ class ArknightsHybridRetriever:
         query_overlap = sum(1 for term in query_terms if term in text)
         bridge_overlap = sum(1 for term in bridge_terms if term in text)
         query_action_terms = [term for term in ACTION_HINT_TERMS if term in query]
+        source_type = self._document_source_type(document)
+
+        if source_type == "moegirl_background" and self._is_story_detail_query(query):
+            if query_overlap or bridge_overlap:
+                return {"context"}
+            return set()
 
         if query_action_terms and any(term in text for term in query_action_terms):
             roles.add("action")
@@ -1055,16 +1542,24 @@ class ArknightsHybridRetriever:
 
         left_activity = str(left.get("activity_id") or "")
         right_activity = str(right.get("activity_id") or "")
+        left_source_type = self._document_source_type(left)
+        right_source_type = self._document_source_type(right)
+        generic_background_pair = (
+            left_source_type == "moegirl_background"
+            and right_source_type == "moegirl_background"
+            and left_story != right_story
+        )
         if left_activity and left_activity == right_activity:
-            score += 0.2
+            if not generic_background_pair:
+                score += 0.2
             left_stage = str(left.get("stage_code") or "")
             right_stage = str(right.get("stage_code") or "")
-            if left_stage and left_stage == right_stage:
+            if left_stage and left_stage == right_stage and not generic_background_pair:
                 score += 0.25
 
             left_sort = left.get("story_sort")
             right_sort = right.get("story_sort")
-            if isinstance(left_sort, int) and isinstance(right_sort, int):
+            if isinstance(left_sort, int) and isinstance(right_sort, int) and not generic_background_pair:
                 distance = abs(left_sort - right_sort)
                 if distance <= 1:
                     score += 0.25
@@ -1073,7 +1568,7 @@ class ArknightsHybridRetriever:
 
             left_stage_number = self._document_stage_number(left)
             right_stage_number = self._document_stage_number(right)
-            if left_stage_number is not None and right_stage_number is not None:
+            if left_stage_number is not None and right_stage_number is not None and not generic_background_pair:
                 distance = abs(left_stage_number - right_stage_number)
                 if distance == 0:
                     score += 0.22
@@ -1370,6 +1865,17 @@ class ArknightsHybridRetriever:
             chain_text = self._render_chain_text(chain)
             if not chain_text:
                 continue
+            chain_structure = {
+                "chain_length": len(member_indices),
+                "causal_order": "model_candidate",
+                "evidence_types": sorted(chain["roles"]) if chain.get("roles") else ["context"],
+            }
+            chain_text = (
+                f"[CHAIN_LEN={chain_structure['chain_length']}] "
+                f"[CAUSAL_ORDER={chain_structure['causal_order']}] "
+                f"[EVIDENCE_TYPES=({'|'.join(chain_structure['evidence_types'])})]\n"
+                + chain_text
+            )
             chain_payloads.append(
                 {
                     "chain": chain,
@@ -1395,10 +1901,12 @@ class ArknightsHybridRetriever:
         ):
             chain = payload["chain"]
             normalized_rank_bonus = 1.0 / (rank + 1)
+            chain_score = float(score)
             for member in chain["members"]:
                 item = doc_index_to_item.get(int(member["item"]["doc_index"]))
                 if item is None:
                     continue
+                document = item["document"]
                 role_bonus = 0.07 * len(member["roles"])
                 if "action" in member["roles"]:
                     role_bonus += 0.12
@@ -1406,10 +1914,32 @@ class ArknightsHybridRetriever:
                     role_bonus += 0.11
                 if "motive" in member["roles"]:
                     role_bonus += 0.1
+                member_relevance = self._compute_query_overlap_bonus(
+                    query,
+                    document,
+                    bridge_terms,
+                    query_mode=query_mode,
+                )
+                adjusted_chain_score = self._adjust_chain_score_for_query_type(
+                    query,
+                    document,
+                    chain_score,
+                    query_mode,
+                )
                 if query_mode in LOW_RERANK_QUERY_TYPES:
-                    chain_member_score = float(score) * 0.45 + normalized_rank_bonus * 0.35 + role_bonus * 0.35
+                    chain_member_score = (
+                        adjusted_chain_score * 0.35
+                        + normalized_rank_bonus * 0.25
+                        + role_bonus * 0.25
+                        + member_relevance
+                    )
                 else:
-                    chain_member_score = float(score) * 1.5 + normalized_rank_bonus * 1.3 + role_bonus
+                    chain_member_score = (
+                        adjusted_chain_score * 0.45
+                        + normalized_rank_bonus * 0.45
+                        + role_bonus
+                        + member_relevance
+                    )
                 item["evidence_chain_score"] = max(
                     float(item.get("evidence_chain_score", float("-inf"))),
                     chain_member_score,
@@ -1421,6 +1951,14 @@ class ArknightsHybridRetriever:
                 item["evidence_chain_roles"] = sorted(member["roles"])
                 item["evidence_chain_text"] = payload["chain_text"]
         return True
+
+    def _final_rerank_score(self, item: dict[str, Any]) -> float:
+        chain_score = item.get("evidence_chain_score")
+        rerank_score = float(item.get("rerank_score") or 0.0)
+        if chain_score is not None:
+            chain_bonus = max(min(float(chain_score), 3.5), -1.5)
+            return rerank_score + chain_bonus
+        return rerank_score
 
     def rerank_with_evidence_chains(
         self,
@@ -1435,6 +1973,8 @@ class ArknightsHybridRetriever:
     ) -> list[dict[str, Any]]:
         if not hits:
             return []
+        if query_mode is None:
+            query_mode = self._infer_query_mode(query)
         candidates = [dict(item) for item in hits]
         if self.reranker:
             scores = self.reranker.score(
@@ -1444,17 +1984,33 @@ class ArknightsHybridRetriever:
             )
             for item, score in zip(candidates, scores, strict=True):
                 item["rerank_score"] = float(score)
+            resolved_bridge_terms = bridge_terms or self.extract_bridge_terms(query, candidates)
+            chain_scored = self._apply_chain_model_scores(
+                query,
+                candidates,
+                bridge_terms=resolved_bridge_terms,
+                batch_size=batch_size,
+                query_mode=query_mode,
+            )
+            if not chain_scored:
+                self._apply_evidence_chain_rerank(query, candidates, bridge_terms=resolved_bridge_terms)
+            self._apply_main_chapter_focus_adjustment(query, candidates)
+            self._apply_source_type_focus_adjustment(query, candidates, query_mode=query_mode)
             return sorted(
                 candidates,
-                key=lambda item: item.get("rerank_score", float("-inf")),
+                key=self._final_rerank_score,
                 reverse=True,
             )[:top_k]
 
         for item in candidates:
             item["rerank_score"] = float(item.get("fusion_score") or 0.0)
+        resolved_bridge_terms = bridge_terms or self.extract_bridge_terms(query, candidates)
+        self._apply_evidence_chain_rerank(query, candidates, bridge_terms=resolved_bridge_terms)
+        self._apply_main_chapter_focus_adjustment(query, candidates)
+        self._apply_source_type_focus_adjustment(query, candidates, query_mode=query_mode)
         return sorted(
             candidates,
-            key=lambda item: item.get("rerank_score", float("-inf")),
+            key=self._final_rerank_score,
             reverse=True,
         )[:top_k]
 
@@ -1578,7 +2134,7 @@ class ArknightsHybridRetriever:
                 dense_hits=dense_hits,
                 sparse_hits=sparse_hits,
                 minirag_hits=minirag_hits,
-                top_k=query_config.fusion_top_k,
+                top_k=max(query_config.reranker_candidate_top_k, query_config.fusion_top_k),
                 rrf_k=query_config.rrf_k,
                 dense_weight=query_config.dense_weight,
                 sparse_weight=query_config.sparse_weight,
@@ -1590,7 +2146,15 @@ class ArknightsHybridRetriever:
                 max_seed_docs=query_config.neighbor_max_seed_docs,
                 story_window=query_config.neighbor_story_window,
                 activity_story_sort_window=query_config.neighbor_activity_story_sort_window,
-                top_k=max(query_config.reranker_candidate_top_k, query_config.fusion_top_k),
+                same_story_sweep=query_config.enable_same_story_sweep,
+                same_story_max_seed_docs=query_config.same_story_sweep_max_seed_docs,
+                same_story_max_docs_per_story=query_config.same_story_sweep_max_docs_per_story,
+                top_k=max(query_config.reranker_candidate_top_k, query_config.fusion_top_k)
+                + (
+                    query_config.same_story_sweep_extra_candidates
+                    if query_config.enable_same_story_sweep
+                    else 0
+                ),
             )
         return fused_hits
 

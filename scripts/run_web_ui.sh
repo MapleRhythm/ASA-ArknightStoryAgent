@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python}"
-RUNTIME_CONFIG="${RUNTIME_CONFIG:-$ROOT_DIR/configs/runtime_cpu_api_no_reranker.json}"
 
 # Local development convenience: when this release tree is run from the
 # training checkout, reuse the pinned dependency overlay if it exists. A normal
@@ -22,8 +21,4 @@ if [[ ${#EXTRA_PYTHONPATH[@]} -gt 0 ]]; then
   unset IFS
 fi
 
-exec "$PYTHON_BIN" "$ROOT_DIR/api-mode/run_api_inference.py" \
-  --runtime-config "$RUNTIME_CONFIG" \
-  --device cpu \
-  --no-reranker \
-  "$@"
+exec "$PYTHON_BIN" "$ROOT_DIR/scripts/run_web_ui.py" "$@"

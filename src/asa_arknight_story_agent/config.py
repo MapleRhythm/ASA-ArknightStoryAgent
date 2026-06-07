@@ -15,7 +15,14 @@ OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 EMBEDDING_MODEL_DIR = MODEL_ROOT / "embeddings" / "bge-small-zh-v1.5"
 BASE_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3"
 EVIDENCE_CHAIN_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3-evidence-chain-answerability"
-RERANKER_MODEL_DIR = EVIDENCE_CHAIN_RERANKER_MODEL_DIR if EVIDENCE_CHAIN_RERANKER_MODEL_DIR.exists() else BASE_RERANKER_MODEL_DIR
+RANK_MIX_RERANKER_MODEL_DIR = MODEL_ROOT / "reranker" / "bge-reranker-v2-m3-rank-mix-v6-small-patch"
+RERANKER_MODEL_DIR = (
+    RANK_MIX_RERANKER_MODEL_DIR
+    if RANK_MIX_RERANKER_MODEL_DIR.exists()
+    else EVIDENCE_CHAIN_RERANKER_MODEL_DIR
+    if EVIDENCE_CHAIN_RERANKER_MODEL_DIR.exists()
+    else BASE_RERANKER_MODEL_DIR
+)
 
 DOCUMENTS_PATH = INDEX_ROOT / "documents.jsonl"
 FAISS_INDEX_PATH = INDEX_ROOT / "faiss.index"
@@ -46,12 +53,28 @@ class QueryConfig:
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 0.8
-    minirag_weight: float = 0.8
+    minirag_weight: float = 0.35
     minirag_mode_weights: dict[str, float] = field(default_factory=dict)
     minirag_fusion_mode: str = "score"
+    minirag_chapter_isolation: bool = True
+    minirag_auto_second_retrieval: bool = True
+    minirag_scope_seed_top_k: int = 40
+    minirag_expansion_query_top_k: int = 8
+    minirag_graph_scope_min_ratio: float = 1.0
+    minirag_second_pass_scope_min_ratio: float = 1.0
+    enable_storyline_sparse_scope: bool = True
+    storyline_scope_seed_top_k: int = 40
+    storyline_sparse_scope_min_ratio: float = 1.5
+    enable_scoped_chapter_search: bool = True
+    scoped_chapter_dense_top_k: int = 160
+    scoped_chapter_sparse_top_k: int = 160
     reranker_candidate_top_k: int = 120
     enable_neighbor_expansion: bool = False
     neighbor_max_seed_docs: int = 24
     neighbor_story_window: int = 2
     neighbor_activity_story_sort_window: int = 1
+    enable_same_story_sweep: bool = True
+    same_story_sweep_max_seed_docs: int = 8
+    same_story_sweep_max_docs_per_story: int = 24
+    same_story_sweep_extra_candidates: int = 80
     rerank_batch_size: int = 8
