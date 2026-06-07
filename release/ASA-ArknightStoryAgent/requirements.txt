@@ -2,7 +2,7 @@
 # llama.cpp CLI / GGUF / LoRA conversion are installed separately.
 
 faiss-cpu
-huggingface_hub
+huggingface_hub>=0.34,<1.0
 numpy
 pyyaml
 rank-bm25
@@ -12,4 +12,3 @@ sentencepiece
 torch
 tqdm
 transformers
-
