@@ -49,6 +49,28 @@
 - 重排器：BGE reranker 系列，当前按 runtime config 选择
 - API teacher：OpenAI-compatible Chat Completions / Responses API，当前常用 DeepSeek
 
+## 当前本地 4B 发布模型
+
+当前 GPU/vLLM 发布版使用稳定 LoRA 目录：
+
+```text
+model/lora/asa-arknightstoryagent-4b-lora/
+```
+
+Hugging Face 稳定仓库：
+
+```text
+MapleRhythm/asa-arknightstoryagent-4b-lora
+```
+
+当前内容版本为 `20260607-cutoff6656`，对应本地训练产物：
+
+```text
+model/lora/soda_targeted_human_20260606_v3_200_current_chain_from_mergedbase_qwen35_4b_lr8e7_beta001_epoch2_rank8_cutoff6656_filtered
+```
+
+配套 runtime 已包含 grounded action JSON 截断恢复和 quote 压缩适配。CPU GGUF 需要单独确认由同一权重重新合并导出后再标记为当前版。
+
 ## 关键目录
 
 - `data/ArknightsGameData/zh_CN/gamedata/story/`：剧情原文。

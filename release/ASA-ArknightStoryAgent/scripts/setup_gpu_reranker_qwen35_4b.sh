@@ -58,7 +58,7 @@ GPU 环境安装完成。
 3. 4B LoRA：
    model/lora/asa-arknightstoryagent-4b-lora/
 4. 微调 reranker：
-   model/reranker/bge-reranker-v2-m3-evidence-chain-answerability/
+   model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch/
 
 运行：
    bash scripts/run_gpu_reranker_qwen35_4b.sh "炎景公主一事具体指什么"

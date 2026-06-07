@@ -4,6 +4,28 @@
 
 当前发布链路面向《明日方舟》剧情问答，原则是：优先依据剧情原文、档案、语音和联网补充证据回答；证据能支持部分内容时先回答可确认部分；证据不足时明确说明缺口，不把模型记忆或二创内容写成官方事实。
 
+## 当前模型版本
+
+GPU 发布版默认使用稳定 LoRA 目录：
+
+```text
+model/lora/asa-arknightstoryagent-4b-lora/
+```
+
+该目录对应 Hugging Face 仓库：
+
+```text
+MapleRhythm/asa-arknightstoryagent-4b-lora
+```
+
+当前上传内容为 `20260607-cutoff6656` adapter，本地训练产物来自：
+
+```text
+model/lora/soda_targeted_human_20260606_v3_200_current_chain_from_mergedbase_qwen35_4b_lr8e7_beta001_epoch2_rank8_cutoff6656_filtered
+```
+
+此版本配套的 runtime 已包含 grounded action JSON 解析、截断恢复和证据 quote 压缩适配；模型本身仍可能在低置信检索或主观问题上外推，生产使用应展示证据与 trace。
+
 ## 当前链路
 
 ```text
@@ -220,8 +242,11 @@ configs/runtime_gpu_reranker_qwen35_4b.json
 - `retrieval.enable_neighbor_expansion`: GPU 默认 `true`
 - `inference.max_retrieval_rounds`: `2`
 - `inference.conclusion_prompt_mode`: `minimal`
-- `inference.answer_grounding_mode`: `weak`
-- `inference.web_context.enabled`: GPU 默认 `true`
+- `inference.answer_grounding_mode`: `quote`
+- `inference.web_context.enabled`: GPU 默认 `false`
+- `generator.max_tokens`: `1536`
+- `generator.vllm.gpu_memory_utilization`: `0.52`
+- `generator.vllm.max_num_batched_tokens`: `4096`
 
 ## 常见问题
 

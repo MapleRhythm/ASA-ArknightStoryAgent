@@ -65,9 +65,16 @@ class QueryConfig:
     enable_storyline_sparse_scope: bool = True
     storyline_scope_seed_top_k: int = 40
     storyline_sparse_scope_min_ratio: float = 1.5
+    enable_scoped_chapter_search: bool = True
+    scoped_chapter_dense_top_k: int = 160
+    scoped_chapter_sparse_top_k: int = 160
     reranker_candidate_top_k: int = 120
     enable_neighbor_expansion: bool = False
     neighbor_max_seed_docs: int = 24
     neighbor_story_window: int = 2
     neighbor_activity_story_sort_window: int = 1
+    enable_same_story_sweep: bool = True
+    same_story_sweep_max_seed_docs: int = 8
+    same_story_sweep_max_docs_per_story: int = 24
+    same_story_sweep_extra_candidates: int = 80
     rerank_batch_size: int = 8

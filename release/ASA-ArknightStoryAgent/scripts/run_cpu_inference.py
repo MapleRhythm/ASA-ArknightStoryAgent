@@ -52,7 +52,7 @@ DEFAULT_VLLM_LORA_PATH = (
     PROJECT_ROOT
     / "model"
     / "lora"
-    / "teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_qwen35_4b_lr3e5_epoch1"
+    / "teacher_scored_kto_mix_v1_from_soda_lora_qwen35_4b_lr8e7_beta001_epoch2"
 )
 DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "configs" / "runtime_inference.json"
 
@@ -223,6 +223,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
     parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
+    parser.add_argument(
+        "--answer-grounding-mode",
+        choices=("off", "weak", "strict", "quote", "grounded"),
+        default=None,
+        help="Runtime grounding guard. quote requires answer_directly quotes to match visible evidence text.",
+    )
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
     parser.add_argument("--enable-web-context", dest="enable_web_context", action="store_true", default=None)
@@ -267,6 +273,81 @@ def render_dialogue_context(history: list[str]) -> str:
     return "\n".join(history).strip()
 
 
+ABSTAIN_TEXT_MARKERS = (
+    "现有检索证据不足",
+    "现有证据不足",
+    "不足以确认",
+    "无法确认",
+    "无法判断",
+    "不能确认",
+    "没有足够",
+    "未能找到",
+    "无法回答",
+    "当前证据只能确认",
+)
+
+
+def final_planner_action(payload: dict) -> str:
+    trace = payload.get("retrieval_trace")
+    if not isinstance(trace, list) or not trace:
+        return ""
+    last_step = trace[-1]
+    if not isinstance(last_step, dict):
+        return ""
+    return str(last_step.get("planner_action") or "").strip()
+
+
+def is_abstain_like_payload(payload: dict) -> bool:
+    if final_planner_action(payload) == "abstain":
+        return True
+    answer = str(payload.get("answer") or "")
+    return any(marker in answer for marker in ABSTAIN_TEXT_MARKERS)
+
+
+def compact_abstain_evidence(payload: dict, *, limit: int = 3, max_chars: int = 900) -> list[dict]:
+    evidence = payload.get("evidence")
+    if not isinstance(evidence, list):
+        return []
+    compact: list[dict] = []
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        text = " ".join(str(item.get("clean_text") or "").split())
+        if max_chars > 0 and len(text) > max_chars:
+            text = text[: max_chars - 1].rstrip() + "…"
+        compact.append(
+            {
+                "rank": len(compact) + 1,
+                "id": item.get("id"),
+                "activity_name": item.get("activity_name"),
+                "story_name": item.get("story_name"),
+                "stage_code": item.get("stage_code"),
+                "avg_tag": item.get("avg_tag"),
+                "source_path": item.get("source_path"),
+                "fusion_score": item.get("fusion_score"),
+                "rerank_score": item.get("rerank_score"),
+                "evidence_chain_score": item.get("evidence_chain_score"),
+                "clean_text": text,
+            }
+        )
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def attach_abstain_evidence(payload: dict) -> dict:
+    if not is_abstain_like_payload(payload):
+        return payload
+    payload["abstain_evidence_top3"] = compact_abstain_evidence(payload, limit=3)
+    payload["abstain_evidence_trigger"] = {
+        "final_action": final_planner_action(payload),
+        "answer_markers": [
+            marker for marker in ABSTAIN_TEXT_MARKERS if marker in str(payload.get("answer") or "")
+        ],
+    }
+    return payload
+
+
 def ensure_index(args: argparse.Namespace) -> None:
     if DOCUMENTS_PATH.exists() and FAISS_INDEX_PATH.exists() and BM25_TOKENS_PATH.exists():
         return
@@ -307,6 +388,13 @@ def main() -> None:
     neighbor_activity_story_sort_window = int(
         retrieval_cfg.get("neighbor_activity_story_sort_window", 1)
     )
+    enable_scoped_chapter_search = bool(retrieval_cfg.get("enable_scoped_chapter_search", True))
+    scoped_chapter_dense_top_k = int(retrieval_cfg.get("scoped_chapter_dense_top_k", 160))
+    scoped_chapter_sparse_top_k = int(retrieval_cfg.get("scoped_chapter_sparse_top_k", 160))
+    enable_same_story_sweep = bool(retrieval_cfg.get("enable_same_story_sweep", True))
+    same_story_sweep_max_seed_docs = int(retrieval_cfg.get("same_story_sweep_max_seed_docs", 8))
+    same_story_sweep_max_docs_per_story = int(retrieval_cfg.get("same_story_sweep_max_docs_per_story", 24))
+    same_story_sweep_extra_candidates = int(retrieval_cfg.get("same_story_sweep_extra_candidates", 80))
     reranker_max_length = int(retrieval_cfg.get("reranker_max_length", 1024))
     max_retrieval_rounds = resolve_config_value(
         args.max_retrieval_rounds,
@@ -364,7 +452,9 @@ def main() -> None:
     self_consistency_temperature = float(
         resolve_config_value(args.self_consistency_temperature, inference_cfg, "self_consistency_temperature", 0.7)
     )
-    answer_grounding_mode = str(inference_cfg.get("answer_grounding_mode", "weak"))
+    answer_grounding_mode = str(
+        resolve_config_value(args.answer_grounding_mode, inference_cfg, "answer_grounding_mode", "weak")
+    )
     conclusion_prompt_mode = str(
         resolve_config_value(args.conclusion_prompt_mode, inference_cfg, "conclusion_prompt_mode", "full")
     )
@@ -582,11 +672,18 @@ def main() -> None:
             enable_storyline_sparse_scope=enable_storyline_sparse_scope,
             storyline_scope_seed_top_k=storyline_scope_seed_top_k,
             storyline_sparse_scope_min_ratio=storyline_sparse_scope_min_ratio,
+            enable_scoped_chapter_search=enable_scoped_chapter_search,
+            scoped_chapter_dense_top_k=scoped_chapter_dense_top_k,
+            scoped_chapter_sparse_top_k=scoped_chapter_sparse_top_k,
             reranker_candidate_top_k=reranker_candidate_top_k,
             enable_neighbor_expansion=enable_neighbor_expansion,
             neighbor_max_seed_docs=neighbor_max_seed_docs,
             neighbor_story_window=neighbor_story_window,
             neighbor_activity_story_sort_window=neighbor_activity_story_sort_window,
+            enable_same_story_sweep=enable_same_story_sweep,
+            same_story_sweep_max_seed_docs=same_story_sweep_max_seed_docs,
+            same_story_sweep_max_docs_per_story=same_story_sweep_max_docs_per_story,
+            same_story_sweep_extra_candidates=same_story_sweep_extra_candidates,
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
@@ -639,6 +736,7 @@ def main() -> None:
                     payload = asdict(result)
                     payload["elapsed_sec"] = round(time.perf_counter() - started, 3)
                     payload["error"] = ""
+                    payload = attach_abstain_evidence(payload)
                 except Exception as exc:
                     payload = {
                         "question": question,
@@ -703,7 +801,7 @@ def main() -> None:
         if args.answer_only:
             print(result.answer, flush=True)
         else:
-            print(json.dumps(asdict(result), ensure_ascii=False, indent=2), flush=True)
+            print(json.dumps(attach_abstain_evidence(asdict(result)), ensure_ascii=False, indent=2), flush=True)
 
         append_dialogue_turn(dialogue_history, "user", question)
         append_dialogue_turn(dialogue_history, "assistant", result.answer)

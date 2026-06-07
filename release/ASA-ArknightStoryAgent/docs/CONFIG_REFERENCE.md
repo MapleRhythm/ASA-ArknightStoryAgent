@@ -16,11 +16,11 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
 {
   "device": "cpu",
   "enable_reranker": false,
-  "reranker_model_path": "model/reranker/bge-reranker-v2-m3-evidence-chain-answerability",
+  "reranker_model_path": "model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch",
   "dense_top_k": 80,
   "sparse_top_k": 80,
   "enable_minirag": true,
-  "minirag_index_path": "indexes/arknights_story_minirag/graph.json",
+  "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
   "fusion_top_k": 50,
   "rerank_top_k": 20,
   "rerank_batch_size": 4,
@@ -51,8 +51,8 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
 ```json
 {
   "backend": "vllm",
-  "ctx_size": 8192,
-  "max_tokens": 512,
+  "ctx_size": 10000,
+  "max_tokens": 1536,
   "temperature": 0.2,
   "top_p": 0.9,
   "repeat_penalty": 1.05,
@@ -60,9 +60,11 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
     "base_model_path": "model/qwen3.5-4b",
     "lora_path": "model/lora/asa-arknightstoryagent-4b-lora",
     "tensor_parallel_size": 1,
-    "gpu_memory_utilization": 0.62,
-    "max_model_len": 8192,
-    "dtype": "auto"
+    "gpu_memory_utilization": 0.52,
+    "max_model_len": 10000,
+    "dtype": "auto",
+    "max_num_batched_tokens": 4096,
+    "enforce_eager": true
   }
 }
 ```
@@ -107,6 +109,7 @@ CPU/API：
 - `repeat_penalty`：本地模型重复惩罚。
 - `base_model_path`：HF 格式 Qwen3.5 4B 基座目录。
 - `lora_path`：LoRA 路径。vLLM 使用 Hugging Face LoRA 目录；CPU/llama.cpp 推荐使用已合并 LoRA 的 GGUF，并设为 `null`。
+- `max_num_batched_tokens` / `enforce_eager`：vLLM 运行参数。当前发布默认偏保守，优先降低显存占用和 JSON 截断风险。
 - `gguf_model_path`：llama.cpp GGUF 文件。
 - `api_base_url`：API endpoint。`openai_compatible_api` 使用 chat completions；`responses_api` 使用 responses。
 - `api_key_env`：读取 API key 的环境变量名。
@@ -120,8 +123,10 @@ CPU/API：
   "initial_prompt_hint": "直接回答用户问题。提示词越少越好；可以使用你已有的剧情知识，但不确定的细节不要写死。",
   "initial_answer_max_tokens": 1024,
   "refine_answer_max_tokens": 1536,
-  "max_retrieval_rounds": 3,
+  "max_retrieval_rounds": 2,
   "prompt_evidence_top_k": 10,
+  "prompt_evidence_max_chars_per_doc": 1000,
+  "prompt_conclusion_evidence_max_total_chars": 12000,
   "enable_mmr": true,
   "mmr_lambda": 0.72,
   "enable_pyramid_order": true,
@@ -130,6 +135,8 @@ CPU/API：
   "crag_refine_max_sentences": 24,
   "self_consistency_samples": 1,
   "self_consistency_temperature": 0.7,
+  "conclusion_prompt_mode": "minimal",
+  "answer_grounding_mode": "quote",
   "use_model_hypothesis": true,
   "use_model_conclusion_generation": true
 }
@@ -141,8 +148,10 @@ CPU/API：
 - `initial_prompt_hint`：API 初答阶段的极简提示词。
 - `initial_answer_max_tokens`：API 初答 token 上限。
 - `refine_answer_max_tokens`：证据校正阶段 token 上限。
-- `max_retrieval_rounds`：最多多轮检索次数。
+- `max_retrieval_rounds`：最多多轮检索次数。核心链路会 clamp 到最多 2 轮。
 - `prompt_evidence_top_k`：最终塞给生成模型的证据数量。
+- `prompt_evidence_max_chars_per_doc`：每条证据进入 prompt 的最大字符数。
+- `prompt_conclusion_evidence_max_total_chars`：conclusion 阶段证据包总字符数上限。
 - `enable_mmr`：是否做证据去冗余。
 - `mmr_lambda`：MMR 相关性/多样性权重，越高越偏相关性。
 - `enable_pyramid_order`：是否按证据结构重排。
@@ -150,6 +159,8 @@ CPU/API：
 - `crag_refine_top_sentences`：每个 chunk 保留的高分句数。
 - `crag_refine_max_sentences`：整个证据包最多保留句数。
 - `self_consistency_samples`：自一致采样次数。GPU 可设 3-5，CPU/API 建议 1。
+- `conclusion_prompt_mode`：当前本地 4B 推荐 `minimal`。
+- `answer_grounding_mode`：当前 LoRA 推荐 `quote`，要求答案通过结构化 facts/quotes 支撑。
 - `use_model_hypothesis`：是否让模型生成首轮检索假设。
 - `use_model_conclusion_generation`：是否让模型做 conclusion/retrieve_more/abstain 判断。
 

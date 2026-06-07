@@ -14,7 +14,7 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from asa_arknight_story_agent.config import BM25_TOKENS_PATH, DOCUMENTS_PATH, FAISS_INDEX_PATH, QueryConfig
-from asa_arknight_story_agent.retrieval.minirag import MiniRAGIndex
+from asa_arknight_story_agent.retrieval.minirag import MiniRAGIndex, document_chapter_scope_key
 from asa_arknight_story_agent.retrieval.reranker import CrossEncoderReranker
 from asa_arknight_story_agent.retrieval.storyline import document_storyline_scopes
 
@@ -348,11 +348,16 @@ class ArknightsHybridRetriever:
         self.embedding_model = embedding_model
         self.reranker = reranker
         self.minirag_index = minirag_index
+        self.chapter_doc_indices: dict[str, list[int]] = {}
         self.story_doc_indices: dict[str, list[int]] = {}
         self.storyline_doc_indices: dict[str, list[int]] = {}
         self.stage_doc_indices: dict[tuple[str, str], list[int]] = {}
         self.activity_story_sort_doc_indices: dict[str, dict[int, list[int]]] = {}
+        self._dense_scope_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for doc_index, document in enumerate(documents):
+            chapter_scope = document_chapter_scope_key(document)
+            if chapter_scope:
+                self.chapter_doc_indices.setdefault(chapter_scope, []).append(doc_index)
             story_id = str(document.get("story_id") or "").strip()
             if story_id:
                 self.story_doc_indices.setdefault(story_id, []).append(doc_index)
@@ -436,6 +441,74 @@ class ArknightsHybridRetriever:
             )
         return hits
 
+    def dense_search_chapter(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        chapter_scope: str,
+    ) -> list[dict[str, Any]]:
+        if top_k <= 0 or not chapter_scope:
+            return []
+        doc_indices = self.chapter_doc_indices.get(chapter_scope, [])
+        if not doc_indices:
+            return []
+        scoped_indices, scoped_vectors = self._dense_scope_vectors(chapter_scope, doc_indices)
+        if scoped_vectors.size == 0:
+            return []
+        vector = self.embedding_model.encode(
+            [query],
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+        ).astype(np.float32)[0]
+        scores = scoped_vectors @ vector
+        take = min(top_k, len(scores))
+        if take <= 0:
+            return []
+        if take >= len(scores):
+            order = np.argsort(scores)[::-1]
+        else:
+            order = np.argpartition(scores, -take)[-take:]
+            order = order[np.argsort(scores[order])[::-1]]
+        hits: list[dict[str, Any]] = []
+        for offset in order.tolist():
+            doc_index = int(scoped_indices[offset])
+            hits.append(
+                {
+                    "doc_index": doc_index,
+                    "score": float(scores[offset]),
+                    "document": self.documents[doc_index],
+                    "scoped_source": "chapter_dense",
+                }
+            )
+        return hits
+
+    def _dense_scope_vectors(
+        self,
+        chapter_scope: str,
+        doc_indices: list[int],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        cached = self._dense_scope_cache.get(chapter_scope)
+        if cached is not None:
+            return cached
+        valid_indices: list[int] = []
+        vectors: list[np.ndarray] = []
+        for doc_index in doc_indices:
+            try:
+                vector = self.index.reconstruct(int(doc_index))
+            except Exception:
+                continue
+            valid_indices.append(int(doc_index))
+            vectors.append(np.asarray(vector, dtype=np.float32))
+        if vectors:
+            payload = (np.asarray(valid_indices, dtype=np.int64), np.vstack(vectors).astype(np.float32))
+        else:
+            payload = (np.asarray([], dtype=np.int64), np.zeros((0, 0), dtype=np.float32))
+        if len(self._dense_scope_cache) >= 32:
+            self._dense_scope_cache.pop(next(iter(self._dense_scope_cache)))
+        self._dense_scope_cache[chapter_scope] = payload
+        return payload
+
     def sparse_search(
         self,
         query: str,
@@ -480,6 +553,45 @@ class ArknightsHybridRetriever:
                     "doc_index": int(doc_index),
                     "score": score,
                     "document": self.documents[int(doc_index)],
+                }
+            )
+        return hits
+
+    def sparse_search_chapter(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        chapter_scope: str,
+    ) -> list[dict[str, Any]]:
+        if top_k <= 0 or not chapter_scope:
+            return []
+        allowed_indices = self.chapter_doc_indices.get(chapter_scope, [])
+        if not allowed_indices:
+            return []
+        tokens = tokenize_for_bm25(query)
+        scores = self.bm25.get_scores(tokens)
+        candidate_indices = np.array(allowed_indices, dtype=np.int64)
+        candidate_scores = scores[candidate_indices]
+        positive_mask = candidate_scores > 0
+        candidate_indices = candidate_indices[positive_mask]
+        candidate_scores = candidate_scores[positive_mask]
+        if len(candidate_indices) <= 0:
+            return []
+        if top_k >= len(candidate_indices):
+            order = np.argsort(candidate_scores)[::-1]
+        else:
+            order = np.argpartition(candidate_scores, -top_k)[-top_k:]
+            order = order[np.argsort(candidate_scores[order])[::-1]]
+        hits: list[dict[str, Any]] = []
+        for offset in order.tolist():
+            doc_index = int(candidate_indices[offset])
+            hits.append(
+                {
+                    "doc_index": doc_index,
+                    "score": float(candidate_scores[offset]),
+                    "document": self.documents[doc_index],
+                    "scoped_source": "chapter_sparse",
                 }
             )
         return hits
@@ -603,6 +715,9 @@ class ArknightsHybridRetriever:
         max_seed_docs: int = 24,
         story_window: int = 2,
         activity_story_sort_window: int = 1,
+        same_story_sweep: bool = False,
+        same_story_max_seed_docs: int = 8,
+        same_story_max_docs_per_story: int = 24,
         top_k: int = 120,
     ) -> list[dict[str, Any]]:
         if not hits:
@@ -612,6 +727,9 @@ class ArknightsHybridRetriever:
             max_seed_docs=max_seed_docs,
             story_window=story_window,
             activity_story_sort_window=activity_story_sort_window,
+            same_story_sweep=same_story_sweep,
+            same_story_max_seed_docs=same_story_max_seed_docs,
+            same_story_max_docs_per_story=same_story_max_docs_per_story,
         )
         merged = [dict(item) for item in hits]
         seen = {int(item["doc_index"]) for item in merged}
@@ -849,9 +967,12 @@ class ArknightsHybridRetriever:
         max_seed_docs: int = 6,
         story_window: int = 2,
         activity_story_sort_window: int = 1,
+        same_story_sweep: bool = False,
+        same_story_max_seed_docs: int = 8,
+        same_story_max_docs_per_story: int = 24,
     ) -> list[int]:
         candidate_indices: list[int] = []
-        for hit in seed_hits[:max_seed_docs]:
+        for seed_rank, hit in enumerate(seed_hits[:max_seed_docs]):
             doc = hit["document"]
             doc_index = int(hit["doc_index"])
             if doc_index not in candidate_indices:
@@ -870,6 +991,18 @@ class ArknightsHybridRetriever:
                     for neighbor in story_indices[start:end]:
                         if neighbor not in candidate_indices:
                             candidate_indices.append(neighbor)
+                    if same_story_sweep and seed_rank < same_story_max_seed_docs:
+                        for neighbor in self._story_sweep_indices(
+                            story_indices,
+                            current_pos,
+                            max_docs=max(1, same_story_max_docs_per_story),
+                        ):
+                            if neighbor not in candidate_indices:
+                                candidate_indices.append(neighbor)
+                elif same_story_sweep and seed_rank < same_story_max_seed_docs:
+                    for neighbor in story_indices[: max(1, same_story_max_docs_per_story)]:
+                        if neighbor not in candidate_indices:
+                            candidate_indices.append(neighbor)
 
             activity_id = str(doc.get("activity_id") or "").strip()
             stage_code = str(doc.get("stage_code") or "").strip()
@@ -885,6 +1018,22 @@ class ArknightsHybridRetriever:
                         if neighbor not in candidate_indices:
                             candidate_indices.append(neighbor)
         return candidate_indices
+
+    @staticmethod
+    def _story_sweep_indices(story_indices: list[int], center_pos: int, *, max_docs: int) -> list[int]:
+        if center_pos < 0 or not story_indices or max_docs <= 0:
+            return []
+        ordered: list[int] = []
+        for distance in range(len(story_indices)):
+            positions = [center_pos] if distance == 0 else [center_pos - distance, center_pos + distance]
+            for pos in positions:
+                if 0 <= pos < len(story_indices):
+                    doc_index = story_indices[pos]
+                    if doc_index not in ordered:
+                        ordered.append(doc_index)
+                        if len(ordered) >= max_docs:
+                            return ordered
+        return ordered
 
     def _extract_query_terms(self, query: str) -> list[str]:
         terms: list[str] = []
@@ -1997,7 +2146,15 @@ class ArknightsHybridRetriever:
                 max_seed_docs=query_config.neighbor_max_seed_docs,
                 story_window=query_config.neighbor_story_window,
                 activity_story_sort_window=query_config.neighbor_activity_story_sort_window,
-                top_k=max(query_config.reranker_candidate_top_k, query_config.fusion_top_k),
+                same_story_sweep=query_config.enable_same_story_sweep,
+                same_story_max_seed_docs=query_config.same_story_sweep_max_seed_docs,
+                same_story_max_docs_per_story=query_config.same_story_sweep_max_docs_per_story,
+                top_k=max(query_config.reranker_candidate_top_k, query_config.fusion_top_k)
+                + (
+                    query_config.same_story_sweep_extra_candidates
+                    if query_config.enable_same_story_sweep
+                    else 0
+                ),
             )
         return fused_hits
 

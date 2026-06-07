@@ -3,7 +3,7 @@
 发布版已保留 MiniRAG 图索引：
 
 ```text
-indexes/arknights_story_minirag/graph.json
+indexes/arknights_story_minirag_v3/graph.json
 ```
 
 该图包含 chunk/entity 映射、别名表、实体共现和 teacher relation，可直接被运行时配置使用。
@@ -26,5 +26,5 @@ indexes/arknights_story/operator_aliases.json
 如需基于本地 documents 重建 MiniRAG：
 
 ```bash
-python scripts/build_minirag_index.py --progress
+python scripts/build_minirag_index.py --progress --output indexes/arknights_story_minirag_v3/graph.json
 ```

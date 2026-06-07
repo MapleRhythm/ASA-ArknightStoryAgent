@@ -22,7 +22,7 @@ BUILD_LLAMA_CPP=1 bash scripts/setup_cpu_qwen35_4b_no_reranker.sh
 data/ArknightsGameData/zh_CN/gamedata/story/
 data/ArknightsGameData/zh_CN/gamedata/excel/
 indexes/arknights_story/
-indexes/arknights_story_minirag/graph.json
+indexes/arknights_story_minirag_v3/graph.json
 third_party/llama.cpp/build-cpu/bin/llama-completion
 model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 ```

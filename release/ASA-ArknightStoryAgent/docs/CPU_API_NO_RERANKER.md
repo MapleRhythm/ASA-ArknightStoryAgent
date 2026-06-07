@@ -23,7 +23,7 @@ source .venv-api/bin/activate
 data/ArknightsGameData/zh_CN/gamedata/story/
 data/ArknightsGameData/zh_CN/gamedata/excel/
 indexes/arknights_story/
-indexes/arknights_story_minirag/graph.json
+indexes/arknights_story_minirag_v3/graph.json
 ```
 
 主索引构建：
