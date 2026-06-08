@@ -2,7 +2,7 @@
 
 本发布版不包含模型权重。
 
-推理时推荐目录结构：
+推理时推荐目录结构如下，通常不需要手工创建，直接使用下载脚本即可：
 
 ```text
 model/embeddings/bge-small-zh-v1.5/
@@ -13,18 +13,28 @@ model/lora/asa-arknightstoryagent-4b-lora/
 model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 ```
 
-当前 GPU LoRA 稳定下载仓库：
+默认下载仓库可通过环境变量或命令行参数覆盖。默认发布仓库：
 
 ```text
 MapleRhythm/asa-arknightstoryagent-4b-lora
 ```
 
-当前内容版本为 `20260607-cutoff6656`。CPU GGUF 需要单独确认已经由同一权重合并导出后再发布。
-
-公开 embedding / reranker 基座模型可用：
+常用下载命令：
 
 ```bash
-python scripts/download_models.py
+# CPU API：只下载 embedding
+python scripts/download_models.py --runtime cpu-api
+
+# CPU 本地：下载 embedding 和合并 LoRA 的 GGUF
+python scripts/download_models.py --runtime cpu-local
+
+# GPU 本地：下载 embedding、Qwen3.5 4B、LoRA 和微调 reranker
+python scripts/download_models.py --runtime gpu
 ```
 
-微调权重上传和下载方式见根目录的 `HUGGINGFACE_UPLOAD.md`。
+如需使用自己的镜像或仓库：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+python scripts/download_models.py --runtime gpu --lora-repo MapleRhythm/asa-arknightstoryagent-4b-lora
+```

@@ -10,7 +10,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from asa_arknight_story_agent.config import EMBEDDING_MODEL_DIR, QueryConfig, RERANKER_MODEL_DIR
-from asa_arknight_story_agent.retrieval.hybrid import ArknightsHybridRetriever
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +27,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    from asa_arknight_story_agent.retrieval.hybrid import ArknightsHybridRetriever
+
     retriever = ArknightsHybridRetriever.from_paths(
         embedding_model_path=args.embedding_model,
         reranker_model_path=args.reranker_model,

@@ -32,23 +32,6 @@ if [[ -d "$LLAMA_BIN_DIR" ]]; then
   export LD_LIBRARY_PATH="$LLAMA_BIN_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 
-# Local development convenience: when this release tree is run from the
-# training checkout, reuse the pinned dependency overlay if it exists. A normal
-# deployed release should still install requirements.txt in its own venv.
-DEV_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
-EXTRA_PYTHONPATH=()
-if [[ -d "$DEV_ROOT/.python_packages/train" ]]; then
-  EXTRA_PYTHONPATH+=("$DEV_ROOT/.python_packages/train")
-fi
-if [[ -d "$DEV_ROOT/.vendor/train_override" ]]; then
-  EXTRA_PYTHONPATH+=("$DEV_ROOT/.vendor/train_override")
-fi
-if [[ ${#EXTRA_PYTHONPATH[@]} -gt 0 ]]; then
-  IFS=:
-  export PYTHONPATH="${EXTRA_PYTHONPATH[*]}${PYTHONPATH:+:$PYTHONPATH}"
-  unset IFS
-fi
-
 SERVICE_ARGS=()
 if [[ "${ASA_PERSISTENT_SERVICE:-0}" == "1" ]]; then
   SERVICE_ARGS=(--stdio-jsonl)

@@ -11,26 +11,6 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
-TRAIN_PYTHON_OVERLAY_DIR = PROJECT_ROOT / ".python_packages" / "train"
-
-
-def should_use_train_overrides() -> bool:
-    override_flag = os.environ.get("GOLDENGLOW_USE_TRAIN_OVERRIDE")
-    if override_flag is not None:
-        return override_flag.lower() in {"1", "true", "yes", "on"}
-    conda_env = os.environ.get("CONDA_DEFAULT_ENV", "").strip().lower()
-    if conda_env == "train":
-        return True
-    executable = Path(sys.executable).as_posix().lower()
-    return "/envs/train/" in executable or executable.endswith("/envs/train/bin/python")
-
-
-if should_use_train_overrides():
-    if TRAIN_PYTHON_OVERLAY_DIR.exists():
-        sys.path.insert(0, str(TRAIN_PYTHON_OVERLAY_DIR))
-    if TRAIN_OVERRIDE_DIR.exists():
-        sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from asa_arknight_story_agent.config import (  # noqa: E402
@@ -42,42 +22,17 @@ from asa_arknight_story_agent.config import (  # noqa: E402
     QueryConfig,
     RERANKER_MODEL_DIR,
 )
-
-DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build" / "bin" / "llama-completion"
-DEFAULT_GGUF_MODEL_PATH = (
-    PROJECT_ROOT / "model" / "gguf" / "teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf"
+from asa_arknight_story_agent.runtime_config import (  # noqa: E402
+    load_runtime_config,
+    resolve_config_value,
+    resolve_path_value,
 )
+
+DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build-cpu" / "bin" / "llama-completion"
+DEFAULT_GGUF_MODEL_PATH = PROJECT_ROOT / "model" / "gguf" / "qwen3.5-4b-lora-merged-q4_k_m.gguf"
 DEFAULT_BASE_MODEL_PATH = PROJECT_ROOT / "model" / "qwen3.5-4b"
-DEFAULT_VLLM_LORA_PATH = (
-    PROJECT_ROOT
-    / "model"
-    / "lora"
-    / "teacher_scored_kto_mix_v1_from_soda_lora_qwen35_4b_lr8e7_beta001_epoch2"
-)
-DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "configs" / "runtime_inference.json"
-
-
-def load_runtime_config(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
-
-
-def resolve_config_value(cli_value, config_section: dict, key: str, default):
-    if cli_value is not None:
-        return cli_value
-    return config_section.get(key, default)
-
-
-def resolve_path_value(cli_value, config_section: dict, key: str, default: Path | None) -> Path | None:
-    value = cli_value if cli_value is not None else config_section.get(key, default)
-    if value in (None, ""):
-        return None
-    path = Path(value)
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path
+DEFAULT_VLLM_LORA_PATH = PROJECT_ROOT / "model" / "lora" / "asa-arknightstoryagent-4b-lora"
+DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "configs" / "runtime_cpu_qwen35_4b_no_reranker.json"
 
 
 def validate_vllm_lora_path(lora_path: Path | None) -> None:
@@ -576,8 +531,7 @@ def main() -> None:
                 "`python scripts/build_minirag_index.py` or disable retrieval.enable_minirag."
             )
 
-    from asa_arknight_story_agent.inference import CPUInferencePipeline  # noqa: E402
-    from asa_arknight_story_agent.inference.cpu_pipeline import LlamaCppRunner, VllmRunner  # noqa: E402
+    from asa_arknight_story_agent.inference import CPUInferencePipeline, LlamaCppRunner, VllmRunner  # noqa: E402
     from asa_arknight_story_agent.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
     retriever = ArknightsHybridRetriever.from_paths(

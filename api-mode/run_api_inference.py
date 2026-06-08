@@ -17,24 +17,6 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
-TRAIN_PYTHON_OVERLAY_DIR = PROJECT_ROOT / ".python_packages" / "train"
-
-
-def should_use_train_overrides() -> bool:
-    override_flag = os.environ.get("GOLDENGLOW_USE_TRAIN_OVERRIDE")
-    if override_flag is not None:
-        return override_flag.lower() in {"1", "true", "yes", "on"}
-    conda_env = os.environ.get("CONDA_DEFAULT_ENV", "").strip().lower()
-    executable = Path(sys.executable).as_posix().lower()
-    return conda_env == "train" or "/envs/train/" in executable or executable.endswith("/envs/train/bin/python")
-
-
-if should_use_train_overrides():
-    if TRAIN_PYTHON_OVERLAY_DIR.exists():
-        sys.path.insert(0, str(TRAIN_PYTHON_OVERLAY_DIR))
-    if TRAIN_OVERRIDE_DIR.exists():
-        sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from asa_arknight_story_agent.config import (  # noqa: E402
@@ -46,9 +28,14 @@ from asa_arknight_story_agent.config import (  # noqa: E402
     QueryConfig,
     RERANKER_MODEL_DIR,
 )
+from asa_arknight_story_agent.runtime_config import (  # noqa: E402
+    load_runtime_config,
+    resolve_config_value,
+    resolve_path_value,
+)
 
 CHATML_MESSAGE_RE = re.compile(r"<\|im_start\|>(system|user|assistant)\n(.*?)(?:<\|im_end\|>|$)", re.DOTALL)
-DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "api-mode" / "runtime_api.json"
+DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "configs" / "runtime_cpu_api_no_reranker.json"
 DEFAULT_LOG_DIR = PROJECT_ROOT / "outputs" / "api_mode_runs"
 
 API_MODE_SYSTEM_APPENDIX = """你正在替代本地微调 4B 模型，为一个《明日方舟》RAG 检索管线生成机器可解析输出。
@@ -71,29 +58,6 @@ API_MODE_QA_SYSTEM_APPENDIX = """你正在替代本地微调 4B 模型，为一�
 - 如果证据不足，明确说明哪些部分不足以确认。
 - 如果证据能支持部分回答，应优先给出“可确认部分”，不要因为缺少完整背景直接 abstain；但不能把未被证据支持的内容写成确定事实。
 - 不要输出或展开 reasoning_content / chain-of-thought；最终内容必须写在 assistant message 的 content 字段中。"""
-
-
-def load_runtime_config(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
-
-
-def resolve_config_value(cli_value: Any, config_section: dict[str, Any], key: str, default: Any) -> Any:
-    if cli_value is not None:
-        return cli_value
-    return config_section.get(key, default)
-
-
-def resolve_path_value(cli_value: Any, config_section: dict[str, Any], key: str, default: Path | str | None) -> Path | None:
-    value = cli_value if cli_value is not None else config_section.get(key, default)
-    if value in (None, ""):
-        return None
-    path = Path(value)
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path
 
 
 def ensure_index(build_index_if_missing: bool) -> None:
@@ -531,7 +495,7 @@ class ResponsesAPIRunner(OpenAICompatibleAPIRunner):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Goldenglow inference with local retrieval and a remote API model.")
+    parser = argparse.ArgumentParser(description="Run ASA Arknights story inference with local retrieval and a remote API model.")
     parser.add_argument("question", type=str, nargs="?", default=None, help="Optional initial user question in Chinese.")
     parser.add_argument("--dialogue-context", type=str, default="", help="Optional multi-turn context.")
     parser.add_argument("--runtime-config", type=Path, default=DEFAULT_RUNTIME_CONFIG_PATH)
@@ -801,7 +765,7 @@ def main() -> None:
     )
 
     from asa_arknight_story_agent.inference import CPUInferencePipeline  # noqa: E402
-    from asa_arknight_story_agent.inference.cpu_pipeline import InferenceResult  # noqa: E402
+    from asa_arknight_story_agent.inference.pipeline.types import InferenceResult  # noqa: E402
     from asa_arknight_story_agent.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
     retriever = ArknightsHybridRetriever.from_paths(
