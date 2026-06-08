@@ -1,0 +1,82 @@
+{
+  "retrieval": {
+    "device": "cpu",
+    "enable_reranker": false,
+    "dense_top_k": 80,
+    "sparse_top_k": 80,
+    "enable_minirag": true,
+    "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
+    "minirag_weight": 0.35,
+    "minirag_mode_weights": {
+      "fact": 0.5,
+      "relation": 1.0,
+      "causality": 1.0,
+      "reveal": 1.0,
+      "reasoning": 0.75,
+      "mystery": 0.75,
+      "answerability": 0.75
+    },
+    "fusion_top_k": 50,
+    "rerank_top_k": 20,
+    "rerank_batch_size": 4,
+    "minirag_chapter_isolation": true,
+    "minirag_auto_second_retrieval": true,
+    "minirag_scope_seed_top_k": 40,
+    "minirag_expansion_query_top_k": 8,
+    "minirag_graph_scope_min_ratio": 1.0,
+    "minirag_second_pass_scope_min_ratio": 1.0,
+    "enable_storyline_sparse_scope": true,
+    "storyline_scope_seed_top_k": 40,
+    "storyline_sparse_scope_min_ratio": 1.5,
+    "enable_neighbor_expansion": false,
+    "neighbor_max_seed_docs": 24,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
+  },
+  "generator": {
+    "backend": "llama.cpp",
+    "ctx_size": 12000,
+    "max_tokens": 1024,
+    "temperature": 0.2,
+    "top_p": 0.9,
+    "repeat_penalty": 1.05,
+    "llama_cpp": {
+      "llama_cli_path": "third_party/llama.cpp/build-cpu/bin/llama-completion",
+      "gguf_model_path": "model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf",
+      "lora_path": null,
+      "threads": 16,
+      "device": "cpu",
+      "gpu_layers": "0",
+      "batch_size": 512,
+      "ubatch_size": 128,
+      "flash_attn": "off"
+    }
+  },
+  "inference": {
+    "max_retrieval_rounds": 2,
+    "prompt_evidence_top_k": 8,
+    "prompt_evidence_max_chars_per_doc": 1800,
+    "prompt_conclusion_evidence_max_total_chars": 24000,
+    "enable_mmr": false,
+    "mmr_lambda": 0.72,
+    "enable_pyramid_order": false,
+    "enable_evidence_pinning": false,
+    "enable_crag_refinement": false,
+    "crag_refine_top_sentences": 4,
+    "crag_refine_max_sentences": 24,
+    "self_consistency_samples": 1,
+    "self_consistency_temperature": 0.7,
+    "conclusion_prompt_mode": "minimal",
+    "answer_grounding_mode": "weak",
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true,
+    "web_context": {
+      "enabled": false,
+      "cache_dir": "outputs/web_context_cache",
+      "timeout_seconds": 6,
+      "max_elapsed_seconds": 18,
+      "max_pages": 3,
+      "max_total_chars": 6000
+    }
+  }
+}

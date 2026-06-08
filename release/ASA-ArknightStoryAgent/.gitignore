@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+data/ArknightsGameData/
+indexes/arknights_story/
+model/embeddings/
+model/reranker/
+model/gguf/*.gguf
+model/lora/*/
+outputs/
+logs/
