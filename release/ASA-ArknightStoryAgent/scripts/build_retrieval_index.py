@@ -3,38 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pickle
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TRAIN_OVERRIDE_DIR = PROJECT_ROOT / ".vendor" / "train_override"
-TRAIN_PYTHON_OVERLAY_DIR = PROJECT_ROOT / ".python_packages" / "train"
-
-
-def should_use_train_overrides() -> bool:
-    override_flag = os.environ.get("GOLDENGLOW_USE_TRAIN_OVERRIDE")
-    if override_flag is not None:
-        return override_flag.lower() in {"1", "true", "yes", "on"}
-    conda_env = os.environ.get("CONDA_DEFAULT_ENV", "").strip().lower()
-    if conda_env == "train":
-        return True
-    executable = Path(sys.executable).as_posix().lower()
-    return "/envs/train/" in executable or executable.endswith("/envs/train/bin/python")
-
-
-if should_use_train_overrides():
-    if TRAIN_PYTHON_OVERLAY_DIR.exists():
-        sys.path.insert(0, str(TRAIN_PYTHON_OVERLAY_DIR))
-    if TRAIN_OVERRIDE_DIR.exists():
-        sys.path.insert(0, str(TRAIN_OVERRIDE_DIR))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from tqdm import tqdm
 
 from asa_arknight_story_agent.config import (
     BM25_TOKENS_PATH,
@@ -50,7 +24,6 @@ from asa_arknight_story_agent.config import (
     BuildConfig,
 )
 from asa_arknight_story_agent.data.story_parser import build_corpus_documents, build_operator_alias_lookup
-from asa_arknight_story_agent.retrieval.hybrid import tokenize_for_bm25
 
 
 def save_jsonl(path: Path, records: list[dict]) -> None:
@@ -121,6 +94,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    import faiss
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    from tqdm import tqdm
+
+    from asa_arknight_story_agent.retrieval.hybrid import tokenize_for_bm25
+
     config = BuildConfig(
         max_chars=args.max_chars,
         overlap_segments=args.overlap_segments,

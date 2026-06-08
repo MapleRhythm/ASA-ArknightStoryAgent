@@ -25,6 +25,55 @@ function setTrace(lines, title = "运行轨迹") {
   trace.scrollTop = trace.scrollHeight;
 }
 
+function compactText(value, maxLength = 260) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
+}
+
+function renderConclusionQuoteLines(result) {
+  const retrievalTrace = result?.retrieval_trace;
+  if (!Array.isArray(retrievalTrace) || retrievalTrace.length === 0) return [];
+
+  const lines = ["[conclusion_quotes]"];
+  for (const step of retrievalTrace) {
+    if (!step || typeof step !== "object") continue;
+    const round = step.round ?? "?";
+    const conclusion = step.conclusion;
+    if (!conclusion || typeof conclusion !== "object") {
+      lines.push(`[round ${round}] no conclusion payload`);
+      continue;
+    }
+
+    const action = compactText(conclusion.next_action || step.planner_action || "unknown", 80);
+    lines.push(`[round ${round}] action=${action}`);
+
+    const facts = Array.isArray(conclusion.supported_facts) ? conclusion.supported_facts : [];
+    let quoteCount = 0;
+    facts.forEach((fact, factIndex) => {
+      if (!fact || typeof fact !== "object") return;
+      const factText = compactText(fact.fact, 180);
+      if (factText) lines.push(`  [fact ${factIndex + 1}] ${factText}`);
+
+      const refs = Array.isArray(fact.evidence_refs) ? fact.evidence_refs : [];
+      refs.forEach((ref, refIndex) => {
+        if (!ref || typeof ref !== "object") return;
+        const quote = compactText(ref.quote, 320);
+        if (!quote) return;
+        quoteCount += 1;
+        const evidenceId = compactText(ref.evidence_id || ref.id || "", 120);
+        const label = evidenceId ? `quote ${factIndex + 1}.${refIndex + 1} ${evidenceId}` : `quote ${factIndex + 1}.${refIndex + 1}`;
+        lines.push(`  [${label}] ${quote}`);
+      });
+    });
+
+    if (quoteCount === 0) {
+      lines.push("  [quotes] none");
+    }
+  }
+  return lines;
+}
+
 function removeEmptyState() {
   const empty = chat.querySelector(".empty-state");
   if (empty) empty.remove();
@@ -160,6 +209,8 @@ async function sendQuestion(question) {
     if (data.command) logLines.push(`[command] ${data.command.join(" ")}`);
     if (data.service?.running) logLines.push(`[service] pid=${data.service.pid} uptime=${data.service.uptime}s`);
     if (data.stages?.length) logLines.push(`[stages] ${data.stages.join(" -> ")}`);
+    const conclusionQuoteLines = renderConclusionQuoteLines(data.result);
+    if (conclusionQuoteLines.length) logLines.push(...conclusionQuoteLines);
     if (data.stderr_lines?.length) logLines.push(...data.stderr_lines);
     if (!data.ok && data.message) logLines.push(`[error] ${data.message}`);
     if (!data.ok && data.stderr && !data.stderr_lines?.length) logLines.push(data.stderr);

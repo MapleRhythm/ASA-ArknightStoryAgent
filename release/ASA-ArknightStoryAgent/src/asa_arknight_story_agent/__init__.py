@@ -1,2 +1,1 @@
-"""Goldenglow retrieval package."""
-
+"""ASA Arknights story retrieval package."""
