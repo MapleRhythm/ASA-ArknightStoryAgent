@@ -2,7 +2,7 @@
 
 ## 摘要
 
-长篇游戏剧情问答要求系统在大量叙事文本、角色档案和事件线索中定位证据，并在证据不足时避免将模型先验写成确定事实。本文以《明日方舟》剧情问答为场景，构建了一个本地 / API 混合的证据约束 RAG Agent。系统使用 dense 检索、BM25、MiniRAG 图扩展、故事线 scope、邻居扩展与证据链 reranker 组成混合检索栈，并通过两轮结构化推理决定 `answer_directly`、`retrieve_more`、`clarify_user` 或 `abstain`。为缓解小模型在 RAG 中的过早回答、过度检索和无证据幻觉，本文进一步提出 verifier-aware SODA 数据构造流程：先让 4B student 按真实 runtime 生成完整轨迹，再让 API teacher replay 相同 prompt，最后由 evidence-only verifier 根据当前证据重标正确动作，而不是直接模仿 teacher 原始输出。实验显示，v6 证据链 reranker 是最稳定的检索收益来源；在 50 条静态召回评测上，相比跳过 rerank，MRR 从 0.4262 提升到 0.6046，R@1 从 0.32 提升到 0.54。最新 50 问 verifier-aware SODA 数据集生成 208 条 KTO 记录，其中 verifier 识别出 18 条 student unsupported answer、7 条 over-retrieve、2 条 premature answer，以及 9 次 teacher prior knowledge 风险。消融结果表明，MiniRAG 对普通随机样本有时有小幅收益，但在 failure hard pool 中会引入排序噪声，后续应改为条件启用和 hard-negative reranker 补训。
+长篇游戏剧情问答要求系统在大量叙事文本、角色档案和事件线索中定位证据，并在证据不足时避免将模型先验写成确定事实。本文以《明日方舟》剧情问答为场景，构建了一个本地 / API 混合的证据约束 RAG Agent。系统使用 dense 检索、BM25、MiniRAG 图扩展、故事线 scope、邻居扩展与证据链 reranker 组成混合检索栈，并通过两轮结构化推理决定 `answer_directly`、`retrieve_more`、`clarify_user` 或 `abstain`。为缓解小模型在 RAG 中的过早回答、过度检索和无证据幻觉，本文进一步提出 verifier-aware SODA 数据构造流程：先让 4B student 按真实 runtime 生成完整轨迹，再让 API teacher replay 相同 prompt，最后由 evidence-only verifier 根据当前证据重标正确动作，而不是直接模仿 teacher 原始输出。最新全量消融批次显示，v6 证据链 reranker 是最稳定的检索收益来源；在 50 条静态召回评测上，相比跳过 rerank，MRR 从 0.4006 提升到 0.5822，R@1 从 0.28 提升到 0.48，R@32 从 0.70 提升到 0.86。最新 50 问 verifier-aware SODA 数据集生成 208 条 KTO 记录，其中 verifier 识别出 18 条 student unsupported answer、7 条 over-retrieve、2 条 premature answer，以及 9 次 teacher prior knowledge 风险。消融结果表明，MiniRAG 与邻居扩展的收益依赖样本分布：MiniRAG 在 hard split 上提升首命中排序，但在 release 与 failure hard pool 上可能引入排序噪声；邻居扩展可提高 R@32 覆盖，但会改变 top-rank 排序。
 
 ## 1. 引言
 
@@ -106,7 +106,7 @@ Scope 只约束候选生成，不直接写入答案逻辑。这样可以降低�
 
 融合后进入 evidence-chain reranker。当前 release 使用 `model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch`，训练目标更接近“证据是否足以回答问题”，而不是普通 query-document 相关性。reranker 之后还会应用少量结构化分数修正，例如剧情原文优先、过泛网页或百科降权、证据链 bridge term 加权等。最终排序结果保留完整 trace，包括 doc id、chunk id、来源通道和 rerank score。
 
-消融实验显示 reranker 是当前最稳定的收益来源。在 release 50 问上，跳过 rerank 时 MRR 为 `0.4262`，使用 v6 reranker 后提升到 `0.6046`；R@1 从 `0.32` 提升到 `0.54`。这说明剧情问答的关键瓶颈不只是“召回到候选池”，而是“把可回答证据排到 prompt 前部”。
+消融实验显示 reranker 是当前最稳定的收益来源。在最新 release 50 问上，跳过 rerank 时 MRR 为 `0.4006`，使用 v6 reranker 后提升到 `0.5822`；R@1 从 `0.28` 提升到 `0.48`，R@32 从 `0.70` 提升到 `0.86`。这说明剧情问答的关键瓶颈不只是“召回到候选池”，而是“把可回答证据排到 prompt 前部”。
 
 #### 2.3.5 Prompt Evidence Selection
 
@@ -249,13 +249,13 @@ SODA 数据质量指标包括：
 
 | Variant | MRR | Missed | Mean First Hit Rank | R@1 | R@5 | R@10 | R@20 | R@32 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `full_current_v6` | 0.6046 | 11/50 | 2.231 | 0.54 | 0.72 | 0.76 | 0.78 | 0.78 |
-| `no_neighbor_v6` | 0.6046 | 11/50 | 2.231 | 0.54 | 0.72 | 0.76 | 0.78 | 0.78 |
-| `no_minirag_v6` | 0.6180 | 11/50 | 2.179 | 0.56 | 0.72 | 0.76 | 0.78 | 0.78 |
-| `old_reranker_full` | 0.5360 | 11/50 | 3.667 | 0.44 | 0.64 | 0.70 | 0.76 | 0.78 |
-| `skip_rerank_full` | 0.4262 | 15/50 | 4.486 | 0.32 | 0.60 | 0.60 | 0.66 | 0.70 |
+| `full_current_v6` | 0.5822 | 7/50 | 3.023 | 0.48 | 0.68 | 0.82 | 0.86 | 0.86 |
+| `no_minirag_v6` | 0.6185 | 7/50 | 2.628 | 0.52 | 0.72 | 0.84 | 0.86 | 0.86 |
+| `no_neighbor_v6` | 0.6045 | 11/50 | 2.256 | 0.54 | 0.72 | 0.76 | 0.78 | 0.78 |
+| `old_reranker_full` | 0.5137 | 7/50 | 5.302 | 0.40 | 0.64 | 0.68 | 0.80 | 0.86 |
+| `skip_rerank_full` | 0.4006 | 15/50 | 5.000 | 0.28 | 0.60 | 0.60 | 0.64 | 0.70 |
 
-结论是 v6 reranker 是最确定的收益来源。相对旧 reranker，MRR 提升 0.0686，R@1 提升 0.10；相对跳过 rerank，MRR 提升 0.1784，missed 从 15/50 降到 11/50。邻居扩展在该评测中没有可测贡献。MiniRAG 在该随机集上没有提升静态排序，关闭后 MRR 小幅上升，但 R@5 以上基本不变。
+结论是 v6 reranker 是最确定的收益来源。相对旧 reranker，MRR 提升 0.0685，R@1 提升 0.08；相对跳过 rerank，MRR 提升 0.1816，missed 从 15/50 降到 7/50。邻居扩展将 R@32 从 0.78 提升到 0.86，但会牺牲部分 top-rank 排序。MiniRAG 在该 release 随机集上没有提升 MRR，关闭后 MRR 小幅上升到 0.6185，说明图扩展应作为条件增强而不是无条件强信号。
 
 ### 5.2 Easy/Hard 切分消融
 
@@ -263,16 +263,18 @@ SODA 数据质量指标包括：
 
 | Split | Variant | MRR | Missed | R@1 | R@5 | R@10 | R@32 |
 |---|---|---:|---:|---:|---:|---:|---:|
-| Easy | `full_current_v6` | 0.5804 | 10/50 | 0.50 | 0.66 | 0.72 | 0.80 |
-| Easy | `no_minirag_v6` | 0.5723 | 12/50 | 0.50 | 0.64 | 0.70 | 0.76 |
-| Easy | `old_reranker_full` | 0.5358 | 12/50 | 0.44 | 0.64 | 0.68 | 0.76 |
-| Easy | `skip_rerank_full` | 0.3298 | 15/50 | 0.22 | 0.48 | 0.52 | 0.70 |
-| Hard | `full_current_v6` | 0.6870 | 7/50 | 0.60 | 0.82 | 0.86 | 0.86 |
-| Hard | `no_minirag_v6` | 0.6606 | 7/50 | 0.56 | 0.82 | 0.86 | 0.86 |
-| Hard | `old_reranker_full` | 0.6347 | 8/50 | 0.52 | 0.78 | 0.84 | 0.84 |
-| Hard | `skip_rerank_full` | 0.2361 | 14/50 | 0.12 | 0.38 | 0.56 | 0.72 |
+| Easy | `full_current_v6` | 0.5432 | 10/50 | 0.44 | 0.66 | 0.72 | 0.80 |
+| Easy | `no_minirag_v6` | 0.5404 | 11/50 | 0.46 | 0.62 | 0.68 | 0.78 |
+| Easy | `no_neighbor_v6` | 0.5705 | 10/50 | 0.48 | 0.66 | 0.72 | 0.80 |
+| Easy | `old_reranker_full` | 0.5285 | 11/50 | 0.42 | 0.66 | 0.70 | 0.78 |
+| Easy | `skip_rerank_full` | 0.3167 | 15/50 | 0.18 | 0.50 | 0.54 | 0.70 |
+| Hard | `full_current_v6` | 0.7039 | 6/50 | 0.62 | 0.82 | 0.88 | 0.88 |
+| Hard | `no_minirag_v6` | 0.6594 | 5/50 | 0.56 | 0.80 | 0.88 | 0.90 |
+| Hard | `no_neighbor_v6` | 0.7020 | 7/50 | 0.62 | 0.82 | 0.86 | 0.86 |
+| Hard | `old_reranker_full` | 0.6362 | 7/50 | 0.52 | 0.80 | 0.86 | 0.86 |
+| Hard | `skip_rerank_full` | 0.2367 | 14/50 | 0.12 | 0.38 | 0.54 | 0.72 |
 
-该结果说明 `query_type` 不是可靠难度标签。Hard 组反而强于 Easy 组，原因是本次随机样本中的 reveal/mystery 并不难。v6 reranker 在 easy 和 hard 上均稳定优于旧 reranker 和 skip rerank。MiniRAG 在该切分中有小幅正收益，说明它在某些样本上能提供有效扩展，但收益不稳定。
+该结果说明 `query_type` 不是可靠难度标签。Hard 组反而强于 Easy 组，原因是本次随机样本中的 reveal/mystery 并不难。v6 reranker 在 easy 和 hard 上均稳定优于旧 reranker 和 skip rerank。MiniRAG 在 hard split 中提高 MRR，但 no_minirag 的 R@32 略高；邻居扩展在 hard split 中提高覆盖，但在 easy split 上会牺牲部分 top-rank 排序。
 
 ### 5.3 Failure-Driven Hard Pool 消融
 
@@ -280,13 +282,13 @@ SODA 数据质量指标包括：
 
 | Variant | MRR | Missed | Mean First Hit Rank | R@1 | R@5 | R@10 | R@20 | R@32 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `failure_full_current_v6` | 0.0474 | 32/59 | 12.519 | 0.0000 | 0.0000 | 0.2712 | 0.3898 | 0.4576 |
-| `failure_no_neighbor_v6` | 0.0474 | 32/59 | 12.519 | 0.0000 | 0.0000 | 0.2712 | 0.3898 | 0.4576 |
-| `failure_no_minirag_v6` | 0.0882 | 31/59 | 10.107 | 0.0339 | 0.0847 | 0.3051 | 0.4237 | 0.4746 |
-| `failure_old_reranker_full` | 0.0488 | 33/59 | 13.962 | 0.0000 | 0.0678 | 0.1864 | 0.3390 | 0.4407 |
-| `failure_skip_rerank_full` | 0.0509 | 37/59 | 12.909 | 0.0000 | 0.1017 | 0.1525 | 0.3051 | 0.3729 |
+| `failure_full_current_v6` | 0.1113 | 27/59 | 10.406 | 0.0508 | 0.1186 | 0.3898 | 0.4746 | 0.5424 |
+| `failure_no_minirag_v6` | 0.1298 | 27/59 | 9.562 | 0.0678 | 0.1695 | 0.4068 | 0.4915 | 0.5424 |
+| `failure_no_neighbor_v6` | 0.0471 | 32/59 | 12.593 | 0.0000 | 0.0000 | 0.2712 | 0.3898 | 0.4576 |
+| `failure_old_reranker_full` | 0.0849 | 29/59 | 11.167 | 0.0169 | 0.1356 | 0.2881 | 0.4068 | 0.5085 |
+| `failure_skip_rerank_full` | 0.0506 | 37/59 | 13.091 | 0.0000 | 0.1017 | 0.1525 | 0.3051 | 0.3729 |
 
-failure hard pool 是从 current full 的失败样本中筛出的，因此 full v6 的 R@5 为 0 是预期结果。重要发现是关闭 MiniRAG 后在该 pool 上反而提升，MRR 从 0.0474 到 0.0882，R@32 从 0.4576 到 0.4746。这表明 MiniRAG 在困难样本上可能把相关章节外的叙事背景拉入候选池，增加 reranker 排序噪声。
+failure hard pool 对当前检索栈仍然明显困难：full v6 仍有 27/59 未在 top-32 命中。关闭 MiniRAG 后 MRR 从 0.1113 提升到 0.1298，R@32 持平，说明 MiniRAG 在困难样本上会引入排序噪声；但关闭邻居扩展会使 missed 从 27/59 增加到 32/59，表明邻居扩展对困难题的候选覆盖仍然重要。跳过 rerank 的 missed 达到 37/59，进一步说明 failure pool 需要 reranker hard negatives，而不是单纯扩大召回。
 
 ### 5.4 Prompt Gold Coverage
 
@@ -307,6 +309,15 @@ failure hard pool 是从 current full 的失败样本中筛出的，因此 full 
 
 该结果解释了为什么 student 和 teacher 都可能出错：即使 evidence prompt top-12 中经常包含部分 gold evidence，但完整覆盖比例仍然偏低。训练时不能只教 answer imitation，还需要教模型在证据不足时明确 `retrieve_more`。
 
+本次 suite 还对 teacher trace replay 做了 prompt evidence 消融。该评估使用相同 teacher full-chain trace、当前 runtime 检索和更严格的 prompt 单元匹配，因此数值不直接等同于上表的 verifier 数据审计，但可用于比较 scoped/sweep 策略：
+
+| Mode | Prompts | Questions | Gold units | Gold @12 | Any @12 | All @12 | Coverage |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `current` | 63 | 50 | 166 | 0.1988 | 0.3810 | 0.0635 | 0.1931 |
+| `no_scoped_no_sweep` | 63 | 50 | 166 | 0.1627 | 0.3175 | 0.0476 | 0.1600 |
+
+Trace replay 显示 scoped retrieval 与 same-story sweep 能提高 prompt gold 覆盖，但覆盖绝对值仍低，说明最终回答质量仍受 prompt evidence selection 和多证据覆盖约束。
+
 ### 5.5 历史训练与在线检索评测
 
 已有的 SFT / KTO 历史评测显示，改进 SFT 和 API-grounded conclusion 数据可提升在线多轮召回；但此前 SODA 550 KTO 对检索召回本身并未稳定超越 SFT。
@@ -325,14 +336,15 @@ failure hard pool 是从 current full 的失败样本中筛出的，因此 full 
 
 ### 6.1 Reranker 是当前最确定收益
 
-三个消融集合均表明，reranker 对 top-rank 质量至关重要。跳过 rerank 会显著降低 MRR 和 R@1，即使有时在 failure pool 的 R@5 上碰巧更高，也会导致 missed 增加，整体不可取。
+三个消融集合均表明，reranker 对 top-rank 质量至关重要。跳过 rerank 会显著降低 MRR、R@1 和 R@32，并在 release 与 failure pool 中显著增加 missed，整体不可取。当前更值得投入的是用 failure hard pool 继续补 reranker hard negatives，而不是扩大无裁决的候选池。
 
 ### 6.2 MiniRAG 应条件启用
 
-MiniRAG 在 easy/hard 随机切分中有小幅正收益，但在 release 50 问和 failure hard pool 中可能引入噪声。这说明图扩展适合作为补充证据来源，而不应无条件强参与排序。更合理策略是：
+MiniRAG 在 hard split 中提升 MRR，但在 release 50 问和 failure hard pool 中可能引入噪声。这说明图扩展适合作为补充证据来源，而不应无条件强参与排序。邻居扩展在 release 与 failure hard pool 中提高 R@32 覆盖，但在部分 easy 样本上会拉低首命中排序。更合理策略是：
 
 - 首轮 dense/sparse/rerank 高置信命中时降低 MiniRAG pre-rerank 权重。
 - 对因果、关系、揭示类问题保留 MiniRAG 扩展，但结合章节 scope 和 same-story sweep。
+- 在候选覆盖不足时启用邻居扩展，在高置信 top-rank 已命中时降低邻居扩展对排序的影响。
 - 在 failure pool 上补训练同实体错章、同角色背景压过剧情原文的 hard negatives。
 
 ### 6.3 Verifier 可以减少 teacher 污染
@@ -341,7 +353,7 @@ MiniRAG 在 easy/hard 随机切分中有小幅正收益，但在 release 50 问�
 
 ### 6.4 数据瓶颈是 prompt evidence 覆盖
 
-Question any gold @12 为 76%，但 question all gold @12 只有 42%。这说明对多证据问题，top-12 evidence 经常只能覆盖一部分答案。模型需要学会“部分回答 + 明确缺口”，而不是二选一地完全回答或 abstain。
+Question any gold @12 为 76%，但 question all gold @12 只有 42%。本次 trace replay 进一步显示，在严格按 teacher full-chain prompt 重放时，current scoped/sweep 的 prompt gold @12 为 0.1988，仍明显高于关闭 scoped/sweep 的 0.1627。两组结果共同说明，对多证据问题，top-12 evidence 经常只能覆盖一部分答案。模型需要学会“部分回答 + 明确缺口”，而不是二选一地完全回答或 abstain。
 
 ## 7. 局限
 
@@ -355,7 +367,7 @@ Question any gold @12 为 76%，但 question all gold @12 只有 42%。这说明
 
 ## 8. 结论
 
-本文构建了一个面向长剧情问答的证据约束 RAG Agent，并完成了检索栈和 verifier-aware SODA 数据生成的工程闭环。实验表明，当前系统最稳定的提升来自证据链 reranker；MiniRAG 与邻居扩展的收益依赖样本分布，尤其在 failure hard pool 上 MiniRAG 可能引入排序噪声。Verifier-aware SODA 数据揭示了 student 的主要错误类型是 unsupported answer、over-retrieve 和 premature answer，也验证了 teacher 存在 prior knowledge 污染风险。下一步应基于最新 208 条 KTO 记录进行训练，并围绕 failure hard pool 补充 reranker hard negatives 与最终回答人工评测。
+本文构建了一个面向长剧情问答的证据约束 RAG Agent，并完成了检索栈和 verifier-aware SODA 数据生成的工程闭环。最新全量消融表明，当前系统最稳定的提升来自证据链 reranker；MiniRAG 与邻居扩展的收益依赖样本分布，MiniRAG 更适合条件启用，邻居扩展更适合作为候选覆盖补偿。Verifier-aware SODA 数据揭示了 student 的主要错误类型是 unsupported answer、over-retrieve 和 premature answer，也验证了 teacher 存在 prior knowledge 污染风险。下一步应基于最新 208 条 KTO 记录进行训练，并围绕 failure hard pool 补充 reranker hard negatives 与最终回答人工评测。
 
 ## 9. 可复现命令
 
@@ -389,7 +401,49 @@ python scripts/analyze_soda_gold_evidence_topk.py \
   --output outputs/soda_flow_reports/eval50_len1800_v2_scoped_sweep_soda_lora_gpu3_merged_gold_topk.json
 ```
 
-已使用的消融报告：
+统一汇总论文实验表格并生成带自动附录的论文副本：
+
+```bash
+python scripts/summarize_paper_experiments.py
+
+# 带入本次全量 suite 结果。
+python scripts/summarize_paper_experiments.py \
+  --suite-summary outputs/paper_ablation_suite/<run_id>/suite_summary.json \
+  --output-dir outputs/paper_ablation_suite/<run_id>/paper_experiments
+```
+
+输出产物：
+
+```text
+outputs/paper_experiments/summary.json
+outputs/paper_experiments/tables.md
+outputs/paper_experiments/asa_rag_soda_paper.md
+```
+
+一键运行论文级消融 suite：
+
+```bash
+# 快速校验命令链路，只跑小样本。
+python scripts/run_paper_ablation_suite.py --smoke --device cuda
+
+# 完整重跑会覆盖更多 GPU/API 时间，结果默认写入 outputs/paper_ablation_suite/<run_id>/。
+python scripts/run_paper_ablation_suite.py --device cuda
+
+# 不重跑实验，仅根据现有结果刷新 suite 报告和论文副本。
+python scripts/run_paper_ablation_suite.py \
+  --run-id <run_id> \
+  --report-only
+```
+
+本次全量消融批次产物：
+
+```text
+outputs/paper_ablation_suite/<run_id>/suite_report.md
+outputs/paper_ablation_suite/<run_id>/suite_summary.json
+outputs/paper_ablation_suite/<run_id>/asa_rag_soda_paper_suite.md
+```
+
+历史消融报告（用于对照）：
 
 ```text
 outputs/ablation_release_20260531/report.md
