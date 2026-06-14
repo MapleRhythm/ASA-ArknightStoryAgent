@@ -214,6 +214,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional JSONL output path for --questions-file results.",
     )
+    parser.add_argument(
+        "--stdio-jsonl",
+        action="store_true",
+        help="Run as a persistent JSONL service over stdin/stdout.",
+    )
     return parser.parse_args()
 
 
@@ -666,6 +671,91 @@ def main() -> None:
             for line in args.dialogue_context.splitlines()
             if line.strip()
         )
+
+    if args.stdio_jsonl:
+        print(
+            json.dumps(
+                {
+                    "event": "ready",
+                    "backend": backend,
+                    "device": device,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        for raw_line in sys.stdin:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                request = json.loads(raw_line)
+                if not isinstance(request, dict):
+                    raise ValueError("request must be a JSON object")
+                if request.get("command") == "stop":
+                    print(json.dumps({"event": "stopped"}, ensure_ascii=False), flush=True)
+                    break
+
+                question = str(request.get("message") or "").strip()
+                if not question:
+                    raise ValueError("message cannot be empty")
+                request_history = request.get("history")
+                if isinstance(request_history, list):
+                    request_dialogue = []
+                    for item in request_history[-10:]:
+                        if not isinstance(item, dict):
+                            continue
+                        role = str(item.get("role") or "").strip()
+                        content = str(item.get("content") or "").strip()
+                        if role and content:
+                            request_dialogue.append(f"{role}: {content}")
+                    dialogue_context = render_dialogue_context(request_dialogue)
+                else:
+                    dialogue_context = render_dialogue_context(dialogue_history)
+
+                stages: list[str] = []
+                started = time.perf_counter()
+
+                def progress(stage: str) -> None:
+                    stages.append(stage)
+                    print(f"[stage] {stage}", file=sys.stderr, flush=True)
+
+                result = pipeline.run(
+                    question,
+                    dialogue_context,
+                    progress_callback=progress,
+                )
+                payload = attach_abstain_evidence(asdict(result))
+                elapsed = round(time.perf_counter() - started, 3)
+                print(
+                    json.dumps(
+                        {
+                            "event": "result",
+                            "answer": result.answer,
+                            "result": payload,
+                            "stages": stages,
+                            "elapsed": elapsed,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+                if not isinstance(request_history, list):
+                    append_dialogue_turn(dialogue_history, "user", question)
+                    append_dialogue_turn(dialogue_history, "assistant", result.answer)
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "error",
+                            "error": type(exc).__name__,
+                            "message": str(exc),
+                        },
+                        ensure_ascii=False,
+                    ),
+                    flush=True,
+                )
+        return
 
     if args.questions_file is not None:
         questions = [
