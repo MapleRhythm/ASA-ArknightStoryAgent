@@ -1,8 +1,7 @@
 {
   "retrieval": {
     "device": "cuda",
-    "enable_reranker": true,
-    "reranker_model_path": "model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch",
+    "enable_reranker": false,
     "dense_top_k": 120,
     "sparse_top_k": 120,
     "enable_minirag": true,
@@ -30,27 +29,39 @@
     "enable_storyline_sparse_scope": true,
     "storyline_scope_seed_top_k": 40,
     "storyline_sparse_scope_min_ratio": 1.5,
+    "enable_scoped_chapter_search": true,
+    "scoped_chapter_dense_top_k": 160,
+    "scoped_chapter_sparse_top_k": 160,
     "enable_neighbor_expansion": true,
     "neighbor_max_seed_docs": 16,
     "neighbor_story_window": 2,
-    "neighbor_activity_story_sort_window": 1
+    "neighbor_activity_story_sort_window": 1,
+    "enable_same_story_sweep": true,
+    "same_story_sweep_max_seed_docs": 8,
+    "same_story_sweep_max_docs_per_story": 24,
+    "same_story_sweep_extra_candidates": 80
   },
   "generator": {
     "backend": "vllm",
     "ctx_size": 10000,
-    "max_tokens": 3000,
+    "max_tokens": 512,
     "temperature": 0.2,
     "top_p": 0.9,
     "repeat_penalty": 1.05,
+    "llama_cpp": {
+      "device": "cuda",
+      "gpu_layers": "all",
+      "batch_size": 2048,
+      "ubatch_size": 512,
+      "flash_attn": "auto"
+    },
     "vllm": {
       "base_model_path": "model/qwen3.5-4b",
-      "lora_path": "model/lora/asa-arknightstoryagent-4b-lora",
+      "lora_path": "model/lora/teacher_scored_kto_mix_v1_from_soda_lora_qwen35_4b_lr8e7_beta001_epoch2",
       "tensor_parallel_size": 1,
-      "gpu_memory_utilization": 0.52,
+      "gpu_memory_utilization": 0.62,
       "max_model_len": 10000,
-      "dtype": "auto",
-      "max_num_batched_tokens": 4096,
-      "enforce_eager": true
+      "dtype": "auto"
     }
   },
   "inference": {
@@ -62,9 +73,9 @@
     "mmr_lambda": 0.72,
     "enable_pyramid_order": false,
     "enable_evidence_pinning": false,
-    "enable_crag_refinement": false,
-    "crag_refine_top_sentences": 4,
-    "crag_refine_max_sentences": 24,
+    "enable_crag_refinement": true,
+    "crag_refine_top_sentences": 5,
+    "crag_refine_max_sentences": 32,
     "self_consistency_samples": 1,
     "self_consistency_temperature": 0.7,
     "conclusion_prompt_mode": "minimal",

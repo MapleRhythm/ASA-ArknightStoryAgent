@@ -17,7 +17,27 @@ fi
 export CONDA_NO_PLUGINS="${CONDA_NO_PLUGINS:-true}"
 export DISABLE_VERSION_CHECK="${DISABLE_VERSION_CHECK:-1}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-export PYTHONPATH="$ROOT_DIR/.python_packages/train:$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+normalize_pythonpath() {
+  local overlay="$ROOT_DIR/.python_packages/train"
+  local src_path="$ROOT_DIR/src"
+  local existing="${PYTHONPATH:-}"
+  local filtered=""
+  local entry
+  IFS=':' read -r -a entries <<< "$existing"
+  for entry in "${entries[@]}"; do
+    [[ -n "$entry" ]] || continue
+    [[ "$entry" == "$overlay" ]] && continue
+    [[ "$entry" == "$src_path" ]] && continue
+    filtered="${filtered:+$filtered:}$entry"
+  done
+  if [[ "${GOLDENGLOW_USE_TRAIN_OVERRIDE:-}" =~ ^(0|false|False|no|off)$ ]]; then
+    export PYTHONPATH="$src_path${filtered:+:$filtered}"
+  else
+    export PYTHONPATH="$overlay:$src_path${filtered:+:$filtered}"
+  fi
+}
+
+normalize_pythonpath
 
 RUN_NAME="${RUN_NAME:-eval50_hard10_gpu_abstain_$(date +%Y%m%d_%H%M%S)}"
 OUT_DIR="${OUT_DIR:-outputs/$RUN_NAME}"

@@ -5371,7 +5371,7 @@ class LlamaCppRunner:
             "trained_sft_artifact": "model/lora/teacher_online_chain_short_prompt_v2_ds_flash_500_plus_smoke20_sample50_quality_fix3_qwen35_4b_lr3e5_epoch1",
             "trained_sft_artifact_type": "LoRA adapter",
             "recommended_runtime_model": (
-                "model/gguf/teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf"
+                "model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf"
             ),
             "runtime_mode": "merged_gguf" if not self.lora_path else "base_gguf_plus_lora_gguf",
             "llama_device": self.device,
@@ -5399,7 +5399,7 @@ class LlamaCppRunner:
                 f"{self.gguf_model_path}\n"
                 "Please pass the real `--gguf-model` path to a converted GGUF file.\n"
                 "Recommended runtime artifact in this repo: "
-                "`model/gguf/teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf`."
+                "`model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf`."
             )
         if self.lora_path is not None and not self.lora_path.exists():
             raise FileNotFoundError(
@@ -5412,7 +5412,7 @@ class LlamaCppRunner:
                 "llama.cpp does not load Hugging Face LoRA directories directly: "
                 f"{self.lora_path}\n"
                 "Use a GGUF LoRA adapter file, or omit `--lora-path` and run the merged GGUF "
-                "`model/gguf/teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf`."
+                "`model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf`."
             )
         if self.device and self.device.lower() not in {"cpu", "none"} and not self._has_gpu_backend():
             raise RuntimeError(
@@ -5558,7 +5558,8 @@ class VllmRunner:
         except ImportError as exc:
             raise ImportError(
                 "vLLM is not installed in the current environment. "
-                "Run `bash scripts/install_train_vllm.sh` in the `train` environment first."
+                "Run `bash scripts/install_train_vllm.sh` in the `train` environment first. "
+                f"Original import error: {type(exc).__name__}: {exc}"
             ) from exc
 
         try:
@@ -5604,7 +5605,8 @@ class VllmRunner:
         except ImportError as exc:
             raise ImportError(
                 "vLLM is not installed in the current environment. "
-                "Run `bash scripts/install_train_vllm.sh` in the `train` environment first."
+                "Run `bash scripts/install_train_vllm.sh` in the `train` environment first. "
+                f"Original import error: {type(exc).__name__}: {exc}"
             ) from exc
 
         sampling_params = SamplingParams(
@@ -5846,9 +5848,10 @@ class CPUInferencePipeline:
 
     def build_hypothesis(self, question: str, dialogue_context: str = "") -> HypothesisDocument:
         prompt = build_hypothesis_prompt(question, dialogue_context)
+        generator_max_tokens = getattr(self.generator, "max_tokens", None)
         raw_output = self.generator.generate(
             prompt,
-            max_tokens=min(256, self.generator.max_tokens),
+            max_tokens=min(256, generator_max_tokens) if generator_max_tokens is not None else 256,
             temperature=0.1,
             top_p=0.8,
             repeat_penalty=1.15,
@@ -5896,9 +5899,10 @@ class CPUInferencePipeline:
             prompt_evidence_top_k=self.prompt_evidence_top_k,
             prompt_evidence=self.prepare_prompt_evidence(question, current_hypothesis, evidence),
         )
+        generator_max_tokens = getattr(self.generator, "max_tokens", None)
         raw_output = self.generator.generate(
             prompt,
-            max_tokens=min(384, self.generator.max_tokens),
+            max_tokens=min(384, generator_max_tokens) if generator_max_tokens is not None else 384,
             temperature=0.1,
             top_p=0.8,
             repeat_penalty=1.15,
@@ -5946,9 +5950,15 @@ class CPUInferencePipeline:
         sample_count = self.self_consistency_samples
         for _ in range(sample_count):
             try:
+                generator_max_tokens = getattr(self.generator, "max_tokens", None)
+                conclusion_max_tokens = (
+                    min(max(generator_max_tokens, 1536), 2048)
+                    if generator_max_tokens is not None
+                    else None
+                )
                 raw_output = self.generator.generate(
                     prompt,
-                    max_tokens=min(max(self.generator.max_tokens, 1536), 2048),
+                    max_tokens=conclusion_max_tokens,
                     temperature=self.self_consistency_temperature if sample_count > 1 else 0.1,
                     top_p=0.9 if sample_count > 1 else 0.8,
                     repeat_penalty=1.0,
@@ -6055,9 +6065,15 @@ class CPUInferencePipeline:
             evidence_max_chars_per_doc=self.prompt_evidence_max_chars_per_doc,
             evidence_max_total_chars=self.prompt_conclusion_evidence_max_total_chars,
         )
+        generator_max_tokens = getattr(self.generator, "max_tokens", None)
+        answer_max_tokens = (
+            min(max(generator_max_tokens, 1536), 2048)
+            if generator_max_tokens is not None
+            else None
+        )
         raw_output = self.generator.generate(
             prompt,
-            max_tokens=min(max(self.generator.max_tokens, 1536), 2048),
+            max_tokens=answer_max_tokens,
             temperature=0.1,
             top_p=0.8,
             repeat_penalty=1.0,

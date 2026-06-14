@@ -78,7 +78,7 @@ from scripts.evaluate_retrieval_recall import (  # noqa: E402
 DEFAULT_RUNTIME_CONFIG_PATH = PROJECT_ROOT / "configs" / "runtime_inference_gpu.json"
 DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build" / "bin" / "llama-completion"
 DEFAULT_GGUF_MODEL_PATH = (
-    PROJECT_ROOT / "model" / "gguf" / "teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf"
+    PROJECT_ROOT / "model" / "gguf" / "qwen3.5-4b-lora-merged-q4_k_m.gguf"
 )
 DEFAULT_BASE_MODEL_PATH = PROJECT_ROOT / "model" / "qwen3.5-4b"
 DEFAULT_VLLM_LORA_PATH = (

@@ -14,6 +14,9 @@ const stopServiceBtn = document.querySelector("#stopServiceBtn");
 
 const messages = [];
 let serviceRunning = false;
+let serviceMode = null;
+
+const persistentModes = new Set(["cpu-local", "gpu-reranker"]);
 
 function selectedMode() {
   return document.querySelector('input[name="mode"]:checked')?.value || "cpu-local";
@@ -110,6 +113,7 @@ async function checkHealth() {
     const response = await fetch("/api/health");
     const data = await response.json();
     serviceRunning = Boolean(data.service?.running);
+    serviceMode = serviceRunning ? data.service?.mode || null : null;
     const rows = Object.entries(data.modes || {}).map(([key, mode]) => {
       return `${mode.available ? "OK" : "MISS"} ${mode.label}`;
     });
@@ -130,7 +134,7 @@ function requestPayload(question) {
     message: question,
     history: messages.slice(-10),
     max_retrieval_rounds: Number(maxRounds.value || 3),
-    max_tokens: Number(maxTokens.value || 1024),
+    max_tokens: Number(maxTokens.value || 3000),
     timeout: Number(timeoutInput.value || 900),
     use_persistent_service: true,
   };
@@ -180,7 +184,7 @@ async function stopService() {
 async function sendQuestion(question) {
   const trimmed = question.trim();
   if (!trimmed) return;
-  if (selectedMode() === "cpu-local" && !serviceRunning) {
+  if (persistentModes.has(selectedMode()) && (!serviceRunning || serviceMode !== selectedMode())) {
     addMessage("assistant", "服务未启动。请先点击左侧“启动服务”，模型加载完成后再发送问题。");
     setTrace("[service] not running", "待启动");
     return;

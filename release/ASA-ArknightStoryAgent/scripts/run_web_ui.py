@@ -40,7 +40,72 @@ MODES = {
 }
 
 
-SERVICE_MODES = {"cpu-local"}
+SERVICE_MODES = {"cpu-local", "gpu-reranker"}
+
+
+def default_python_bin() -> str:
+    candidates = [
+        Path("/home/zhb/miniconda3/envs/train/bin/python3.11"),
+        Path("/home/zhb/miniconda3/envs/reasoning/bin/python3.11"),
+        PROJECT_ROOT / ".conda" / "bin" / "python3.11",
+        PROJECT_ROOT.parents[1] / ".conda" / "bin" / "python3.11",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
+def select_free_cuda_device() -> str | None:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return None
+    best_index: str | None = None
+    best_free = -1
+    for line in completed.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 2:
+            continue
+        try:
+            free_mb = int(float(parts[1]))
+        except ValueError:
+            continue
+        if free_mb > best_free:
+            best_index = parts[0]
+            best_free = free_mb
+    return best_index
+
+
+def build_child_env(mode: str | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHON_BIN"] = env.get("PYTHON_BIN") or default_python_bin()
+    if mode == "gpu-reranker" and not env.get("CUDA_VISIBLE_DEVICES"):
+        selected_devices = env.get("ASA_CUDA_VISIBLE_DEVICES") or env.get("ASA_GPU_DEVICES") or select_free_cuda_device()
+        if selected_devices:
+            env["CUDA_VISIBLE_DEVICES"] = selected_devices
+    package_candidates = [
+        PROJECT_ROOT / ".python_packages" / "train",
+        PROJECT_ROOT.parents[1] / ".python_packages" / "train",
+        PROJECT_ROOT / "model" / "lora" / ".python_packages" / "train",
+        PROJECT_ROOT.parents[1] / "model" / "lora" / ".python_packages" / "train",
+    ]
+    pythonpath_entries = [str(path) for path in package_candidates if path.exists()]
+    if pythonpath_entries:
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries + ([existing] if existing else []))
+    return env
 
 
 class PersistentInferenceService:
@@ -91,8 +156,7 @@ class PersistentInferenceService:
 
             command = build_command({"mode": mode, "message": "__warmup__"})
             command = command[:-1]
-            env = os.environ.copy()
-            env["PYTHON_BIN"] = env.get("PYTHON_BIN", sys.executable)
+            env = build_child_env(mode)
             env["ASA_PERSISTENT_SERVICE"] = "1"
             self.stderr_lines = []
             process = subprocess.Popen(
@@ -190,7 +254,13 @@ class PersistentInferenceService:
                 line = process.stdout.readline()
                 if not line:
                     continue
-                data = json.loads(line)
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    self.stderr_lines.append(line.rstrip("\n"))
+                    if len(self.stderr_lines) > 300:
+                        del self.stderr_lines[:100]
+                    continue
                 if data.get("event") == "result":
                     result = data.get("result") if isinstance(data.get("result"), dict) else None
                     return {
@@ -308,9 +378,7 @@ def run_inference(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
         return SERVICE.ask(payload, timeout)
 
     command = build_command(payload)
-    env = os.environ.copy()
-    if "PYTHON_BIN" not in env:
-        env["PYTHON_BIN"] = sys.executable
+    env = build_child_env(str(payload.get("mode") or "cpu-local"))
     started_cwd = str(PROJECT_ROOT)
     completed = subprocess.run(
         command,

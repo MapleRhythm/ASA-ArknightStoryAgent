@@ -45,7 +45,7 @@ from goldenglow.config import (  # noqa: E402
 
 DEFAULT_LLAMA_CLI_PATH = PROJECT_ROOT / "third_party" / "llama.cpp" / "build" / "bin" / "llama-completion"
 DEFAULT_GGUF_MODEL_PATH = (
-    PROJECT_ROOT / "model" / "gguf" / "teacher_v2_plus_prompt_supplement_v2_qwen35_4b-merged-q4_k_m.gguf"
+    PROJECT_ROOT / "model" / "gguf" / "qwen3.5-4b-lora-merged-q4_k_m.gguf"
 )
 DEFAULT_BASE_MODEL_PATH = PROJECT_ROOT / "model" / "qwen3.5-4b"
 DEFAULT_VLLM_LORA_PATH = (
@@ -727,23 +727,44 @@ def main() -> None:
             for index, question in enumerate(questions, start=1):
                 started = time.perf_counter()
                 print(f"[batch {index}/{len(questions)}] {question}", file=sys.stderr, flush=True)
+                stage_events: list[dict[str, float | str]] = []
+
+                def progress(stage: str) -> None:
+                    offset = round(time.perf_counter() - started, 3)
+                    stage_events.append({"stage": stage, "offset_sec": offset})
+                    print(f"[stage +{offset:.3f}s] {stage}", file=sys.stderr, flush=True)
+
                 try:
                     result = pipeline.run(
                         question,
                         args.dialogue_context.strip(),
-                        progress_callback=lambda stage: print(f"[stage] {stage}", file=sys.stderr, flush=True),
+                        progress_callback=progress,
                     )
                     payload = asdict(result)
-                    payload["elapsed_sec"] = round(time.perf_counter() - started, 3)
+                    elapsed_sec = round(time.perf_counter() - started, 3)
+                    payload["elapsed_sec"] = elapsed_sec
                     payload["error"] = ""
                     payload = attach_abstain_evidence(payload)
                 except Exception as exc:
+                    elapsed_sec = round(time.perf_counter() - started, 3)
                     payload = {
                         "question": question,
                         "answer": "",
-                        "elapsed_sec": round(time.perf_counter() - started, 3),
+                        "elapsed_sec": elapsed_sec,
                         "error": f"{type(exc).__name__}: {exc}",
                     }
+                stage_durations: dict[str, float] = {}
+                for event_index, event in enumerate(stage_events):
+                    next_offset = (
+                        float(stage_events[event_index + 1]["offset_sec"])
+                        if event_index + 1 < len(stage_events)
+                        else elapsed_sec
+                    )
+                    stage = str(event["stage"])
+                    duration = round(max(0.0, next_offset - float(event["offset_sec"])), 3)
+                    stage_durations[stage] = round(stage_durations.get(stage, 0.0) + duration, 3)
+                payload["stage_events"] = stage_events
+                payload["stage_durations_sec"] = stage_durations
                 line = json.dumps(payload, ensure_ascii=False)
                 if output_handle is not None:
                     output_handle.write(line + "\n")

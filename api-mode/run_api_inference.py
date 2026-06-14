@@ -72,6 +72,9 @@ API_MODE_QA_SYSTEM_APPENDIX = """你正在替代本地微调 4B 模型，为一�
 - 如果证据能支持部分回答，应优先给出“可确认部分”，不要因为缺少完整背景直接 abstain；但不能把未被证据支持的内容写成确定事实。
 - 不要输出或展开 reasoning_content / chain-of-thought；最终内容必须写在 assistant message 的 content 字段中。"""
 
+DEFAULT_API_INTERNAL_TOKEN_BUDGET = 4096
+UNLIMITED_MAX_TOKENS_STRINGS = {"", "none", "null", "unlimited", "infinite", "inf", "不限量", "不限制"}
+
 
 def load_runtime_config(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -94,6 +97,18 @@ def resolve_path_value(cli_value: Any, config_section: dict[str, Any], key: str,
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return path
+
+
+def parse_optional_max_tokens(value: Any, *, default: int | None = None) -> int | None:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in UNLIMITED_MAX_TOKENS_STRINGS:
+            return None
+        value = normalized
+    parsed = int(value)
+    return parsed if parsed > 0 else None
 
 
 def ensure_index(build_index_if_missing: bool) -> None:
@@ -312,7 +327,7 @@ class OpenAICompatibleAPIRunner:
         api_key_env: str,
         model: str,
         timeout: float = 120.0,
-        max_tokens: int = 768,
+        max_tokens: int | None = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         response_format_json: bool = True,
@@ -343,6 +358,7 @@ class OpenAICompatibleAPIRunner:
             "local_generation_model": None,
             "lora_path": None,
             "max_tokens": self.max_tokens,
+            "max_tokens_unlimited": self.max_tokens is None,
             "temperature": self.temperature,
             "top_p": self.top_p,
             "extra_body": self.extra_body,
@@ -409,23 +425,25 @@ class OpenAICompatibleAPIRunner:
         del repeat_penalty
         messages = chatml_prompt_to_messages(prompt)
         wants_json = prompt_wants_json(prompt)
-        requested_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
-        if wants_json:
-            # The shared pipeline uses small local-4B budgets for JSON tasks.
-            # Remote models may emit longer valid JSON, so keep a safer floor.
-            requested_max_tokens = max(requested_max_tokens, self.max_tokens, 4096)
-        else:
-            # Local 4B prompts often pass 512-token answer budgets. Remote API
-            # models answer more verbosely and can otherwise stop mid-sentence,
-            # which contaminates evaluation as a false RAG failure.
-            requested_max_tokens = max(requested_max_tokens, min(self.max_tokens, 1536))
+        requested_max_tokens = None if self.max_tokens is None else (max_tokens if max_tokens is not None else self.max_tokens)
+        if requested_max_tokens is not None:
+            if wants_json:
+                # The shared pipeline uses small local-4B budgets for JSON tasks.
+                # Remote models may emit longer valid JSON, so keep a safer floor.
+                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0, 4096)
+            else:
+                # Local 4B prompts often pass 512-token answer budgets. Remote API
+                # models answer more verbosely and can otherwise stop mid-sentence,
+                # which contaminates evaluation as a false RAG failure.
+                requested_max_tokens = max(requested_max_tokens, min(self.max_tokens or 1536, 1536))
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature if temperature is not None else self.temperature,
             "top_p": top_p if top_p is not None else self.top_p,
-            "max_tokens": requested_max_tokens,
         }
+        if requested_max_tokens is not None:
+            payload["max_tokens"] = requested_max_tokens
         payload.update(self.extra_body)
         if self.response_format_json and wants_json:
             payload["response_format"] = {"type": "json_object"}
@@ -488,12 +506,17 @@ class OpenAICompatibleAPIRunner:
                     return retry_content.strip()
             raise RuntimeError(f"API returned empty content: {json.dumps(response, ensure_ascii=False)[:1000]}")
         if finish_reason == "length":
+            if requested_max_tokens is None:
+                return content.strip()
             retry_payload = dict(payload)
             retry_payload["max_tokens"] = max(
                 int(payload.get("max_tokens") or requested_max_tokens) * 2,
-                min(self.max_tokens, 2048),
+                min(self.max_tokens or DEFAULT_API_INTERNAL_TOKEN_BUDGET, 2048),
             )
-            retry_payload["max_tokens"] = min(max(retry_payload["max_tokens"], requested_max_tokens), self.max_tokens)
+            retry_payload["max_tokens"] = min(
+                max(retry_payload["max_tokens"], requested_max_tokens),
+                self.max_tokens or retry_payload["max_tokens"],
+            )
             if retry_payload["max_tokens"] > int(payload.get("max_tokens") or 0):
                 retry_response = self._post_chat_completion(retry_payload)
                 self._write_request_log(payload=retry_payload, response=retry_response)
@@ -535,18 +558,20 @@ class ResponsesAPIRunner(OpenAICompatibleAPIRunner):
             for message in messages
         ]
         wants_json = prompt_wants_json(prompt)
-        requested_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
-        if wants_json:
-            requested_max_tokens = max(requested_max_tokens, self.max_tokens, 4096)
-        else:
-            requested_max_tokens = max(requested_max_tokens, min(self.max_tokens, 1536))
+        requested_max_tokens = None if self.max_tokens is None else (max_tokens if max_tokens is not None else self.max_tokens)
+        if requested_max_tokens is not None:
+            if wants_json:
+                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0, 4096)
+            else:
+                requested_max_tokens = max(requested_max_tokens, min(self.max_tokens or 1536, 1536))
         payload: dict[str, Any] = {
             "model": self.model,
             "input": response_input,
             "temperature": temperature if temperature is not None else self.temperature,
             "top_p": top_p if top_p is not None else self.top_p,
-            "max_output_tokens": requested_max_tokens,
         }
+        if requested_max_tokens is not None:
+            payload["max_output_tokens"] = requested_max_tokens
         payload.update(self.extra_body)
         try:
             response = self._post_chat_completion(payload)
@@ -620,7 +645,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-key", type=str, default=None)
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--timeout", type=float, default=None)
-    parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--max-tokens", type=str, default=None)
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--no-json-response-format", action="store_true")
@@ -774,8 +799,14 @@ def main() -> None:
     )
     pipeline_mode = str(resolve_config_value(args.pipeline_mode, inference_cfg, "pipeline_mode", "standard"))
     initial_prompt_hint = str(inference_cfg.get("initial_prompt_hint", "") or "")
-    initial_answer_max_tokens = int(inference_cfg.get("initial_answer_max_tokens", 1024))
-    refine_answer_max_tokens = int(inference_cfg.get("refine_answer_max_tokens", 1536))
+    initial_answer_max_tokens = parse_optional_max_tokens(
+        inference_cfg.get("initial_answer_max_tokens"),
+        default=None,
+    )
+    refine_answer_max_tokens = parse_optional_max_tokens(
+        inference_cfg.get("refine_answer_max_tokens"),
+        default=None,
+    )
 
     enable_reranker = bool(retrieval_cfg.get("enable_reranker", True))
     if args.no_reranker:
@@ -819,7 +850,10 @@ def main() -> None:
         api_key_env=api_key_env,
         model=str(resolve_config_value(args.model, generator_cfg, "model", "gpt-4.1")),
         timeout=float(resolve_config_value(args.timeout, generator_cfg, "timeout", 120)),
-        max_tokens=int(resolve_config_value(args.max_tokens, generator_cfg, "max_tokens", 768)),
+        max_tokens=parse_optional_max_tokens(
+            resolve_config_value(args.max_tokens, generator_cfg, "max_tokens", None),
+            default=None,
+        ),
         temperature=float(resolve_config_value(args.temperature, generator_cfg, "temperature", 0.1)),
         top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
         response_format_json=bool(generator_cfg.get("response_format_json", True)) and not args.no_json_response_format,

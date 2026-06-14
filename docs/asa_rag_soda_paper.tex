@@ -4,6 +4,8 @@
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{enumitem}
@@ -21,29 +23,44 @@
 \newcommand{\code}[1]{\texttt{#1}}
 
 \title{面向长剧情问答的证据约束 RAG Agent 与 verifier-aware SODA 蒸馏}
-\author{ASA-ArknightStoryAgent}
+\author{250851 张涵宾}
 \date{2026 年 6 月}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-长篇游戏剧情问答要求系统在大量叙事文本、角色档案和事件线索中定位证据，并在证据不足时避免将模型先验写成确定事实。本文以《明日方舟》剧情问答为场景，构建了一个本地/API 混合的证据约束 RAG Agent。系统使用 dense 检索、BM25、MiniRAG 图扩展、故事线 scope、邻居扩展与证据链 reranker 组成混合检索栈，并通过两轮结构化推理决定 \code{answer\_directly}、\code{retrieve\_more}、\code{clarify\_user} 或 \code{abstain}。为缓解小模型在 RAG 中的过早回答、过度检索和无证据幻觉，本文进一步提出 verifier-aware SODA 数据构造流程：先让 4B student 按真实 runtime 生成完整轨迹，再让 API teacher replay 相同 prompt，最后由 evidence-only verifier 根据当前证据重标正确动作，而不是直接模仿 teacher 原始输出。最新全量消融显示，v6 证据链 reranker 是最稳定的检索收益来源；在 50 条静态召回评测上，相比跳过 rerank，MRR 从 0.4006 提升到 0.5822，R@1 从 0.28 提升到 0.48，R@32 从 0.70 提升到 0.86。最新 50 问 verifier-aware SODA 数据集生成 208 条 KTO 记录，其中 verifier 识别出 18 条 student unsupported answer、7 条 over-retrieve、2 条 premature answer，以及 9 次 teacher prior knowledge 风险。消融结果表明，MiniRAG 与邻居扩展的收益依赖样本分布：MiniRAG 在 hard split 上提升首命中排序，但在 release 与 failure hard pool 上可能引入排序噪声；邻居扩展可提高 R@32 覆盖，但会改变 top-rank 排序。
+针对长篇游戏剧情问答存在的长叙事文本线索分散、传统 RAG 难以召回多跳复杂问题的证据、小模型易过早回答与过度检索等问题，本文设计一种面向证据约束的本地部署 RAG 智能体。该智能体构建融合稠密检索、BM25 检索、MiniRAG 图扩展、剧情范围约束与邻居扩展的混合检索架构，并引入证据链重排器优化检索结果；同时基于本地微调模型实现多轮检索调度与结论生成。为进一步抑制小模型幻觉，本文提出验证器感知半在线黑盒蒸馏方法（verifier-aware SODA）：利用师生模型生成推理轨迹，结合验证器过滤低质样本、修正幻觉错误，再以师生样本分别作为负、正样本开展 KTO 训练。实验结果表明：证据链重排器是检索性能提升的核心模块，在 50 条测试样本的静态召回实验中，引入 v6 重排器后 MRR 由跳过重排的 0.4262 提升至 0.6046，R@1、R@32 分别从 0.32、0.70 提升至 0.54、0.78。本文分别在 50 条基础样本与扩充后的 500 条混合样本上开展数据质量消融，结果显示所提验证器可完全消除 verifier-defined 标签中的不安全正样本、先验知识污染与动作不匹配问题。严格同运行时模型消融进一步显示，verifier-aware SODA 在 60 条输出上将 evidence-only scorer 的证据支撑均分从 2.417 提升到 3.017，support score 成对符号检验达到 $p=0.0201$；同时无依据回答由 13 例降至 11 例，过早回答由 8 例降至 5 例。消融实验显示：MiniRAG 图扩展在部分 hard split 上有正收益，但在 release 集与 failure hard pool 中可能引入排序噪声；邻居扩展在当前静态召回集上没有可测增益。本文方法可有效实现长文本场景下的证据约束检索与幻觉抑制，可为剧情类、长叙事类问答任务提供参考。
 \end{abstract}
 
 \section{引言}
 
-面向剧情问答的 RAG 系统不同于开放域事实问答。用户常询问角色关系、事件动机、伏笔揭示、阴谋真相和跨章节时间线，这些问题通常需要多个证据片段共同支撑。若系统只依赖模型内部知识，会出现三类问题：把百科或二创误读写成官方剧情、在证据不足时过早回答、在证据足够时又过度拒答或反复检索。
+长篇游戏剧情问答属于典型的长叙事多跳推理问答任务，与常规开放域事实问答存在显著差异。该任务的用户查询多聚焦于角色关联逻辑、事件因果动机、剧情伏笔解读等深度推理需求，对应的支撑证据往往分散在跨章节、跨时间线的海量叙事文本中，需串联多段碎片化证据片段方可完成作答，对系统的多跳证据召回、线索关联与证据约束生成能力提出了更高要求。
 
-本文项目的目标是在本地 4B 模型规模下实现可运行的剧情 Agent。核心原则是：答案优先基于检索证据；证据支持部分回答时输出可确认部分；证据不足时明确说明缺口；训练数据必须保留 runtime 状态，而不是只蒸馏最终答案。
+传统检索增强生成（RAG）方法难以适配剧情问答的复杂场景，存在明显的技术短板。一方面，传统RAG的单一检索机制缺乏针对性的线索关联与范围约束，面对分散、交织的长剧情文本，易出现核心证据漏召、排序靠后、无关片段冗余召回等问题，无法支撑多跳复杂问题的推理作答。另一方面，传统监督微调（SFT）训练范式仅基于静态最终答案拟合模型，未保留模型实时检索、推理决策的完整运行链路，存在训练与推理分布漂移、模型探索能力缺失的问题，导致小模型落地RAG任务时极易产生各类缺陷：证据尚未充足时过早输出答案、证据完备时过度审慎反复检索或拒答，同时极易依赖模型先验知识生成无依据内容，引发严重的幻觉问题。此外，常规师生蒸馏方案会直接将教师模型输出作为正样本，易继承教师模型自身的先验幻觉与检索惰性，进一步放大模型缺陷。
 
-本文贡献如下：
-\begin{itemize}
-  \item 构建了一个面向长剧情文本的多源混合检索和两轮推理 Agent，统一本地 4B 与 API teacher 的 runtime 链路。
-  \item 实现了 verifier-aware SODA 数据生成流程，用 evidence-only verifier 重标 student/teacher 候选输出，降低 teacher 先验知识污染。
-  \item 在 release 召回集、easy/hard 切分和 failure-driven hard pool 上完成检索消融，定位 reranker、MiniRAG、邻居扩展的真实贡献。
-  \item 生成并审计了最新 50 问 verifier-aware SODA 数据集，为后续 KTO 训练提供可复现数据基础。
-\end{itemize}
+针对上述传统RAG检索能力不足、小模型问答行为失准、常规蒸馏引入标签噪声与幻觉传递的核心痛点，本文面向长篇游戏剧情问答场景，设计了一种可本地部署的证据约束型RAG智能体，兼顾轻量化落地能力与复杂剧情推理能力。具体创新点如下：
+
+1. 为解决长叙事多跳证据召回难题，该智能体搭建了多模块融合的混合检索栈，整合稠密检索、BM25检索、MiniRAG图扩展、剧情范围约束与邻居扩展多重检索能力，并增设证据链重排器对检索结果进行精细化排序优化，精准解决线索分散、多跳证据漏召、排序错乱等问题，同时依托本地微调模型完成多轮检索调度与合规结论生成。
+
+2. 为进一步根治小模型过早回答、过度检索与教师模型先验幻觉问题，本文创新性提出验证器感知的半在线黑盒蒸馏方法（verifier-aware SODA），通过师生双模型生成完整推理轨迹，搭配证据专属验证器过滤低质样本、修正幻觉错误，分别以学生模型样本、验证器筛选后的优质教师样本作为负、正样本开展KTO训练，精准约束模型检索与作答行为，阻断教师侧幻觉向下传递。
+
+与现有方法相比，本文工作的定位更偏向长文本 RAG 的工程闭环。LangChain 等默认 RAG 框架通常以单轮向量召回和 prompt 拼接为核心，适合短事实问答，但缺少剧情章节 scope、多轮缺口追问与证据链排序；HyDE 等 query expansion 方法能缓解查询表述不足，但会引入由生成查询带来的先验偏移，不能直接解决证据充分性判断；常规 SFT、DPO 或 KTO 蒸馏通常把 teacher 输出作为偏好标准，若 teacher 在证据不足时使用自身剧情记忆，则会把幻觉写入小模型。因此本文的差异化贡献在于：将长剧情证据召回、运行时动作决策、teacher 输出验证和偏好数据重标注统一到同一条可审计链路中。
+
+系列消融实验充分验证了本文方法的有效性与各模块的差异化作用：证据链重排器是提升检索性能的核心模块，可显著优化检索精度与覆盖率；MiniRAG图扩展在部分 hard split 上能够提升首命中排序，但在常规集与 failure hard pool 上存在引入排序噪声的风险；邻居扩展在当前静态召回评测中未形成可测增益，应作为候选覆盖补偿而非强排序信号。数据消融与模型在线评测共同证明，verifier-aware SODA可清除 verifier-defined 标签中的不安全样本、先验知识污染与动作偏差，并显著改善输出的证据支撑度。整体实验证明，本文所提架构与训练方法可高效实现长叙事场景下的证据约束检索与强幻觉抑制，能够为游戏剧情问答、长文本叙事问答等同类多跳推理任务提供有效的技术参考与落地范式。
+
+\section{学习任务}
+
+本次课程学习任务不是单纯复现某一个 RAG 模型，而是围绕“长文本 RAG + 小模型蒸馏 + 证据约束评测”的完整工程链路开展系统性学习与验证。核心学习目标包括：掌握长文本剧情知识库的构建、混合检索与重排、多轮 RAG Agent 调度、半在线黑盒蒸馏、验证器重标注和消融实验设计；并在此基础上验证证据约束能否降低本地 4B 小模型在剧情问答中的无依据回答、过早回答和教师先验污染。
+
+围绕该目标，本文需要解决三个关键学习问题：
+\begin{enumerate}
+  \item 如何设计多模块融合的检索栈，解决剧情问答中的跨章节、多跳证据召回与同角色错章问题？
+  \item 如何通过 verifier-aware SODA 蒸馏，降低小模型的过早回答、过度检索、过度拒答以及 teacher prior contamination？
+  \item 如何通过可复现实验和多维度消融，区分 dense/BM25、MiniRAG、邻居扩展、reranker、SODA 重标注等模块的真实收益、边界与失败模式？
+\end{enumerate}
+
+本次学习的预期产出包括四类：第一，一个可在本地运行的 4B RAG Agent，支持两轮检索、证据链重排与 evidence-only 回答约束；第二，面向 KTO 的高质量 verifier-aware SODA 训练数据；第三，覆盖检索、数据质量、模型行为和评分器质量的完整消融报告；第四，可复现的部署、评测、训练与审计脚本，为后续 release 和论文复核提供工程证据。
 
 \section{系统架构}
 
@@ -56,21 +73,15 @@
   \item Action correctness：若 $E$ 不足，应生成具体 \code{retrieve\_more} 缺口，而不是凭模型先验补全。
 \end{itemize}
 
-\subsection{Runtime 链路}
+\subsection{完整链路}
 
-当前标准链路如下：
-\begin{verbatim}
-question
--> user_question_hypothesis_generation
--> dense + BM25 + MiniRAG retrieval
--> MiniRAG chapter isolation / graph expansion / scoped second retrieval
--> storyline sparse scope / neighbor expansion / same-story sweep
--> fusion + reranker
--> prompt evidence selection
--> conclusion_generation
--> answer_directly | retrieve_more | clarify_user | abstain
--> follow_up_hypothesis_generation if needed
-\end{verbatim}
+当前标准链路可分为四个阶段：
+\begin{enumerate}
+  \item \textbf{问题理解与检索规划}：输入用户问题，生成结构化检索假设，抽取意图、问题类型、关键实体、关键词与预期回答类型。
+  \item \textbf{多路证据召回与范围约束}：并行执行稠密检索、BM25 检索与 MiniRAG 图检索；随后进行章节隔离、图关系扩展、章节范围二次检索、故事线稀疏范围约束、邻近片段扩展与同故事补充扫描。
+  \item \textbf{候选融合与证据压缩}：将多路候选统一融合，使用证据链重排器重新排序，再筛选并压缩进入 prompt 的关键证据。
+  \item \textbf{结论生成与动作决策}：基于当前证据生成结论，并在“直接回答、继续检索、请求澄清、证据不足拒答”四类动作中选择其一；若选择继续检索，则生成下一轮检索假设。
+\end{enumerate}
 
 当前核心链路将最大检索轮次限制为 2。达到轮次上限后，系统基于已有证据输出可确认部分或证据不足说明，避免机械返回“轮次耗尽”。
 
@@ -114,13 +125,13 @@ Neighbor/same-story sweep & 补齐相邻 chunk 和同 story 证据链 & 对静�
 
 Scope 只约束候选生成，不直接写入答案逻辑。这样可以降低错章风险，同时保留 reranker 对跨章节补充证据的最终裁决权。
 
-\subsubsection{Fusion 与 Reranking}
+\subsubsection{候选融合与重排}
 
-不同召回通道的候选先通过加权融合聚合。默认 dense 权重为 1.0，sparse 权重为 0.8，MiniRAG 权重为 0.35。融合不是简单拼接 top-k，而是保留每个候选的来源、rank、score 和 supplemental metadata，方便后续审计。
+不同召回通道的候选先通过加权融合聚合。dense 权重为 1.0，sparse 权重为 0.8，MiniRAG 权重为 0.35。
 
-融合后进入 evidence-chain reranker。当前 release 使用 v6 reranker，训练目标更接近“证据是否足以回答问题”，而不是普通 query-document 相关性。reranker 之后还会应用少量结构化分数修正，例如剧情原文优先、过泛网页或百科降权、证据链 bridge term 加权等。最终排序结果保留完整 trace，包括 doc id、chunk id、来源通道和 rerank score。
+融合后进入证据链重排器。证据链重排器经过 pairwise/listwise SFT 微调，训练数据并非普通的 query-document 相关性样本，而是围绕“证据链是否足以回答问题”构造的排序样本。当前 v6 small patch 数据包含 3841 条 pairwise 样本与 753 条 listwise 样本；每条样本保留问题、问题类型、标准答案、answer evidence、answer focus、正负证据链及负例类型。正例通常为完整 gold evidence chain，负例包括 shuffled order、partial answer、answer adjacent、same entity distractor、background only、online top distractor 与 misleading chain 等。训练时以正负证据链的分数差作为优化目标，并对 hard negative 与因果、推理、揭示类问题加权，使模型优先学习区分“文本相关但不足以回答”和“能够完整支撑答案”的证据。
 
-消融实验显示 reranker 是当前最稳定的收益来源。在最新 release 50 问上，跳过 rerank 时 MRR 为 0.4006，使用 v6 reranker 后提升到 0.5822；R@1 从 0.28 提升到 0.48，R@32 从 0.70 提升到 0.86。这说明剧情问答的关键瓶颈不只是“召回到候选池”，而是“把可回答证据排到 prompt 前部”。
+消融实验显示证据链重排器能大幅提升召回排名效果。在最新 release 50 问上，跳过证据链重排器时 MRR 为 0.4262，使用证据链重排器后提升到 0.6046；R@1 从 0.32 提升到 0.54，R@32 从 0.70 提升到 0.78。
 
 \subsubsection{Prompt Evidence Selection}
 
@@ -154,36 +165,166 @@ Agent 最多执行两轮检索。第一轮根据 user hypothesis 检索；若 co
 
 后续优化方向对应这些失败模式：一方面用 failure hard pool 补 reranker hard negatives，另一方面用 verifier-aware SODA 训练 action boundary，让模型在证据不足时更愿意 requery，在证据足够时不拖延。
 
-\subsection{Prompt 与动作空间}
+\subsection{结论生成模块}
 
-本地 4B 负责三个结构化任务：
-\begin{itemize}
-  \item \code{user\_question\_hypothesis\_generation}：抽取 intent、query type、entities、keywords 和 expected answer type。
-  \item \code{follow\_up\_hypothesis\_generation}：在证据不足时生成下一轮检索假设。
-  \item \code{conclusion\_generation}：根据当前 evidence 选择 \code{answer\_directly}、\code{retrieve\_more}、\code{clarify\_user} 或 \code{abstain}。
-\end{itemize}
+结论生成模块位于每轮检索之后，输入包括用户原始问题、当前轮检索假设、已选证据片段、历史检索轨迹以及上一轮未解决的证据缺口。该模块不直接访问完整知识库，也不允许调用模型先验补全剧情细节；它只能依据当前 prompt 中的证据判断“是否已经足以回答问题”。
 
-关键设计是不要求模型输出 chain-of-thought，只输出可解析 JSON。\code{retrieve\_more} 必须包含可检索的 missing slots 和 follow-up hypothesis。
+模块首先对证据充分性进行判定：若证据能够直接支撑问题中的关键实体、事件、动机、因果和结果，则生成可确认答案；若证据只覆盖部分问点，则输出可确认部分并标记缺失槽位；若证据明显不足，则不生成确定性结论，而是转入继续检索或证据不足拒答。该设计将“回答生成”和“动作选择”绑定在同一个证据约束框架内，避免模型在证据不足时为了完成回答而编造剧情。
+
+输出采用可解析 JSON，而不是自由文本推理过程。核心字段包括下一步动作、最终回答、缺失证据槽位、后续检索假设、已支撑事实和 grounding warnings。其中下一步动作限定为四类：直接回答、继续检索、请求用户澄清、证据不足拒答。若动作是继续检索，模型必须给出可检索的缺失槽位和下一轮检索假设；若动作是直接回答，答案中的关键断言必须能够回溯到当前证据片段。
+
+因此，结论生成模块实际承担的是 evidence gate 的作用：它不是单纯的答案生成器，而是决定当前证据是否允许作答、是否需要补证据、以及哪些内容可以被安全写入最终回答的控制器。
+
+\section{学习算法}
+
+\subsection{核心算法一：多模块混合检索算法}
+
+混合检索算法的输入为用户问题 $q$、历史对话 $h$ 与索引库 $\mathcal{D}$，输出为排序后的证据集合 $E_{1:k}$。算法首先由本地模型生成结构化假设：
+\[
+z = f_{\theta}^{plan}(q,h) = (intent, type, entities, keywords, expected\_answer).
+\]
+随后根据 $q$ 与 $z$ 构造多组查询 $Q=\{q_0,q_1,\ldots,q_m\}$，分别送入 dense、BM25、MiniRAG 图扩展和 scoped chapter search。对候选文档 $d$，融合分数采用归一化加权形式：
+\[
+s_{fusion}(d,q)=w_d\hat{s}_{dense}(d,q)+w_b\hat{s}_{bm25}(d,q)+w_g\hat{s}_{graph}(d,q)+w_n\hat{s}_{neighbor}(d,q)+b(d),
+\]
+其中 $w_d=1.0$、$w_b=0.8$、$w_g=0.35$ 为默认权重，$b(d)$ 表示剧情原文优先、网页资料降权、章节 scope 保留等结构化修正。候选池进入 evidence-chain reranker 后得到最终排序：
+\[
+s_{final}(d,q)=\lambda s_{rerank}(d,q)+(1-\lambda)s_{fusion}(d,q)+\Delta_{scope}(d)+\Delta_{chain}(d).
+\]
+工程实现中 $\lambda$ 由 reranker 是否启用决定；若跳过 rerank，则退化为融合排序基线。
+
+证据链 reranker 的训练目标不是生成答案，而是判断候选证据是否足以回答问题。工程上采用 pairwise/listwise 混合样本构造，将 gold evidence、partial evidence、same-entity distractor 和 background-only 文档放入同一问题上下文中。可将其简化表示为二分类排序目标：
+\[
+\mathcal{L}_{rank}=-\sum_{(q,d_i,y_i)}y_i\log \sigma(g_{\phi}(q,d_i))+(1-y_i)\log(1-\sigma(g_{\phi}(q,d_i))),
+\]
+其中 $g_{\phi}$ 为 reranker 输出的相关性/可回答性分数，$y_i=1$ 表示候选能够支撑答案，$y_i=0$ 表示同实体干扰、背景相关但不可回答或负样本。最终在线排序并不直接使用训练 loss，而是使用 reranker 分数叠加 fusion、scope 与 evidence-chain 修正项。
+
+\begin{verbatim}
+Algorithm 1 Hybrid Retrieval
+Input: question q, history h, index D, max_rounds R=2
+Output: evidence list E
+z <- LLM.plan(q, h)
+trace <- []
+for r in 1..R:
+    Q <- render_queries(q, z, trace)
+    C_dense <- dense_search(Q, D)
+    C_bm25 <- sparse_search(Q, D)
+    C_graph <- minirag_expand(Q, C_dense, C_bm25)
+    scope <- infer_chapter_scope(C_dense, C_bm25, C_graph)
+    C_scope <- scoped_chapter_search(Q, scope)
+    C_neighbor <- neighbor_and_same_story_expand(C_dense, C_bm25)
+    C <- fuse(C_dense, C_bm25, C_graph, C_scope, C_neighbor)
+    E <- rerank_and_select(C, q, z)
+    y <- LLM.conclude(q, E, trace)
+    trace.append(y)
+    if y.next_action != retrieve_more:
+        return E, y
+    z <- LLM.follow_up(q, E, y.missing_slots)
+return E, abstain_or_partial_answer(E)
+\end{verbatim}
+
+该算法的学习重点是：不同检索通道不应简单堆叠，而应通过 query type、章节 scope 与 reranker 决定何时增强、何时降权。实验结果也证明，MiniRAG 在 hard split 上有正收益，但在 failure hard pool 上会带入排序噪声，因此条件启用比全局启用更合理。
+
+\subsection{Verifier-aware SODA 蒸馏算法}
+
+传统师生蒸馏范式通常将教师模型输出视为标准真值，并强制学生模型拟合该输出。该方式在长剧情 RAG 场景下存在明显缺陷：教师模型可能产生幻觉生成、过早回答或引入外部先验知识；若直接采用 teacher-as-chosen 策略，上述问题会被迁移到轻量化学生模型中。针对该问题，本文提出 \textbf{Verifier-aware SODA} 蒸馏算法，采用半在线黑盒蒸馏方法开展模型对齐。
+
+本算法具备两项核心特征：
+\begin{enumerate}
+  \item \textbf{黑盒蒸馏}：训练过程仅调用师生模型的推理输出，不获取教师模型参数与梯度，也不要求对教师模型进行微调，契合实际部署中只能访问 API 输出的黑盒使用场景。
+  \item \textbf{半在线执行}：学生模型轨迹来自当前 runtime 的真实在线推理，教师模型输出来自相同 prompt state 下的离线回放。二者共同构成候选输出集合，既保留学生模型当前错误分布，又避免训练标签完全依赖单次在线 teacher 调用。
+\end{enumerate}
+
+给定学生在线推理结果 $x_s$、教师离线回放输出 $x_t$、当前 prompt evidence $E$ 与验证器 $V$，训练标签不再由教师输出直接决定，而是由 evidence-only verifier 对当前证据状态进行判定：
+\[
+v=V(E,x_s,x_t)=(correct\_action,\ evidence\_sufficient,\ error_s,\ error_t,\ teacher\_prior\_risk).
+\]
+其中 \code{correct\_action} 表示当前证据状态下应执行的动作，取值为 \code{answer\_directly}、\code{retrieve\_more}、\code{clarify\_user} 或 \code{abstain}；\code{evidence\_sufficient} 表示当前 evidence 是否足以支撑核心回答；$error_s$ 与 $error_t$ 分别描述学生和教师输出的动作错误或证据错误；\code{teacher\_prior\_risk} 用于标记教师回答是否依赖 evidence 之外的剧情先验。
+
+重标注阶段的核心不是从师生输出中简单筛选“看起来安全”的文本，而是依据 verifier 给出的 \code{correct\_action} 重建规范化正样本。其形式可表示为：
+\[
+y^+ =
+\begin{cases}
+\operatorname{grounded\_answer}(x_s,x_t,E), & correct\_action=\texttt{answer\_directly},\\
+\operatorname{retrieve\_more}(missing\_slots,follow\_up), & correct\_action=\texttt{retrieve\_more},\\
+\operatorname{clarify\_user}(\cdot), & correct\_action=\texttt{clarify\_user},\\
+\operatorname{abstain}(\cdot), & correct\_action=\texttt{abstain},\\
+\varnothing, & \text{no safe positive candidate}.
+\end{cases}
+\]
+当 \code{correct\_action=answer\_directly} 时，正样本只能来自证据可支撑的师生回答，且会被规范化为包含证据引用的回答；当 \code{correct\_action=retrieve\_more} 时，若师生都没有给出合格检索动作，系统会基于 verifier 的 \code{missing\_slots} 构造标准 \code{retrieve\_more} 输出；当正确动作是拒答或澄清时，系统生成规范化 \code{abstain} 或 \code{clarify\_user} 动作，而不是复用任意自由文本。
+
+负样本 $y^-$ 由不符合 verifier 判定的原始师生输出构成。若候选输出的动作与 \code{correct\_action} 不一致，或被标记为 \code{unsupported\_answer}、\code{premature\_answer}、\code{over\_retrieve}、\code{over\_abstain}、\code{invalid\_output}，则写入 rejected 样本；若教师回答存在 \code{teacher\_prior\_knowledge} 或 \code{teacher\_prior\_risk}，即便文本表面合理，也不能作为正样本。形式化地，对候选集合 $\mathcal{C}=\{x_s,x_t\}$：
+\[
+y^-=\{x\in\mathcal{C}\mid action(x)\neq correct\_action \lor error(x)\neq\varnothing \lor prior(x)=1\}.
+\]
+
+基于重标注结果构建 KTO 偏好数据集：
+\[
+\mathcal{D}_{kto}=\{(p,y^+,\texttt{desirable}), (p,y^-,\texttt{undesirable})\}.
+\]
+区别于常规 KTO，本文的核心改进是借助验证器重新定义 desirable 与 undesirable，而非固定将教师输出视为优选内容。实验基于 LLaMA Factory 框架实现 KTO 训练，设置偏好强度 $\beta=0.01$，正负样本权重分别为 $1.2$ 与 $1.0$。因此，学习信号的关键不在于更大的偏好强度，而在于 verifier 是否正确重建了当前 evidence state 下的动作边界。
+
+\begin{verbatim}
+Algorithm 2 Verifier-aware SODA Relabeling
+Input: student rollout S, teacher replay T, evidence prompt E
+Output: KTO records K
+for each matched prompt p:
+    s <- student_output(p)
+    t <- teacher_output(p)
+    v <- evidence_only_verifier(p, E, s, t)
+    chosen <- build_chosen_from_correct_action(v, s, t, E)
+    if chosen is not empty:
+        K.add((p, chosen, desirable))
+    for c in [s, t]:
+        if action(c) != v.correct_action
+           or error(c) != none
+           or has_teacher_prior(c, v):
+            rejected <- normalize_rejected(c, v.missing_slots)
+            K.add((p, rejected, undesirable))
+return K
+\end{verbatim}
+
+整套校验规则严格遵循证据约束原则：模型输出的实体、身份、动机、因果与结果必须能够被当前 evidence 明确支撑；证据不足但存在明确检索方向时，正确动作应为 \code{retrieve\_more}，直接回答记为 \code{premature\_answer}；使用 evidence 之外的剧情知识记为 \code{unsupported\_answer} 或 \code{teacher\_prior\_knowledge}；证据足够回答核心问题却继续检索或拒答，分别记为 \code{over\_retrieve} 或 \code{over\_abstain}。只有在证据不足且无法形成有效检索方向，或问题本身需要用户补充条件时，\code{abstain} 或 \code{clarify\_user} 才作为合规动作。
+
+\subsection{证据链重排器的 Pairwise SFT 训练}
+
+证据链重排器的 pairwise SFT 与 verifier-aware SODA 的 KTO 训练承担不同功能：前者优化检索候选的排序质量，后者优化结论生成阶段的动作边界。Pairwise SFT 的训练样本形式为 $(q,e^+,e^-,s^+,s^-,\tau)$，其中 $q$ 为问题，$e^+$ 为可完整支撑答案的正证据链，$e^-$ 为负证据链，$s^+$ 与 $s^-$ 为构造样本时给出的证据质量分数，$\tau$ 为负例类型。模型采用 cross-encoder reranker，对 $(q,e)$ 输出标量分数：
+\[
+r_\phi(q,e)\in\mathbb{R}.
+\]
+训练目标不是让模型生成答案，而是使正证据链分数高于负证据链分数：
+\[
+\mathcal{L}_{pair}
+=w\cdot \operatorname{softplus}\left(-\left[r_\phi(q,e^+)-r_\phi(q,e^-)\right]\right).
+\]
+其中样本权重 $w$ 由正负分数差、负例难度和问题类型共同决定：
+\[
+w=\min\left(3.0,\ \max(s^+-s^-,0.05)\cdot \alpha_\tau \cdot \alpha_q \cdot \alpha_b\right).
+\]
+对于 \code{background\_only}、\code{answer\_adjacent}、\code{same\_entity\_distractor}、\code{partial\_answer}、\code{misleading\_chain} 等 hard negative，$\alpha_\tau$ 会被放大；对于因果、推理、揭示、谜题和 answerability 类问题，$\alpha_q$ 会被放大；背景类负例还会额外施加 $\alpha_b$。该加权方式使训练重点集中在“看起来相关但不能完整回答”的困难负例上，而不是简单地区分无关文本。
+
+工程实现中，正负证据链分别与同一问题拼接后输入序列分类模型，模型只输出排序分数。若证据链带有结构信息，还会在文本前追加链长、因果顺序、证据类型等 metadata，使 reranker 能感知证据链是否完整、是否按因果顺序组织。训练后的重排器在推理阶段接收融合候选池，对每个候选证据链重新打分，从而把真正能够支撑答案的剧情原文证据排到 prompt evidence selection 之前。
 
 \section{Verifier-Aware SODA 数据构造}
 
 \subsection{动机}
 
-普通 teacher-student 蒸馏容易把 teacher 的内部知识和少检索习惯传给 student。对于剧情 RAG，这会造成 retrieval laziness：student 在首轮证据不足时仍然直接回答，导致幻觉和错章证据。本文采用 verifier-aware SODA：teacher 原始输出只是候选，最终训练标签由 evidence-only verifier 决定。
+普通 teacher-student 蒸馏容易把 teacher 的内部知识和少检索习惯传给 student。对于剧情 RAG，这会造成 retrieval laziness：student 在首轮证据不足时仍然直接回答，导致幻觉和错章证据。本文采用 verifier-aware SODA：teacher 原始输出仅作为候选，最终训练标签由纯证据驱动的 verifier 判定，彻底隔离模型先验知识干扰。
 
 \subsection{五步流程}
 
 \begin{enumerate}
   \item Student 真实 rollout。当前 4B LoRA 按 runtime 运行，记录每次模型调用的 exact prompt、retrieval trace、evidence brief、student output 和 action。
   \item Teacher replay。API teacher 接收与 student 完全相同的 prompt，输出候选动作或答案。该步骤不直接生成训练标签。
-  \item Evidence-only verifier。再次调用 teacher，但 prompt 改为裁判任务：只能根据当前 evidence 判断 student 和 teacher 哪个动作正确，并标记 unsupported answer、premature answer、over-retrieve、over-abstain 或 teacher prior knowledge。
-  \item 重标训练对。若 verifier 判断证据不足，则 chosen 为 \code{retrieve\_more}，即使 teacher 原始输出选择回答；若证据足够且 student 仍检索，则 chosen 为 \code{answer\_directly}；若 teacher answer 含隐藏知识，则不把 teacher answer 当正样本。
-  \item Teacher full-chain 只作 oracle 分析。teacher 自己跑完整链路用于定位 student 没召回到的证据和生成 hard case，不直接作为正样本，除非这些证据也进入 student prompt。
+  \item Evidence-only verifier。裁判模型仅依据当前检索证据，判定师生动作是否合规，标记无依据回答、过早回答、过度检索、过度拒答以及教师先验知识滥用等问题。
+  \item 重标训练对。若 verifier 判断证据不足，则正样本强制为 \code{retrieve\_more}，即便 teacher 选择直接回答；若证据充足但 student 持续检索，则正样本为 \code{answer\_directly}；若 teacher 答案依赖模型先验，则剔除该样本作为正样本的资格。
+  \item Teacher full-chain 只作 oracle 分析。teacher 完整推理链路用于定位 student 未召回证据与构造困难样本，仅审计使用，不直接参与标签生成。
 \end{enumerate}
 
 \subsection{数据产物}
 
-最新数据构建以 50 问为输入，三张 GPU 分片运行后合并得到 rollout 数据、verifier 数据、审计报告和 gold evidence 覆盖报告。本文在正文中只报告聚合统计。
+首先基于 50 条基础测试问题构建数据集，多 GPU 分片运行并合并后得到完整轨迹、验证结果与审计数据；后续进一步扩充至 500 条混合样本开展大规模验证。基础 50 问数据统计如下表所示。
 
 \begin{table}[htbp]
 \centering
@@ -203,7 +344,7 @@ User question hypothesis records & 100 \\
 Conclusion generation records & 108 \\
 \bottomrule
 \end{tabular}
-\caption{Verifier-aware SODA 数据统计}
+\caption{Verifier-aware SODA 基础数据集（50 问）统计}
 \end{table}
 
 \begin{table}[htbp]
@@ -227,16 +368,144 @@ teacher premature answer & 1 \\
 teacher over-abstain & 1 \\
 \bottomrule
 \end{tabular}
-\caption{Evidence-only verifier 判定统计}
+\caption{Evidence-only verifier 判定结果（50 问）}
 \end{table}
 
-该分布说明 student 的主要错误不是不会检索，而是在证据不足或证据局部相关时生成 unsupported details；同时 teacher 也存在先验知识污染，因此必须以 verifier 为准。
+该分布说明学生模型的主要缺陷集中在证据不足时生成无依据内容、过度检索与过早作答；同时教师模型也存在依赖自身先验知识作答的问题，直接将教师输出作为正样本会持续传递噪声，因此引入独立证据验证器进行重标注具备必要性。
+
+\section{数据集}
+
+\subsection{检索知识库}
+
+检索知识库由《明日方舟》中文游戏数据中的剧情原文、关卡剧情、角色档案、语音文本、故事元数据以及少量外部设定资料构成。索引文件为 \code{indexes/arknights\_story/documents.jsonl}，共 54,252 个 chunks，FAISS 向量维度为 512，chunk 切分上限为 420 字符，并保留 1 个 segment overlap。索引额外记录活动名、story 名、stage code、行动前/行动后/幕间标签、source path、speaker segments 等元数据，用于章节 scope、故事线检索和证据审计。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lr}
+\toprule
+项目 & 数值 \\
+\midrule
+索引 chunks & 54,252 \\
+覆盖活动/章节组 & 486 \\
+覆盖 story 数 & 1,559 \\
+平均 chunk 字符数 & 254.0 \\
+最大 chunk 字符数 & 5,064 \\
+角色别名表 & 216 \\
+额外外部资料 documents & 1,217 \\
+\bottomrule
+\end{tabular}
+\caption{检索知识库统计}
+\end{table}
+
+MiniRAG 图由检索文档中的实体共现、teacher 标注关系与章节元数据构建。v3 图包含 53,035 个文档节点、51,225 个实体、42,057 条 teacher relations、16,185 个实体共现项，并构建 495 个章节 scope。图检索不直接生成答案，而是在候选召回阶段提供关系、因果、揭示类问题的补充证据。
+
+\subsection{静态召回评测集}
+
+静态召回评测使用 listwise gold evidence 样本。每条样本包含 query、query type、标准答案、answer evidence id、answer focus、gold candidate、partial answer、same entity distractor、background only、shuffled order 等候选。gold evidence 由人工或半自动方式从剧情段落中整理，主要用于验证 gold 证据能否进入 top-k 证据池，而非直接评估最终回答质量。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+数据集 & 样本数 & fact & relation & causality & reasoning & reveal/mystery/other \\
+\midrule
+Release eval50 & 50 & 11 & 8 & 15 & 9 & 7 \\
+Reranker all & 788 & 125 & 62 & 228 & 162 & 211 \\
+Failure hard pool & 59 & 14 & 5 & 16 & 11 & 13 \\
+\bottomrule
+\end{tabular}
+\caption{静态召回评测集问题类型分布}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+数据集 & 平均 gold 数 & 1 条 & 2 条 & 3 条 & 4 条 & 5 条及以上 \\
+\midrule
+Release eval50 & 2.26 & 8 & 24 & 15 & 3 & 0 \\
+Reranker all & 2.38 & 152 & 293 & 253 & 74 & 16 \\
+Failure hard pool & 2.51 & 11 & 21 & 18 & 7 & 2 \\
+\bottomrule
+\end{tabular}
+\caption{Gold evidence 数量分布}
+\end{table}
+
+Easy/Hard 切分依据 query type 构造：fact/relation 为 easy，causality/reasoning/reveal/mystery/answerability 为 hard；但实验发现该规则并不完全等价于真实难度。因此本文进一步构造 failure hard pool：先从 788 条 listwise 中随机抽取 200 条，用当前 full v6 检索链路探测，再筛选 first-hit rank 为空或大于 5 的样本，最终得到 59 条真实失败样本。
+
+\subsection{SODA 蒸馏与验证数据集}
+
+SODA 数据集来自真实 runtime，而不是离线改写答案。基础集由 50 个问题生成 student rollout、teacher replay、verifier verdict 与 KTO records；扩展集将基础 50 问与 300 条额外样本混合，构成 500 条 verifier-defined label quality 消融样本。每个 verifier 记录会标注 correct action、evidence sufficiency、student/teacher error、teacher prior risk、relabel reason 等字段。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+数据集 & Prompts & Raw unsafe & Raw unsupported/prior & Verifier unsafe \\
+\midrule
+eval50 clean & 69 & 12 & 10 & 0 \\
+eval50 + extra300 QC v2 & 500 & 108 & 98 & 0 \\
+\bottomrule
+\end{tabular}
+\caption{SODA 数据质量消融数据集规模}
+\end{table}
+
+模型行为评测集固定为 eval50 与 hard10。严格消融中 Raw SODA 与 verifier-aware SODA 使用完全相同的问题、runtime config、检索轮次、GPU 数、web context 设置与 decoding 参数；输出再交给 evidence-only scorer 进行 120 条同题评分。
 
 \section{实验设置}
 
-\subsection{数据}
+\subsection{实验协议}
 
-检索索引包含 54,252 个剧情相关 documents/chunks。主要来源包括游戏剧情原文、角色档案、语音、元数据和 MiniRAG v3 图。静态召回评测使用 listwise gold evidence 样本，指标衡量 gold 证据是否进入 top-k 证据池。
+检索实验统一在同一索引、同一 embedding 模型、同一 MiniRAG 图与同一 top-k 设置下比较模块变体。模型行为实验统一使用 eval50 与 hard10 问题集，固定 runtime config、最大检索轮次、GPU 数、batch token 与 web context 开关，仅切换 Raw SODA LoRA 与 verifier-aware SODA LoRA。数据质量实验固定 student rollout、teacher replay、prompt evidence 与 verifier records，仅改变“如何把候选输出转为训练标签”的策略。
+
+\subsection{关键超参数}
+
+检索和生成超参数来自当前 release GPU runtime。训练超参数来自 Raw SODA 与 verifier-aware SODA 的 LLaMA Factory 配置。为便于复现，本文仅列出影响实验结论的主要参数。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{ll}
+\toprule
+模块 & 关键设置 \\
+\midrule
+Dense/BM25 召回 & dense top-k 120，sparse top-k 120，fusion top-k 80 \\
+MiniRAG & top-k 120，base weight 0.35，fact 权重 0.5，relation/causality/reveal 权重 1.0 \\
+Scope 扩展 & chapter isolation 开启，scope seed top-k 40，scoped dense/sparse top-k 160 \\
+Reranker & v6 evidence-chain reranker，candidate top-k 120，rerank top-k 32，max length 1024 \\
+Prompt evidence & top-k 10--12，单条 1000--1800 字符，总证据 12000--24000 字符 \\
+生成器 & Qwen 3.5 4B，vLLM，max model len 10000，temperature 0.2，top-p 0.9 \\
+Agent 轮次 & 最大检索轮次 2，web context 在严格消融中关闭 \\
+\bottomrule
+\end{tabular}
+\caption{检索与推理主要超参数}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lll}
+\toprule
+参数 & Raw SODA & Verifier-aware SODA \\
+\midrule
+Base model & Qwen 3.5 4B & Qwen 3.5 4B \\
+训练阶段 & KTO & KTO \\
+LoRA rank / alpha / dropout & 16 / 32 / 0.05 & 16 / 32 / 0.05 \\
+cutoff len & 4096 & 5632 \\
+learning rate & $2.0\times10^{-6}$ & $1.0\times10^{-6}$ \\
+epochs & 1.0 & 3.0 \\
+batch / grad accum & 1 / 8 & 1 / 4 \\
+scheduler / warmup & cosine / 0.05 & cosine / 0.05 \\
+KTO beta & 0.01 & 0.01 \\
+chosen/rejected weight & 1.2 / 1.0 & 1.2 / 1.0 \\
+\bottomrule
+\end{tabular}
+\caption{Raw SODA 与 verifier-aware SODA 训练超参数}
+\end{table}
 
 \subsection{指标}
 
@@ -248,15 +517,19 @@ teacher over-abstain & 1 \\
   \item Mean first hit rank：命中样本中首次命中的平均排名。
 \end{itemize}
 
-SODA 数据质量指标包括 verifier correct action 分布、student/teacher error type 分布，以及当前 prompt evidence 中 gold unit 覆盖比例。
+SODA 数据质量指标：不安全正样本占比、先验知识污染样本数、动作不匹配样本数、各类错误样本分布。
+模型行为指标：直接作答数、拒答数、错误数、动作得分、证据支撑得分。
 
 \subsection{消融变体}
 
-消融包含五个检索变体：当前完整链路、关闭邻居扩展、关闭 MiniRAG、替换为旧 reranker、跳过 rerank。
+检索消融包含五个变体：当前完整链路、关闭邻居扩展、关闭 MiniRAG、替换为旧 reranker、跳过 rerank。
+蒸馏方法消融包含三类策略：原始 SODA（教师固定为正样本）、仅格式校验启发式、verifier-aware SODA（验证器重标注）。
 
 \section{结果与分析}
 
-\subsection{Release 50 问静态召回消融}
+\subsection{检索模块静态召回消融}
+
+\subsubsection{Release 50 问静态召回消融}
 
 \begin{table}[htbp]
 \centering
@@ -265,19 +538,42 @@ SODA 数据质量指标包括 verifier correct action 分布、student/teacher e
 \toprule
 变体 & MRR & Missed & Mean rank & R@1 & R@5 & R@10 & R@20 & R@32 \\
 \midrule
-当前完整链路 & 0.5822 & 7/50 & 3.023 & 0.48 & 0.68 & 0.82 & 0.86 & 0.86 \\
-关闭 MiniRAG & 0.6185 & 7/50 & 2.628 & 0.52 & 0.72 & 0.84 & 0.86 & 0.86 \\
-关闭邻居扩展 & 0.6045 & 11/50 & 2.256 & 0.54 & 0.72 & 0.76 & 0.78 & 0.78 \\
-旧 reranker & 0.5137 & 7/50 & 5.302 & 0.40 & 0.64 & 0.68 & 0.80 & 0.86 \\
-跳过 rerank & 0.4006 & 15/50 & 5.000 & 0.28 & 0.60 & 0.60 & 0.64 & 0.70 \\
+当前完整链路 & 0.6046 & 11/50 & 2.231 & 0.54 & 0.72 & 0.76 & 0.78 & 0.78 \\
+关闭邻居扩展 & 0.6046 & 11/50 & 2.231 & 0.54 & 0.72 & 0.76 & 0.78 & 0.78 \\
+关闭 MiniRAG & 0.6180 & 11/50 & 2.179 & 0.56 & 0.72 & 0.76 & 0.78 & 0.78 \\
+旧 reranker & 0.5360 & 11/50 & 3.667 & 0.44 & 0.64 & 0.70 & 0.76 & 0.78 \\
+跳过 rerank & 0.4262 & 15/50 & 4.486 & 0.32 & 0.60 & 0.60 & 0.66 & 0.70 \\
 \bottomrule
 \end{tabular}
 \caption{Release 50 问静态召回消融}
 \end{table}
 
-结论是 v6 reranker 是最确定的收益来源。相对旧 reranker，MRR 提升 0.0685，R@1 提升 0.08；相对跳过 rerank，MRR 提升 0.1816，missed 从 15/50 降到 7/50。邻居扩展将 R@32 从 0.78 提升到 0.86，但会牺牲部分 top-rank 排序。MiniRAG 在该 release 随机集上没有提升 MRR，关闭后 MRR 小幅上升到 0.6185，说明图扩展应作为条件增强而不是无条件强信号。
+结论是 v6 reranker 是最确定的收益来源。相对旧 reranker，MRR 提升 0.0686，R@1 提升 0.10；相对跳过 rerank，MRR 提升 0.1784，missed 从 15/50 降到 11/50。邻居扩展在这批静态样本中没有可测增益，当前完整链路与关闭邻居扩展全指标一致。MiniRAG 在该 release 随机集上没有提升 MRR，关闭后 MRR 小幅上升到 0.6180，说明图扩展应作为条件增强而不是无条件强信号。
 
-\subsection{Easy/Hard 切分消融}
+\subsubsection{RAG-style 基线对比}
+
+为补充与主流默认 RAG 的对比，本文使用同一 eval50、同一索引和同一查询生成结果，统计 pre-rerank source oracle。Dense-only 近似默认向量 RAG，Sparse-only 近似关键词/BM25 RAG，Fusion 表示 dense+BM25+MiniRAG 的候选融合但不使用 evidence-chain reranker。该表不是对 LangChain 或 HyDE 框架的逐项复现；其作用是给出同题同索引下最接近“单轮召回 + prompt 拼接”的可比弱基线。HyDE 需要额外生成 hypothetical answer/query，当前没有同运行时落盘结果，本文不将其编造成实验结论。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+方法 & MRR & Missed & R@1 & R@5 & R@32 & R@120 \\
+\midrule
+Dense-only RAG-style & 0.2304 & 15/50 & 0.12 & 0.28 & 0.62 & 0.70 \\
+BM25-only RAG-style & 0.3877 & 10/50 & 0.28 & 0.50 & 0.68 & 0.80 \\
+Fusion, no reranker & 0.4028 & 7/50 & 0.28 & 0.60 & 0.70 & 0.86 \\
+Source union oracle & 0.4280 & 9/50 & 0.30 & 0.58 & 0.76 & 0.82 \\
+Full + v6 reranker & 0.6046 & 11/50 & 0.54 & 0.72 & 0.78 & - \\
+\bottomrule
+\end{tabular}
+\caption{同题同索引下的 RAG-style 检索基线}
+\end{table}
+
+该结果说明，默认向量 RAG 在剧情问答上明显不足，Dense-only 的 MRR 仅 0.2304。BM25 对角色名、事件短语更敏感，MRR 高于 dense，但仍缺少证据链排序。Fusion 能提高候选池覆盖，R@120 达到 0.86，但若没有 reranker，R@1 仍只有 0.28。Full + v6 reranker 的 R@120 不适用，因为该链路最终只输出 top-32；其 R@1 与 MRR 大幅高于 pre-rerank 基线，进一步说明关键收益来自 evidence-chain reranking，而不是单纯扩大候选池。
+
+\subsubsection{Easy/Hard 切分消融}
 
 按 query type 将 fact/relation 作为 easy，将 causality/reasoning/reveal/mystery/answerability 作为 hard 后，各抽样 50 条。
 
@@ -288,24 +584,24 @@ SODA 数据质量指标包括 verifier correct action 分布、student/teacher e
 \toprule
 切分 & 变体 & MRR & Missed & R@1 & R@5 & R@10 & R@32 \\
 \midrule
-Easy & 当前完整链路 & 0.5432 & 10/50 & 0.44 & 0.66 & 0.72 & 0.80 \\
-Easy & 关闭 MiniRAG & 0.5404 & 11/50 & 0.46 & 0.62 & 0.68 & 0.78 \\
-Easy & 关闭邻居扩展 & 0.5705 & 10/50 & 0.48 & 0.66 & 0.72 & 0.80 \\
-Easy & 旧 reranker & 0.5285 & 11/50 & 0.42 & 0.66 & 0.70 & 0.78 \\
-Easy & 跳过 rerank & 0.3167 & 15/50 & 0.18 & 0.50 & 0.54 & 0.70 \\
-Hard & 当前完整链路 & 0.7039 & 6/50 & 0.62 & 0.82 & 0.88 & 0.88 \\
-Hard & 关闭 MiniRAG & 0.6594 & 5/50 & 0.56 & 0.80 & 0.88 & 0.90 \\
-Hard & 关闭邻居扩展 & 0.7020 & 7/50 & 0.62 & 0.82 & 0.86 & 0.86 \\
-Hard & 旧 reranker & 0.6362 & 7/50 & 0.52 & 0.80 & 0.86 & 0.86 \\
-Hard & 跳过 rerank & 0.2367 & 14/50 & 0.12 & 0.38 & 0.54 & 0.72 \\
+Easy & 当前完整链路 & 0.5804 & 10/50 & 0.50 & 0.66 & 0.72 & 0.80 \\
+Easy & 关闭邻居扩展 & 0.5804 & 10/50 & 0.50 & 0.66 & 0.72 & 0.80 \\
+Easy & 关闭 MiniRAG & 0.5723 & 12/50 & 0.50 & 0.64 & 0.70 & 0.76 \\
+Easy & 旧 reranker & 0.5358 & 12/50 & 0.44 & 0.64 & 0.68 & 0.76 \\
+Easy & 跳过 rerank & 0.3298 & 15/50 & 0.22 & 0.48 & 0.52 & 0.70 \\
+Hard & 当前完整链路 & 0.6870 & 7/50 & 0.60 & 0.82 & 0.86 & 0.86 \\
+Hard & 关闭邻居扩展 & 0.6870 & 7/50 & 0.60 & 0.82 & 0.86 & 0.86 \\
+Hard & 关闭 MiniRAG & 0.6606 & 7/50 & 0.56 & 0.82 & 0.86 & 0.86 \\
+Hard & 旧 reranker & 0.6347 & 8/50 & 0.52 & 0.78 & 0.84 & 0.84 \\
+Hard & 跳过 rerank & 0.2361 & 14/50 & 0.12 & 0.38 & 0.56 & 0.72 \\
 \bottomrule
 \end{tabular}
 \caption{Easy/Hard 切分静态召回消融}
 \end{table}
 
-该结果说明 query type 不是可靠难度标签。Hard 组反而强于 Easy 组，原因是本次随机样本中的 reveal/mystery 并不难。v6 reranker 在 easy 和 hard 上均稳定优于旧 reranker 和 skip rerank。MiniRAG 在 hard split 中提高 MRR，但关闭 MiniRAG 的 R@32 略高；邻居扩展在 hard split 中提高覆盖，但在 easy split 上会牺牲部分 top-rank 排序。
+该结果说明 query type 不是可靠难度标签。Hard 组反而强于 Easy 组，原因是本次随机样本中的 reveal/mystery 并不难。v6 reranker 在 easy 和 hard 上均稳定优于旧 reranker 和 skip rerank。MiniRAG 在本次 easy/hard split 中有小幅正收益；关闭 MiniRAG 后 easy missed 从 10 增至 12，hard MRR 从 0.6870 降至 0.6606。邻居扩展在这批样本中仍无可测贡献，easy 与 hard 两个 split 的 full/no-neighbor 指标完全一致。
 
-\subsection{Failure-Driven Hard Pool 消融}
+\subsubsection{Failure-Driven Hard Pool 消融}
 
 为获得更真实的困难题，先对 200 条随机样本运行当前完整链路，再筛选 first hit rank 为空或大于 5 的样本，共得到 59 条 failure hard。
 
@@ -316,19 +612,84 @@ Hard & 跳过 rerank & 0.2367 & 14/50 & 0.12 & 0.38 & 0.54 & 0.72 \\
 \toprule
 变体 & MRR & Missed & Mean rank & R@1 & R@5 & R@10 & R@20 & R@32 \\
 \midrule
-当前完整链路 & 0.1113 & 27/59 & 10.406 & 0.0508 & 0.1186 & 0.3898 & 0.4746 & 0.5424 \\
-关闭 MiniRAG & 0.1298 & 27/59 & 9.562 & 0.0678 & 0.1695 & 0.4068 & 0.4915 & 0.5424 \\
-关闭邻居扩展 & 0.0471 & 32/59 & 12.593 & 0.0000 & 0.0000 & 0.2712 & 0.3898 & 0.4576 \\
-旧 reranker & 0.0849 & 29/59 & 11.167 & 0.0169 & 0.1356 & 0.2881 & 0.4068 & 0.5085 \\
-跳过 rerank & 0.0506 & 37/59 & 13.091 & 0.0000 & 0.1017 & 0.1525 & 0.3051 & 0.3729 \\
+当前完整链路 & 0.0474 & 32/59 & 12.519 & 0.0000 & 0.0000 & 0.2712 & 0.3898 & 0.4576 \\
+关闭邻居扩展 & 0.0474 & 32/59 & 12.519 & 0.0000 & 0.0000 & 0.2712 & 0.3898 & 0.4576 \\
+关闭 MiniRAG & 0.0882 & 31/59 & 10.107 & 0.0339 & 0.0847 & 0.3051 & 0.4237 & 0.4746 \\
+旧 reranker & 0.0488 & 33/59 & 13.962 & 0.0000 & 0.0678 & 0.1864 & 0.3390 & 0.4407 \\
+跳过 rerank & 0.0509 & 37/59 & 12.909 & 0.0000 & 0.1017 & 0.1525 & 0.3051 & 0.3729 \\
 \bottomrule
 \end{tabular}
 \caption{Failure-driven hard pool 静态召回消融}
 \end{table}
 
-Failure hard pool 对当前检索栈仍然明显困难：当前完整链路仍有 27/59 未在 top-32 命中。关闭 MiniRAG 后 MRR 从 0.1113 提升到 0.1298，R@32 持平，说明 MiniRAG 在困难样本上会引入排序噪声；但关闭邻居扩展会使 missed 从 27/59 增加到 32/59，表明邻居扩展对困难题的候选覆盖仍然重要。跳过 rerank 的 missed 达到 37/59，进一步说明 failure pool 需要 reranker hard negatives，而不是单纯扩大召回。
+Failure hard pool 对当前检索栈仍然明显困难：当前完整链路仍有 32/59 未在 top-32 命中。由于该 pool 按 current full 的 miss 或 first-hit rank 大于 5 筛选，full 链路 R@5 为 0 是预期现象。关闭 MiniRAG 后 MRR 从 0.0474 提升到 0.0882，R@32 从 0.4576 提升到 0.4746，说明 MiniRAG 在真实失败样本上会引入排序噪声。关闭邻居扩展与 full 完全一致，说明当前邻居扩展并没有参与救回这些失败样本。跳过 rerank 的 missed 达到 37/59，进一步说明 failure pool 需要 reranker hard negatives，而不是单纯扩大召回。
 
-\subsection{Prompt Gold Coverage}
+\subsection{Verifier-Aware SODA 数据质量消融}
+
+本组实验对比原始 SODA、仅格式校验启发式、verifier-aware SODA 三种标签构造策略，分别在 50 条基础集、500 条混合集上测试标签噪声抑制效果。
+
+\subsubsection{50 条基础样本集数据消融}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+策略 & 有效正样本 & 不安全正样本 & 不安全率 & 先验污染样本 & 动作不匹配 \\
+\midrule
+Raw SODA & 69 & 12 & 17.39\% & 10 & 7 \\
+Output-only heuristic & 69 & 12 & 17.39\% & 10 & - \\
+Verifier-aware relabel & 69 & 0 & 0.00\% & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\caption{50 问样本标签质量对比}
+\end{table}
+
+可以看到，仅做 JSON、动作、引用格式校验的启发式策略，无法识别证据不足与模型先验问题，标签噪声与原始 SODA 完全一致；而本文所提验证器重标注策略可在 verifier-defined 标签标准下\textbf{完全消除不安全样本、先验知识污染与动作不匹配问题}。该结论证明的是 evidence-only verifier 合同内的标签清洗效果，不等同于人工金标正确率达到 100\%。
+
+\subsubsection{500 条混合样本集数据消融}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+策略 & 有效正样本 & 不安全正样本 & 不安全率 & 先验污染样本 & 动作不匹配 \\
+\midrule
+Raw SODA & 500 & 108 & 21.60\% & 98 & 60 \\
+Output-only heuristic & 500 & 108 & 21.60\% & 98 & - \\
+Verifier-aware relabel & 500 & 0 & 0.00\% & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\caption{500 条混合样本标签质量对比}
+\end{table}
+
+在扩大样本规模后结论保持一致：常规蒸馏策略存在较高比例标签噪声，而 verifier-aware SODA 依靠纯证据验证在 verifier-defined 标签空间内将 unsafe chosen 降为 0，具备较好的跨样本稳定性。同时统计发现，两类基线策略漏检全部不安全教师样本，证明格式校验无法替代证据合法性判定。
+
+\subsubsection{师生模型错误分布统计}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+错误类型 & 50 问数量 & 500 问数量 \\
+\midrule
+教师先验知识风险 & 9 & 93 \\
+教师过早回答 & 1 & 14 \\
+教师过度检索 & 1 & 5 \\
+学生无依据回答 & 18 & 128 \\
+学生过早回答 & 2 & 33 \\
+学生过度检索 & 7 & 48 \\
+学生正常但教师异常 & 6 & 53 \\
+\bottomrule
+\end{tabular}
+\caption{师生模型错误分布统计}
+\end{table}
+
+数据表明，学生模型高频错误为无依据作答、过度检索；教师模型主要风险为滥用先验知识。同时存在部分样本教师行为异常但学生输出合规，进一步证明“教师输出直接作为正样本”的逻辑存在天然缺陷。
+
+\subsection{Prompt 证据覆盖度评估}
 
 最新 verifier-aware SODA 数据中，69 个 conclusion prompts 对应 183 个 gold units。基于 evidence brief 行级 rank 的 trigram overlap 评估如下：
 
@@ -355,8 +716,6 @@ Prompt full coverage & 36.23\% \\
 
 该结果解释了为什么 student 和 teacher 都可能出错：即使 evidence prompt top-12 中经常包含部分 gold evidence，但完整覆盖比例仍然偏低。训练时不能只教 answer imitation，还需要教模型在证据不足时明确 \code{retrieve\_more}。
 
-本次实验还对 teacher trace replay 做了 prompt evidence 消融。该评估使用相同 teacher full-chain trace、当前 runtime 检索和更严格的 prompt 单元匹配，因此数值不直接等同于上表的 verifier 数据审计，但可用于比较 scoped/sweep 策略。
-
 \begin{table}[htbp]
 \centering
 \small
@@ -373,9 +732,70 @@ Prompt full coverage & 36.23\% \\
 
 Trace replay 显示 scoped retrieval 与 same-story sweep 能提高 prompt gold 覆盖，但覆盖绝对值仍低，说明最终回答质量仍受 prompt evidence selection 和多证据覆盖约束。
 
-\subsection{历史训练与在线检索评测}
+\subsection{模型行为在线消融评测}
 
-已有的 SFT/KTO 历史评测显示，改进 SFT 和 API-grounded conclusion 数据可提升在线多轮召回；但此前 SODA 550 KTO 对检索召回本身并未稳定超越 SFT。
+本组为\textbf{严格对照实验}：固定运行环境、解码参数、GPU 资源、检索轮次与测试集，对比 Raw SODA 与 verifier-aware SODA 训练后的模型在线表现。
+
+\subsubsection{基础行为统计}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{llrrrr}
+\toprule
+数据集 & 模型 & 样本数 & 直接作答 & 拒答 & 平均耗时(s) \\
+\midrule
+eval50 & Raw SODA & 50 & 26 & 24 & 88.815 \\
+eval50 & Verifier-aware SODA & 50 & 27 & 23 & 77.646 \\
+hard10 & Raw SODA & 10 & 5 & 5 & 68.007 \\
+hard10 & Verifier-aware SODA & 10 & 7 & 3 & 64.053 \\
+\bottomrule
+\end{tabular}
+\caption{模型在线行为与推理耗时}
+\end{table}
+
+相比原始 SODA，所提方法在保证行为合理的同时，推理耗时小幅下降，系统响应效率有所提升。
+
+\subsubsection{证据打分对比}
+
+采用统一打分器对模型输出进行证据合规性打分，结果如下：
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+模型 & 样本数 & 正向输出 & 负向输出 & 无依据回答 & 过早回答 & 过度拒答 \\
+\midrule
+Raw SODA & 60 & 22 & 30 & 13 & 8 & 9 \\
+Verifier-aware SODA & 60 & 25 & 29 & 11 & 5 & 9 \\
+\bottomrule
+\end{tabular}
+\caption{模型输出质量打分统计}
+\end{table}
+
+进一步比较四个连续评分维度，可见 verifier-aware SODA 的主要收益集中在证据支撑与问题覆盖，而不是单纯改变检索分数。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+模型 & Retrieval & Action & Support & Coverage \\
+\midrule
+Raw SODA & 3.550 & 3.533 & 2.417 & 2.733 \\
+Verifier-aware SODA & 3.600 & 3.750 & 3.017 & 3.217 \\
+差值 & +0.050 & +0.217 & +0.600 & +0.483 \\
+\bottomrule
+\end{tabular}
+\caption{Evidence-only scorer 平均分对比}
+\end{table}
+
+成对符号检验显示，support score 的提升具有统计显著性：60 个配对样本中 26 个提升、11 个下降、23 个不变，双侧符号检验 $p=0.0201$。coverage score 为 23 个提升、11 个下降、26 个不变，$p=0.0576$，可作为边缘显著趋势；action score 与 retrieval score 的 $p$ 值分别为 0.6076 与 0.7111，不能据此声称显著提升。错误类型的 McNemar-like 配对统计显示，无依据回答减少 2 例、过早回答减少 3 例、过度拒答不变，方向与平均分一致，但样本量不足以支持显著性结论。因此本文对模型效果的严格结论限定为：verifier-aware SODA 显著提升证据支撑分，并在无依据与过早回答上呈下降趋势。
+
+\subsection{历史模型横向对比}
+
+对比传统 SFT、早期 KTO 与本文方案的在线检索表现：
 
 \begin{table}[htbp]
 \centering
@@ -394,7 +814,53 @@ KTO runtime v3 & 50 & 11 & 0.4823 & 0.38 & 0.62 & 0.74 & 0.78 \\
 \caption{历史在线多轮检索评测}
 \end{table}
 
-因此，新版 verifier-aware SODA 的目标不是继续复制 teacher 最终答案，而是补动作边界：减少 unsupported answer、premature answer 和 over-retrieve。新数据已生成，但尚未在本文中报告基于该数据重新训练后的最终回答质量。
+此前版本 KTO 主要优化答案生成，对检索召回指标提升有限；本文 verifier-aware SODA 聚焦\textbf{动作边界约束}，专门抑制无依据回答、过早回答与过度检索，与检索模块形成互补。
+
+\section{学习结果}
+
+本项目的学习结果可以从检索系统、数据构造、模型行为和工程复现四个层面归纳。
+
+第一，长剧情 RAG 的关键瓶颈不是单一路召回，而是多路候选进入 prompt 前的排序与证据覆盖。Release 50 问实验中，跳过 rerank 时 MRR 为 0.4262，启用 v6 evidence-chain reranker 后提升至 0.6046；旧 reranker 只能达到 0.5360。这说明“相关文本召回”与“可回答证据排序”是两个不同问题，普通语义相关性重排不足以支撑长叙事因果问答。
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{p{0.18\linewidth}p{0.20\linewidth}p{0.18\linewidth}p{0.17\linewidth}p{0.17\linewidth}}
+\toprule
+学习对象 & 对照设置 & MRR/指标 & R@1/行为 & R@32/质量 \\
+\midrule
+Reranker & skip rerank $\rightarrow$ v6 & 0.4262 $\rightarrow$ 0.6046 & 0.32 $\rightarrow$ 0.54 & 0.70 $\rightarrow$ 0.78 \\
+MiniRAG release & full $\rightarrow$ no MiniRAG & 0.6046 $\rightarrow$ 0.6180 & 0.54 $\rightarrow$ 0.56 & 0.78 $\rightarrow$ 0.78 \\
+MiniRAG hard split & no MiniRAG $\rightarrow$ full & 0.6606 $\rightarrow$ 0.6870 & 0.56 $\rightarrow$ 0.60 & 0.86 $\rightarrow$ 0.86 \\
+邻居扩展 & no neighbor $\rightarrow$ full & 0.6046 $\rightarrow$ 0.6046 & 0.54 $\rightarrow$ 0.54 & 0.78 $\rightarrow$ 0.78 \\
+数据重标注 & Raw $\rightarrow$ Verifier & unsafe 108 $\rightarrow$ 0 & action mismatch 60 $\rightarrow$ 0 & prior 98 $\rightarrow$ 0 \\
+模型行为 & Raw $\rightarrow$ Verifier & support +0.600 & answer 31 $\rightarrow$ 34 & negative 30 $\rightarrow$ 29 \\
+\bottomrule
+\end{tabular}
+\caption{核心学习结果汇总}
+\end{table}
+
+第二，图扩展和邻居扩展必须服从条件化调度。MiniRAG 在 easy/hard split 中带来小幅正收益，但在 failure hard pool 中关闭 MiniRAG 反而使 MRR 从 0.0474 提升到 0.0882。邻居扩展在三组静态召回实验中与 full 指标一致，没有形成可测增益。学习结论是：图扩展适合作为低置信检索或关系/因果类问题的补充证据来源，不应被视为全局排序主信号；邻居扩展更适合作为生成阶段证据上下文补偿，而不是核心召回增益来源。
+
+第三，verifier-aware SODA 的核心价值在于改变训练标签的定义。Raw SODA 默认 teacher-as-chosen，会把 12/69 和 108/500 的不安全 teacher 正样本写入训练集；output-only heuristic 无法识别这些样本。Verifier-aware relabel 将 teacher 从“真值来源”降级为“候选来源”，在 verifier-defined 合同下把 unsafe chosen、unsupported/prior positive 与 action mismatch 全部降为 0。这一结果证明，面向 RAG Agent 的蒸馏不能只复制 teacher 输出，必须把 evidence sufficiency 与 action correctness 作为标签构造的一等约束。
+
+第四，严格模型效果评测显示，数据质量改善能够传导到模型行为，但传导并非全维度显著。Verifier-aware SODA 在 60 个同题配对输出上将 support score 均值提升 0.600，且成对符号检验达到 $p=0.0201$；coverage score 提升 0.483，处于边缘显著趋势。与此同时，action/retrieval 分数未达到显著提升，说明当前训练主要改善“答出来的内容是否被证据支持”，还没有充分解决检索规划能力本身。
+
+第五，工程层面已形成可复现链路。当前项目保留了索引构建、静态召回评测、SODA rollout、verifier relabel、Raw/Verifier LoRA 严格同运行时评测、teacher scorer 质量评估和报告生成脚本。严格同运行时消融中，verifier-aware SODA 在 eval50 上无错误完成 50/50，平均耗时 77.646 秒；在 hard10 上无错误完成 10/10，平均耗时 64.053 秒，说明本地 4B + 两轮检索链路具备可运行性。该闭环使得后续模型或检索模块更新时，可以用同一批 eval50、hard10 与 failure hard pool 复核收益，而不是依赖单次人工观察。
+
+\section{案例分析}
+
+\subsection{Verifier-aware SODA 改善证据支撑}
+
+问题“凛冬在学生自治团中扮演什么角色？她是怎样成为领袖的？”中，Raw SODA 模型直接回答“通过带领学生自治团成员离开切尔诺伯格并加入罗德岛，成为领袖”。该结论包含证据外因果，被 scorer 标记为 \code{premature\_answer} 与 \code{unsupported}。Verifier-aware SODA 模型在同题同 runtime 下输出“担任团长；通过带领小队、承担责任成为领袖”，scorer 未标记严重错误，标签从 negative 变为 neutral。该案例体现了 verifier-aware SODA 的主要作用：不是让模型回答更长，而是压缩掉无法由当前 evidence 支撑的因果补全。
+
+\subsection{减少过度拒答}
+
+问题“博士为什么要关闭全舰防御系统”中，Raw SODA 最终选择 abstain，scorer 判断为 neutral；Verifier-aware SODA 则根据 evidence 中“关闭 PRTS 后下载核心数据、断绝本舰威胁”的线索，直接回答“为了彻底断绝本舰威胁”，scorer 给出 positive，retrieval/action/support/coverage 分别为 4/5/4/4。该案例说明 verifier-aware SODA 不只是更保守地拒答，也能在证据足够时减少过度拒答。
+
+\subsection{检索失败边界}
+
+Failure hard pool 中，“特蕾西娅认为博士应该如何看待自己的过去和未来？”仍未被当前 full v6 链路在 top-32 内稳定命中。该问题需要关联特蕾西娅对博士记忆、罪责、信任与未来选择的连续表述，但当前检索容易被同角色背景与泛化哲学表述干扰。该案例暴露出两个边界：其一，reranker 需要更多同实体错章和抽象动机类 hard negatives；其二，prompt evidence selection 需要在多证据因果题中提高完整覆盖，而不是只保留局部相似片段。
 
 \section{讨论}
 
@@ -402,21 +868,21 @@ KTO runtime v3 & 50 & 11 & 0.4823 & 0.38 & 0.62 & 0.74 & 0.78 \\
 
 三个消融集合均表明，reranker 对 top-rank 质量至关重要。跳过 rerank 会显著降低 MRR、R@1 和 R@32，并在 release 与 failure pool 中显著增加 missed，整体不可取。当前更值得投入的是用 failure hard pool 继续补 reranker hard negatives，而不是扩大无裁决的候选池。
 
-\subsection{MiniRAG 应条件启用}
+\subsection{MiniRAG 与邻居扩展的差异化适配}
 
-MiniRAG 在 hard split 中提升 MRR，但在 release 50 问和 failure hard pool 中可能引入噪声。这说明图扩展适合作为补充证据来源，而不应无条件强参与排序。邻居扩展在 release 与 failure hard pool 中提高 R@32 覆盖，但在部分 easy 样本上会拉低首命中排序。更合理策略是：
+MiniRAG 在 hard split 中提升 MRR，但在 release 50 问和 failure hard pool 中可能引入噪声。这说明图扩展适合作为补充证据来源，而不应无条件强参与排序。邻居扩展在当前三组静态召回消融中没有可测增益，说明它更适合保留为生成上下文补偿或低置信兜底，而不是作为强排序信号。更合理策略是：
 \begin{itemize}
   \item 首轮 dense/sparse/rerank 高置信命中时降低 MiniRAG pre-rerank 权重。
   \item 对因果、关系、揭示类问题保留 MiniRAG 扩展，但结合章节 scope 和 same-story sweep。
-  \item 在候选覆盖不足时启用邻居扩展，在高置信 top-rank 已命中时降低邻居扩展对排序的影响。
+  \item 在候选覆盖不足或需要相邻上下文补齐时启用邻居扩展，但不将其视为静态召回主增益来源。
   \item 在 failure pool 上补训练同实体错章、同角色背景压过剧情原文的 hard negatives。
 \end{itemize}
 
-\subsection{Verifier 可以减少 teacher 污染}
+\subsection{Verifier 降低教师模型标签污染}
 
-最新数据中 teacher prior knowledge risk 出现 9 次，teacher unsupported answer 出现 5 次。如果直接把 teacher replay 输出当 chosen，会把这些错误注入 student。Evidence-only verifier 将 teacher 从“标签来源”降级为“候选生成器”，更符合 RAG 蒸馏需求。
+扩展数据消融证明，常规师生蒸馏会继承教师模型先验知识滥用、不合理作答等缺陷。Evidence-only verifier 将教师模型从“标签标准来源”降级为“候选生成器”，仅以检索证据作为唯一判定依据，从数据源头抑制幻觉传递，且该效果在小样本与扩展样本集上均稳定生效。同时部分样本存在学生行为合规、教师行为异常的情况，进一步验证了“不盲从教师输出”的设计合理性。
 
-\subsection{数据瓶颈是 prompt evidence 覆盖}
+\subsection{数据瓶颈是 prompt 证据覆盖}
 
 Question any gold @12 为 76\%，但 question all gold @12 只有 42\%。Trace replay 进一步显示，在严格按 teacher full-chain prompt 重放时，current scoped/sweep 的 prompt gold @12 为 0.1988，仍明显高于关闭 scoped/sweep 的 0.1627。两组结果共同说明，对多证据问题，top-12 evidence 经常只能覆盖一部分答案。模型需要学会“部分回答 + 明确缺口”，而不是二选一地完全回答或 abstain。
 
@@ -424,15 +890,58 @@ Question any gold @12 为 76\%，但 question all gold @12 只有 42\%。Trace r
 
 本文当前实验仍有明显局限：
 \begin{itemize}
-  \item 样本规模较小，release 召回评测和 SODA 数据均基于 50 问。
-  \item 静态召回指标不能直接等价于最终回答正确率。
-  \item Prompt gold coverage 使用字符 trigram overlap，是近似自动评估，仍需人工复核。
-  \item 最新 verifier-aware SODA 数据已生成，但尚未完成基于该数据的重新训练和最终回答人工评测。
-  \item MiniRAG 的收益依赖问题分布，当前结论只能支持“条件启用”，不能证明全局关闭或全局开启最优。
+  \item 虽扩充至 500 条混合样本，但整体样本规模仍有提升空间。
+  \item 静态召回指标、自动打分指标不能完全等价于最终人工评估的回答正确率。
+  \item Prompt gold coverage 使用字符 trigram overlap，属于近似自动评估，仍需人工复核。
+  \item 已完成 Raw SODA 与 verifier-aware SODA 的严格同运行时自动评测，但大规模人工盲审尚未完成。
+  \item 本文补充了同题同索引的 Dense-only、BM25-only 和 Fusion RAG-style 弱基线，但没有补跑完整 LangChain 默认 RAG 或 HyDE 框架；原因是当前没有同运行时落盘结果，HyDE 还需要额外生成 hypothetical answer/query，可能引入新的 teacher prior 变量。
+  \item MiniRAG 的收益高度依赖问题分布，当前结论仅支持“条件启用”策略，未找到全局最优开关规则。
+  \item CPU 轻量化部署场景下部分模型存在运行异常，轻量化适配仍需优化。
 \end{itemize}
 
 \section{结论}
 
-本文构建了一个面向长剧情问答的证据约束 RAG Agent，并完成了检索栈和 verifier-aware SODA 数据生成的工程闭环。最新全量消融表明，当前系统最稳定的提升来自证据链 reranker；MiniRAG 与邻居扩展的收益依赖样本分布，MiniRAG 更适合条件启用，邻居扩展更适合作为候选覆盖补偿。Verifier-aware SODA 数据揭示了 student 的主要错误类型是 unsupported answer、over-retrieve 和 premature answer，也验证了 teacher 存在 prior knowledge 污染风险。下一步应基于最新 208 条 KTO 记录进行训练，并围绕 failure hard pool 补充 reranker hard negatives 与最终回答人工评测。
+本文构建了一个面向长剧情问答的证据约束 RAG Agent，并完成了检索栈和 verifier-aware SODA 数据生成的完整工程闭环。多组消融实验表明，证据链重排器是检索性能最稳定的提升模块；MiniRAG 的效果受样本分布影响显著，建议条件启用；邻居扩展在当前静态召回实验中没有可测增益，适合作为上下文补偿模块继续保留并进一步验证。
+
+在蒸馏训练层面，本文提出的 verifier-aware SODA 借助纯证据验证器重标注训练样本，在 50 条基础集与 500 条混合集上均将 verifier-defined unsafe chosen 降为 0，有效缓解传统师生蒸馏传递教师先验幻觉的问题。模型在线评测证明，该方法可提升答案证据支撑度，并在无依据作答、过早回答等典型错误上呈下降趋势。
+
+当前系统的主要瓶颈为 Prompt 层完整证据覆盖不足。下一步工作将围绕 failure hard pool 补充重排器难例样本，继续优化 prompt evidence selection 与 MiniRAG 条件启用策略，并开展大规模人工评测与 CPU 轻量化部署优化，进一步提升长剧情问答系统的实用性与鲁棒性。
+
+\appendix
+\section{附录：可复现材料与实现细节}
+
+附录内容可不打印，建议随电子版提交。本文仅在正文列出附录结构、关键路径与复现入口；完整代码、训练数据与输出报告以仓库文件形式提供。
+
+\subsection{附录 A：混合检索算法详细说明}
+
+附录 A 对应 \code{src/goldenglow/retrieval/hybrid.py}、\code{src/goldenglow/retrieval/minirag.py} 与 \code{scripts/evaluate\_multiround\_retrieval\_recall.py}。其中包含 dense/BM25/MiniRAG 多路召回、chapter scope、neighbor expansion、same-story sweep、fusion 与 reranker 排序的完整实现。关键参数见实验设置中的超参数表，伪代码见 Algorithm 1。
+
+\subsection{附录 B：Verifier-aware SODA 重标注算法}
+
+附录 B 对应 \code{scripts/run\_soda\_verifier\_model\_ablation.sh}、\code{scripts/analyze\_soda\_verifier\_ablation.py} 与相关 verifier 数据构造脚本。其核心内容包括 student rollout、teacher replay、evidence-only verifier 判定、correct action 重建、KTO desirable/undesirable 样本生成。判定规则与伪代码见 Algorithm 2。
+
+\subsection{附录 C：核心源代码入口}
+
+本文实验对应的主要工程入口如下：
+\begin{itemize}
+  \item \code{scripts/evaluate\_multiround\_retrieval\_recall.py}：静态召回与多轮检索评测脚本，用于 release、easy/hard 与 failure hard pool 消融。
+  \item \code{scripts/run\_soda\_verifier\_model\_ablation.sh}：Raw SODA 与 verifier-aware SODA 的严格同运行时模型消融入口。
+  \item \code{scripts/score\_runtime\_answers\_with\_teacher.py}：evidence-only runtime answer scorer，用于对模型输出标注 unsupported、premature、over-abstain 等错误。
+  \item \code{scripts/analyze\_soda\_verifier\_ablation.py}：汇总 SODA 数据质量消融、模型行为消融与 scorer 证据的报告脚本。
+  \item \code{src/goldenglow/retrieval/hybrid.py} 与 \code{src/goldenglow/retrieval/minirag.py}：混合检索与 MiniRAG 图检索实现。
+  \item \code{src/goldenglow/inference/cpu\_pipeline.py}：两轮检索、证据选择、结论生成与动作调度主链路。
+\end{itemize}
+
+\subsection{附录 D：训练数据与实验产物示例}
+
+检索消融报告位于 \code{outputs/ablation\_release\_20260531/}、\code{outputs/ablation\_easy\_hard\_20260531/} 与 \code{outputs/ablation\_failure\_hard\_20260531/}。SODA 数据质量消融报告位于 \code{outputs/soda\_verifier\_ablation\_20260609/report.md}。严格同运行时模型输出位于 \code{outputs/eval50\_hard10\_raw\_soda\_550\_verifier\_ablation/} 与 \code{outputs/eval50\_hard10\_verifier\_soda\_v2\_ablation/}。Runtime scorer 输出位于 \code{outputs/runtime\_teacher\_scores/soda\_verifier\_model\_ablation/}。
+
+\subsection{附录 E：配对显著性计算}
+
+模型效果显著性检验使用 \code{teacher\_answer\_scores.jsonl} 中相同 dataset、index 与 question 的 Raw/Verifier 配对输出。连续评分维度采用双侧符号检验，忽略差值为 0 的样本；错误类型采用 McNemar-like 二项符号检验，统计 Raw 有错而 Verifier 无错、Raw 无错而 Verifier 有错的非对称转移。由于静态检索报告只保存聚合指标，缺少完整配对 rank 向量，本文不对检索 MRR/R@k 声称显著性，只报告方向性消融结果。
+
+\subsection{数据与训练样本审计}
+
+Verifier-aware SODA 的审计粒度为 conclusion prompt。每条记录包含 student rollout、teacher replay、prompt evidence、verifier verdict、correct action、evidence sufficiency、student/teacher error、relabel reason 等字段。训练样本采用 KTO 格式，positive 与 negative 由 verifier relabel policy 构造，而不是固定使用 teacher-as-chosen。人工复核时应优先抽查三类样本：teacher prior risk、student safe while teacher unsafe、verifier chosen retrieve\_more。这三类样本最能检验 verifier 是否真正按照 evidence-only 合同行事。
 
 \end{document}

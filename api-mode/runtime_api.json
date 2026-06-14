@@ -33,7 +33,7 @@
     "api_key_env": "ARK_API_KEY",
     "model": "doubao-seed-2-0-mini-260428",
     "timeout": 120,
-    "max_tokens": 4096,
+    "max_tokens": null,
     "temperature": 0.1,
     "top_p": 0.9,
     "response_format_json": false
@@ -41,8 +41,8 @@
   "inference": {
     "pipeline_mode": "standard",
     "initial_prompt_hint": "直接回答用户问题。提示词越少越好；可以使用你已有的剧情知识，但不确定的细节不要写死。",
-    "initial_answer_max_tokens": 1024,
-    "refine_answer_max_tokens": 1536,
+    "initial_answer_max_tokens": null,
+    "refine_answer_max_tokens": null,
     "max_retrieval_rounds": 2,
     "prompt_evidence_top_k": 16,
     "prompt_evidence_max_chars_per_doc": 760,
