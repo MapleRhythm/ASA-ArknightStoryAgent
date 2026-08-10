@@ -12,6 +12,9 @@ from asa_arknight_story_agent.inference.grounding.validation import (
     has_answerable_evidence,
     validate_conclusion_grounding,
 )
+from asa_arknight_story_agent.inference.payload.truncated_answer_recovery import (
+    recover_truncated_grounded_answer,
+)
 from asa_arknight_story_agent.inference.pipeline.types import ConclusionResult, HypothesisDocument
 from asa_arknight_story_agent.inference.generation.conclusion_prompt_rendering import build_conclusion_prompt
 
@@ -26,7 +29,7 @@ def generate_conclusion_from_model(
     current_round: int,
 ) -> ConclusionResult:
     prompt_evidence = pipeline.prepare_prompt_evidence(question, current_hypothesis, evidence)
-    prompt = build_conclusion_prompt(
+    prompt, evidence_prompt_text = build_conclusion_prompt(
         question,
         current_hypothesis,
         evidence,
@@ -45,6 +48,7 @@ def generate_conclusion_from_model(
         current_hypothesis=current_hypothesis,
         prompt_evidence=prompt_evidence,
         prompt=prompt,
+        evidence_prompt_text=evidence_prompt_text,
         current_round=current_round,
     )
 
@@ -85,11 +89,13 @@ def sample_grounded_conclusions(
     current_hypothesis: HypothesisDocument,
     prompt_evidence: list[dict[str, Any]],
     prompt: str,
+    evidence_prompt_text: str | None = None,
     current_round: int,
 ) -> list[ConclusionResult]:
     conclusions: list[ConclusionResult] = []
     sample_count = pipeline.self_consistency_samples
     for _ in range(sample_count):
+        raw_output = ""
         try:
             raw_output = pipeline.generator.generate(
                 prompt,
@@ -112,10 +118,30 @@ def sample_grounded_conclusions(
                 conclusion=conclusion,
                 max_round_reached=current_round >= pipeline.max_retrieval_rounds,
                 mode=pipeline.answer_grounding_mode,
-                evidence_prompt_text=prompt,
+                evidence_prompt_text=evidence_prompt_text or prompt,
             )
             conclusions.append(conclusion)
         except Exception:
+            recovered = recover_truncated_grounded_answer(
+                raw_output,
+                question=question,
+                max_round_reached=current_round >= pipeline.max_retrieval_rounds,
+            )
+            if recovered is not None:
+                try:
+                    recovered = validate_conclusion_grounding(
+                        question=question,
+                        hypothesis=current_hypothesis,
+                        evidence=prompt_evidence,
+                        conclusion=recovered,
+                        max_round_reached=current_round >= pipeline.max_retrieval_rounds,
+                        mode=pipeline.answer_grounding_mode,
+                        evidence_prompt_text=evidence_prompt_text or prompt,
+                    )
+                    conclusions.append(recovered)
+                    continue
+                except Exception:
+                    pass
             if sample_count == 1 and not (
                 current_round >= pipeline.max_retrieval_rounds
                 and current_hypothesis.intent != "out_of_scope"

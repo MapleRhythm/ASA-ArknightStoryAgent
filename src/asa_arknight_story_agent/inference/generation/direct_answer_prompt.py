@@ -24,7 +24,12 @@ def build_answer_prompt(
     prompt_evidence: list[dict[str, Any]] | None = None,
     evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
     evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
-) -> str:
+) -> tuple[str, str]:
+    """Build the grounded direct-answer prompt and its rendered evidence brief.
+
+    The brief is returned so quote grounding validates against the exact text
+    shown to the model.
+    """
     selected_evidence = (
         prompt_evidence
         if prompt_evidence is not None
@@ -57,4 +62,4 @@ def build_answer_prompt(
             "rules: JSON only；只能使用 evidence_brief 中的证据；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足则 abstain；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
         ]
     )
-    return render_qwen_chat_prompt(system_prompt, user_prompt)
+    return render_qwen_chat_prompt(system_prompt, user_prompt), evidence_brief

@@ -45,4 +45,11 @@ def grounding_evidence_pool(evidence: list[dict[str, Any]]) -> str:
 
 
 def normalize_for_evidence_match(text: str) -> str:
-    return re.sub(r"\s+", "", strip_internal_evidence_meta(str(text or "")))
+    cleaned = strip_internal_evidence_meta(str(text or ""))
+    # Evidence-chain renders prefix members with [E1]/[E2]... markers; models
+    # often copy the marker along with the quote, so strip it from both sides
+    # of the comparison. Truncation ellipses at render boundaries are likewise
+    # not part of the underlying text.
+    cleaned = re.sub(r"\[E\d+\]", "", cleaned)
+    cleaned = cleaned.replace("...", "").replace("…", "")
+    return re.sub(r"\s+", "", cleaned)

@@ -38,7 +38,13 @@ def build_conclusion_prompt(
     evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
     evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
     prompt_mode: str = "full",
-) -> str:
+) -> tuple[str, str]:
+    """Build the conclusion prompt and the evidence text shown to the model.
+
+    The second return value is the exact evidence text embedded in the prompt
+    (the minimal brief, or the full rendered blocks), so quote grounding can
+    validate against what the model actually saw.
+    """
     rendered_dialogue_context = truncate_text(
         render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
         PROMPT_DIALOGUE_CONTEXT_MAX_CHARS,
@@ -109,4 +115,4 @@ def build_conclusion_prompt(
             *CONCLUSION_OUTPUT_RULES,
         ]
     )
-    return render_qwen_chat_prompt(system_prompt, user_prompt)
+    return render_qwen_chat_prompt(system_prompt, user_prompt), rendered_evidence

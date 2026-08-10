@@ -18,7 +18,7 @@ def generate_direct_answer_from_model(
     evidence: list[dict[str, Any]],
 ) -> ConclusionResult:
     prompt_evidence = pipeline.prepare_prompt_evidence(question, current_hypothesis, evidence)
-    prompt = build_answer_prompt(
+    prompt, evidence_prompt_text = build_answer_prompt(
         question,
         current_hypothesis,
         evidence,
@@ -65,5 +65,5 @@ def generate_direct_answer_from_model(
         conclusion=conclusion,
         max_round_reached=True,
         mode=pipeline.answer_grounding_mode,
-        evidence_prompt_text=prompt,
+        evidence_prompt_text=evidence_prompt_text,
     )

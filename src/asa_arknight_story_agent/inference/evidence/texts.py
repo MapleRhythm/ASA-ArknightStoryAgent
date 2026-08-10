@@ -42,12 +42,15 @@ def document_chain_text(item: dict[str, Any]) -> str:
 
 
 def best_prompt_text(item: dict[str, Any], *, prefer_direct: bool = False) -> str:
-    del prefer_direct
     clean_text = document_clean_text(item)
     chain_text = document_chain_text(item)
-    if clean_text:
-        return clean_text
-    return chain_text
+    if prefer_direct:
+        # Web-context and other direct-quote items keep their own document text.
+        return clean_text or chain_text
+    # The evidence-chain text is a story-ordered, source-prefixed multi-chunk
+    # render and carries strictly more context than a single chunk; prefer it
+    # so the model sees the chain the retriever assembled.
+    return chain_text or clean_text
 
 
 def prefer_direct_prompt_text(item: dict[str, Any]) -> dict[str, Any]:
