@@ -81,12 +81,33 @@ def render_short_evidence_brief(
             continue
         seen.add(key)
         text = truncate_text(text, max_chars_per_doc)
-        line = f"{len(lines) + 1}. {doc_id or '<unknown>'}: {text}"
+        # 用 [E编号] 作为证据的稳定可引用编号(替代长 doc_id), 供 grounding 校验定位
+        line = f"[E{len(lines) + 1}] {text}"
         if lines and total_chars + len(line) > max_total_chars:
             break
         lines.append(line)
         total_chars += len(line)
     return "\n".join(lines)
+
+
+def evidence_id_text_map(evidence: list[dict[str, Any]]) -> dict[str, str]:
+    """构建与 render_short_evidence_brief 一致的 [E编号] -> 证据文本 映射。
+    校验时用它把 evidence_id 定位到具体证据文本。"""
+    mapping: dict[str, str] = {}
+    seen: set[str] = set()
+    for item in evidence:
+        doc = item.get("document") or {}
+        doc_id = str(doc.get("id") or item.get("doc_index") or "").strip()
+        text = best_prompt_text(item, prefer_direct=bool(item.get("prompt_prefer_clean_text")))
+        text = re.sub(r"\s+", " ", strip_internal_evidence_meta(text)).strip()
+        if not text:
+            continue
+        key = doc_id or text[:160]
+        if key in seen:
+            continue
+        seen.add(key)
+        mapping[f"E{len(mapping) + 1}"] = text
+    return mapping
 
 
 def summarize_evidence_for_trace(

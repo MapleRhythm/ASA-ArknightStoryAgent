@@ -14,6 +14,7 @@ from asa_arknight_story_agent.inference.grounding.quote_match_utils import (
     normalize_for_evidence_match,
 )
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
+from asa_arknight_story_agent.inference.evidence.rendering import evidence_id_text_map
 
 
 def validate_grounded_quotes(
@@ -25,6 +26,9 @@ def validate_grounded_quotes(
 ) -> tuple[list[str], list[str]]:
     issues: list[str] = []
     warnings: list[str] = []
+    # evidence_id -> 该编号对应的证据文本(与渲染进 prompt 的 [E编号] 一致)
+    eid_map = evidence_id_text_map(evidence)
+    # 证据全池(用于 evidence_id 缺失时的兜底 quote 核对)
     evidence_pool = normalize_for_evidence_match(evidence_prompt_text or grounding_evidence_pool(evidence))
     if not conclusion.supported_facts:
         issues.append("missing_supported_facts")
@@ -49,6 +53,12 @@ def validate_grounded_quotes(
             if not isinstance(ref, dict):
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_not_object")
                 continue
+            # 第1道: evidence_id 必须存在于渲染进 prompt 的 [E编号] 集合(防编造编号)
+            eid = str(ref.get("evidence_id") or "").strip()
+            if not eid:
+                issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_missing_evidence_id")
+            elif eid_map and eid not in eid_map:
+                issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_evidence_id_not_found:{eid}")
             quote = str(ref.get("quote") or "").strip()
             if not quote:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_missing_quote")
@@ -58,7 +68,12 @@ def validate_grounded_quotes(
             total_quote_chars += len(quote)
             if len(quote) > 80:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_quote_over_80")
-            if normalize_for_evidence_match(quote) not in evidence_pool:
+            # 第2道: quote 宽松核对——优先核对到 evidence_id 对应的那条证据; 缺 evidence_id 时兜底核对全池
+            if eid and eid in eid_map:
+                target_pool = normalize_for_evidence_match(eid_map[eid])
+            else:
+                target_pool = evidence_pool
+            if normalize_for_evidence_match(quote) not in target_pool:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_quote_not_found")
         if fact_quote_chars > 160:
             issues.append(f"supported_fact_{fact_index}_quote_total_over_160")

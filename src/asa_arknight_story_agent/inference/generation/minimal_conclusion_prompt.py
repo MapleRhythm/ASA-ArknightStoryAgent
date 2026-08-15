@@ -64,7 +64,7 @@ def build_minimal_conclusion_prompt(
             'retrieve_more: {"next_action":"retrieve_more","follow_up_hypothesis":{"question":"","query_type":"","entities":[],"keywords":[],"expected_answer_type":"","dialogue_context":""}}',
             'abstain: {"next_action":"abstain","final_answer":"现有证据不足以确认。"}',
             'follow_up_hypothesis_fields: question,query_type,entities,keywords,expected_answer_type,dialogue_context',
-            "rules: JSON only；只能使用 evidence_brief 中的证据；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足才 retrieve_more；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
+            "rules: JSON only；只能使用 evidence_brief 中的证据；每条证据以 [E编号] 开头；evidence_id 必须填该证据的编号（如 E1），不得编造不存在的编号；单条 quote 必须从该编号对应的证据原文复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足才 retrieve_more；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
         ]
     )
     return render_qwen_chat_prompt(system_prompt, user_prompt), evidence_brief
