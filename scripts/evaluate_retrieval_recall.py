@@ -105,6 +105,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dense-top-k", type=int, default=120)
     parser.add_argument("--sparse-top-k", type=int, default=120)
+    parser.add_argument("--dense-weight", type=float, default=1.0)
+    parser.add_argument("--sparse-weight", type=float, default=0.8)
+    parser.add_argument("--dense-min-quota", type=int, default=0)
+    parser.add_argument("--sparse-min-quota", type=int, default=0)
     parser.add_argument("--minirag-top-k", type=int, default=120)
     parser.add_argument("--minirag-weight", type=float, default=0.35)
     parser.add_argument(
@@ -541,6 +545,8 @@ def evaluate_source_oracle(
                 dense_weight=query_config.dense_weight,
                 sparse_weight=query_config.sparse_weight,
                 minirag_weight=0.0,
+                dense_min_quota=query_config.dense_min_quota,
+                sparse_min_quota=query_config.sparse_min_quota,
             )
             fusion_hits = retriever.append_supplemental_hits(
                 primary_hits,
@@ -558,6 +564,8 @@ def evaluate_source_oracle(
                 dense_weight=query_config.dense_weight,
                 sparse_weight=query_config.sparse_weight,
                 minirag_weight=minirag_weight,
+                dense_min_quota=query_config.dense_min_quota,
+                sparse_min_quota=query_config.sparse_min_quota,
             )
         if query_config.enable_neighbor_expansion:
             fusion_hits = retriever.expand_hits_with_neighbors(
@@ -698,6 +706,8 @@ def main() -> int:
         documents_path=documents_path,
         faiss_index_path=faiss_index_path,
         bm25_tokens_path=bm25_tokens_path,
+        sparse_index_path=index_dir / "sparse_index.pkl",
+        index_metadata_path=index_dir / "index_meta.json",
         minirag_index_path=args.minirag_index,
         device=args.device,
     )
@@ -709,6 +719,10 @@ def main() -> int:
         minirag_top_k=args.minirag_top_k,
         fusion_top_k=args.fusion_top_k,
         rerank_top_k=max_k,
+        dense_weight=args.dense_weight,
+        sparse_weight=args.sparse_weight,
+        dense_min_quota=args.dense_min_quota,
+        sparse_min_quota=args.sparse_min_quota,
         minirag_weight=args.minirag_weight,
         minirag_mode_weights=args.minirag_mode_weights,
         minirag_fusion_mode=args.minirag_fusion_mode,
@@ -761,6 +775,10 @@ def main() -> int:
             "minirag_top_k": query_config.minirag_top_k,
             "fusion_top_k": query_config.fusion_top_k,
             "rerank_top_k": query_config.rerank_top_k,
+            "dense_weight": query_config.dense_weight,
+            "sparse_weight": query_config.sparse_weight,
+            "dense_min_quota": query_config.dense_min_quota,
+            "sparse_min_quota": query_config.sparse_min_quota,
             "minirag_weight": query_config.minirag_weight,
             "minirag_mode_weights": query_config.minirag_mode_weights,
             "minirag_fusion_mode": query_config.minirag_fusion_mode,

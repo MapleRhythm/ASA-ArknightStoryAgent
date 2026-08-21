@@ -6123,8 +6123,16 @@ class CPUInferencePipeline:
         dense_ranked_lists: list[list[dict[str, Any]]] = []
         sparse_ranked_lists: list[list[dict[str, Any]]] = []
         minirag_ranked_lists: list[list[dict[str, Any]]] = []
+        dense_search_many = getattr(self.retriever, "dense_search_many", None)
+        if dense_search_many is not None:
+            dense_ranked_lists.extend(
+                dense_search_many(queries, top_k=self.query_config.dense_top_k)
+            )
         for query in queries:
-            dense_ranked_lists.append(self.retriever.dense_search(query, top_k=self.query_config.dense_top_k))
+            if dense_search_many is None:
+                dense_ranked_lists.append(
+                    self.retriever.dense_search(query, top_k=self.query_config.dense_top_k)
+                )
             sparse_ranked_lists.append(
                 self.retriever.sparse_search(
                     query,
@@ -6231,6 +6239,8 @@ class CPUInferencePipeline:
                 dense_weight=self.query_config.dense_weight,
                 sparse_weight=self.query_config.sparse_weight,
                 minirag_weight=0.0,
+                dense_min_quota=self.query_config.dense_min_quota,
+                sparse_min_quota=self.query_config.sparse_min_quota,
             )
             fused_hits = self.retriever.append_supplemental_hits(
                 primary_hits,
@@ -6248,6 +6258,8 @@ class CPUInferencePipeline:
                 dense_weight=self.query_config.dense_weight,
                 sparse_weight=self.query_config.sparse_weight,
                 minirag_weight=minirag_weight,
+                dense_min_quota=self.query_config.dense_min_quota,
+                sparse_min_quota=self.query_config.sparse_min_quota,
             )
         if self.query_config.enable_neighbor_expansion:
             fused_hits = self._expand_fused_hits_with_neighbors(fused_hits)

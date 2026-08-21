@@ -19,7 +19,7 @@ from goldenglow.config import EMBEDDING_MODEL_DIR, QueryConfig, RERANKER_MODEL_D
 from goldenglow.retrieval.hybrid import ArknightsHybridRetriever, load_jsonl  # noqa: E402
 
 
-DOCUMENTS_PATH = PROJECT_ROOT / "indexes" / "arknights_story" / "documents.jsonl"
+DEFAULT_INDEX_DIR = PROJECT_ROOT / "indexes" / "arknights_story"
 
 
 def build_retrieval_seed_query(document: dict, *, max_chars: int) -> str:
@@ -75,6 +75,8 @@ def timed_retrieval(
         rrf_k=config.rrf_k,
         dense_weight=config.dense_weight,
         sparse_weight=config.sparse_weight,
+        dense_min_quota=config.dense_min_quota,
+        sparse_min_quota=config.sparse_min_quota,
     )
     timings["fusion_seconds"] = elapsed_since(started)
     timings["fusion_hits"] = len(fused_hits)
@@ -117,6 +119,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
+    parser.add_argument("--embedding-model", type=Path, default=EMBEDDING_MODEL_DIR)
     parser.add_argument("--no-reranker", action="store_true")
     parser.add_argument("--seed-query-max-chars", type=int, default=260)
     parser.add_argument("--dense-top-k", type=int, default=40)
@@ -124,6 +128,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fusion-top-k", type=int, default=30)
     parser.add_argument("--rerank-top-k", type=int, default=10)
     parser.add_argument("--rerank-batch-size", type=int, default=8)
+    parser.add_argument("--dense-weight", type=float, default=0.5)
+    parser.add_argument("--sparse-weight", type=float, default=1.0)
+    parser.add_argument("--dense-min-quota", type=int, default=20)
+    parser.add_argument("--sparse-min-quota", type=int, default=100)
     return parser.parse_args()
 
 
@@ -142,12 +150,21 @@ def main() -> None:
         fusion_top_k=args.fusion_top_k,
         rerank_top_k=args.rerank_top_k,
         rerank_batch_size=args.rerank_batch_size,
+        dense_weight=args.dense_weight,
+        sparse_weight=args.sparse_weight,
+        dense_min_quota=args.dense_min_quota,
+        sparse_min_quota=args.sparse_min_quota,
     )
 
     load_started = time.perf_counter()
     retriever = ArknightsHybridRetriever.from_paths(
-        embedding_model_path=EMBEDDING_MODEL_DIR,
+        embedding_model_path=args.embedding_model,
         reranker_model_path=None if args.no_reranker else RERANKER_MODEL_DIR,
+        documents_path=args.index_dir / "documents.jsonl",
+        faiss_index_path=args.index_dir / "faiss.index",
+        bm25_tokens_path=args.index_dir / "bm25_tokens.pkl",
+        sparse_index_path=args.index_dir / "sparse_index.pkl",
+        index_metadata_path=args.index_dir / "index_meta.json",
         device=args.device,
     )
     load_seconds = elapsed_since(load_started)
@@ -169,7 +186,7 @@ def main() -> None:
         flush=True,
     )
 
-    documents = load_jsonl(DOCUMENTS_PATH)
+    documents = load_jsonl(args.index_dir / "documents.jsonl")
     runs: list[dict[str, Any]] = []
 
     for run_index in range(args.runs):

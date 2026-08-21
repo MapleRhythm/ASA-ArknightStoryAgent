@@ -5,21 +5,32 @@ import pickle
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
-from goldenglow.config import BM25_TOKENS_PATH, DOCUMENTS_PATH, FAISS_INDEX_PATH, QueryConfig
+from goldenglow.config import (
+    BM25_TOKENS_PATH,
+    CORPUS_METADATA_PATH,
+    DOCUMENTS_PATH,
+    FAISS_INDEX_PATH,
+    SPARSE_INDEX_PATH,
+    QueryConfig,
+)
 from goldenglow.retrieval.minirag import MiniRAGIndex, document_chapter_scope_key
 from goldenglow.retrieval.reranker import CrossEncoderReranker
 from goldenglow.retrieval.storyline import document_storyline_scopes
 
 
 ASCII_TOKEN_RE = re.compile(r"[a-z0-9_]+", re.IGNORECASE)
+ASCII_EXACT_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[_.\-/][a-z0-9]+)+|[a-z0-9_]+", re.IGNORECASE)
+CJK_SPAN_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]+")
+NATURAL_ALIAS_RE = re.compile(r"^(?:[\u3400-\u4dbf\u4e00-\u9fff·]{1,24}|[A-Za-z][A-Za-z .'-]{0,31})$")
 ENTITY_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,8}|[A-Za-z][A-Za-z0-9_.\-]{1,31}")
 CAUSAL_QUERY_RE = re.compile(r"为什么|为何|原因|动机|目的|怎么会|为何要|为什么要|为什么会")
 REVEAL_QUERY_RE = re.compile(r"阴谋|真相|秘密|识破|揭穿|曝光|暴露|幕后|主使|黑幕|骗局|诡计|怎么回事")
@@ -285,12 +296,180 @@ REVEAL_DIRECT_CONTEXT_TERMS = {
 }
 
 
+def _dedupe_tokens(tokens: list[str]) -> list[str]:
+    return list(dict.fromkeys(token for token in tokens if token))
+
+
+def tokenize_char_bigrams(text: str) -> list[str]:
+    """Boundary-safe lexical tokens.
+
+    Chinese n-grams are emitted inside each contiguous CJK span, so punctuation,
+    newlines, and metadata field boundaries can no longer create false bigrams.
+    ASCII identifiers retain their exact punctuated form as well as useful parts.
+    """
+    lowered = str(text or "").lower()
+    tokens: list[str] = []
+    for exact in ASCII_EXACT_TOKEN_RE.findall(lowered):
+        tokens.append(exact)
+        compact = re.sub(r"[_.\-/]+", "", exact)
+        if compact != exact:
+            tokens.append(compact)
+            tokens.extend(part for part in re.split(r"[_.\-/]+", exact) if part)
+    for span in CJK_SPAN_RE.findall(lowered):
+        if len(span) == 1:
+            tokens.append(span)
+            continue
+        tokens.extend(span[index : index + 2] for index in range(len(span) - 1))
+    return tokens
+
+
+def tokenize_domain_words(text: str, *, cut_for_search: Callable[[str], Any] | None = None) -> list[str]:
+    lowered = str(text or "").lower()
+    tokens = list(ASCII_EXACT_TOKEN_RE.findall(lowered))
+    for span in CJK_SPAN_RE.findall(lowered):
+        if cut_for_search is None:
+            tokens.append(span)
+        else:
+            tokens.extend(str(token).strip().lower() for token in cut_for_search(span))
+    return [token for token in tokens if token and not token.isspace()]
+
+
+def tokenize_exact_terms(text: str) -> list[str]:
+    lowered = str(text or "").lower()
+    tokens = list(ASCII_EXACT_TOKEN_RE.findall(lowered))
+    tokens.extend(span for span in CJK_SPAN_RE.findall(lowered) if len(span) >= 2)
+    return _dedupe_tokens(tokens)
+
+
 def tokenize_for_bm25(text: str) -> list[str]:
-    lowered = text.lower()
-    ascii_tokens = ASCII_TOKEN_RE.findall(lowered)
-    cjk_chars = [char for char in lowered if "\u4e00" <= char <= "\u9fff"]
-    cjk_bigrams = [f"{cjk_chars[i]}{cjk_chars[i + 1]}" for i in range(len(cjk_chars) - 1)]
-    return ascii_tokens + cjk_bigrams
+    """Compatibility alias for the boundary-safe character lane."""
+    return tokenize_char_bigrams(text)
+
+
+def _natural_alias(value: str) -> bool:
+    normalized = str(value or "").strip()
+    if not normalized or not NATURAL_ALIAS_RE.fullmatch(normalized):
+        return False
+    lowered = normalized.lower()
+    return not any(
+        marker in lowered
+        for marker in ("avatar_", "char_", "npc_", "trap_", "token_", "skchr_", "level_")
+    )
+
+
+def build_domain_terms(documents: list[dict], alias_map: dict[str, list[str]]) -> list[str]:
+    terms: list[str] = []
+    metadata_fields = (
+        "activity_name",
+        "story_name",
+        "story_code",
+        "stage_code",
+        "stage_name",
+        "zone_name",
+        "chapter_name",
+    )
+    for document in documents:
+        for field in metadata_fields:
+            value = str(document.get(field) or "").strip()
+            if value:
+                terms.append(value)
+        for segment in document.get("segments") or []:
+            if isinstance(segment, dict):
+                speaker = str(segment.get("speaker") or "").strip()
+                if speaker:
+                    terms.append(speaker)
+    for canonical, aliases in alias_map.items():
+        if _natural_alias(canonical):
+            terms.append(canonical)
+        terms.extend(alias for alias in aliases if _natural_alias(alias))
+    return sorted(set(term for term in terms if len(term) >= 2), key=lambda term: (-len(term), term))
+
+
+def build_sparse_document_fields(document: dict, alias_lookup: dict[str, list[str]]) -> dict[str, str]:
+    body = str(document.get("clean_text") or document.get("search_text") or "").strip()
+    title_values = [
+        str(document.get(field) or "").strip()
+        for field in (
+            "activity_name",
+            "story_name",
+            "stage_name",
+            "zone_name",
+            "chapter_name",
+            "avg_tag",
+        )
+    ]
+    speaker_values = [
+        str(segment.get("speaker") or "").strip()
+        for segment in document.get("segments") or []
+        if isinstance(segment, dict)
+    ]
+    exact_values = [
+        str(document.get(field) or "").strip()
+        for field in (
+            "activity_id",
+            "story_code",
+            "stage_id",
+            "stage_code",
+            "zone_id",
+        )
+    ]
+    visible_text = "\n".join([body, *title_values, *speaker_values, *exact_values])
+    alias_values: list[str] = []
+    for alias in sorted(alias_lookup, key=len, reverse=True):
+        if alias not in visible_text:
+            continue
+        if _natural_alias(alias):
+            alias_values.append(alias)
+        alias_values.extend(value for value in alias_lookup[alias] if _natural_alias(value))
+    return {
+        "body": body,
+        "title": "\n".join(value for value in [*title_values, *speaker_values] if value),
+        "alias": "\n".join(_dedupe_tokens(alias_values)),
+        "exact": "\n".join(value for value in exact_values if value),
+    }
+
+
+@dataclass(slots=True)
+class SparseLane:
+    name: str
+    bm25: BM25Okapi
+    tokenizer: Callable[[str], list[str]]
+    weight: float
+
+
+def serialize_sparse_bundle(
+    documents: list[dict],
+    *,
+    alias_lookup: dict[str, list[str]],
+    cut_for_search: Callable[[str], Any],
+) -> dict[str, Any]:
+    lane_tokens: dict[str, list[list[str]]] = {
+        "char": [],
+        "word": [],
+        "title": [],
+        "alias": [],
+        "exact": [],
+    }
+    for document in documents:
+        fields = build_sparse_document_fields(document, alias_lookup)
+        combined = "\n".join(fields.values())
+        lane_tokens["char"].append(tokenize_char_bigrams(combined))
+        lane_tokens["word"].append(tokenize_domain_words(combined, cut_for_search=cut_for_search))
+        lane_tokens["title"].append(tokenize_domain_words(fields["title"], cut_for_search=cut_for_search))
+        lane_tokens["alias"].append(tokenize_exact_terms(fields["alias"]))
+        lane_tokens["exact"].append(tokenize_exact_terms(fields["exact"] + "\n" + fields["title"]))
+    return {
+        "version": 2,
+        "lanes": lane_tokens,
+        "lane_weights": {
+            "char": 1.0,
+            "word": 1.0,
+            "title": 1.35,
+            "alias": 1.6,
+            "exact": 2.2,
+        },
+        "domain_terms": build_domain_terms(documents, alias_lookup),
+    }
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -341,6 +520,11 @@ class ArknightsHybridRetriever:
         embedding_model: SentenceTransformer,
         reranker: CrossEncoderReranker | None = None,
         minirag_index: MiniRAGIndex | None = None,
+        sparse_lanes: list[SparseLane] | None = None,
+        domain_terms: list[str] | None = None,
+        dense_query_prompt: str = "",
+        dense_truncate_dim: int | None = None,
+        dense_query_max_length: int | None = None,
     ) -> None:
         self.documents = documents
         self.index = index
@@ -348,6 +532,14 @@ class ArknightsHybridRetriever:
         self.embedding_model = embedding_model
         self.reranker = reranker
         self.minirag_index = minirag_index
+        self.sparse_lanes = sparse_lanes or [
+            SparseLane("legacy", bm25, tokenize_for_bm25, 1.0)
+        ]
+        self.domain_terms = domain_terms or []
+        self.dense_query_prompt = dense_query_prompt
+        self.dense_truncate_dim = dense_truncate_dim
+        self.dense_query_max_length = dense_query_max_length
+        self._sparse_query_cache: dict[str, tuple[np.ndarray, dict[str, np.ndarray]]] = {}
         self.chapter_doc_indices: dict[str, list[int]] = {}
         self.story_doc_indices: dict[str, list[int]] = {}
         self.storyline_doc_indices: dict[str, list[int]] = {}
@@ -381,6 +573,8 @@ class ArknightsHybridRetriever:
         documents_path: Path = DOCUMENTS_PATH,
         faiss_index_path: Path = FAISS_INDEX_PATH,
         bm25_tokens_path: Path = BM25_TOKENS_PATH,
+        sparse_index_path: Path | None = None,
+        index_metadata_path: Path | None = None,
         minirag_index_path: Path | None = None,
         device: str = "cpu",
     ) -> "ArknightsHybridRetriever":
@@ -391,11 +585,54 @@ class ArknightsHybridRetriever:
         print(f"[retriever-load] faiss {faiss_index_path}", file=sys.stderr, flush=True)
         index = faiss.read_index(str(faiss_index_path))
         print(f"[retriever-load] faiss loaded elapsed={time.time() - started:.1f}s", file=sys.stderr, flush=True)
+        resolved_sparse_path = sparse_index_path or bm25_tokens_path.with_name(SPARSE_INDEX_PATH.name)
+        sparse_payload: Any = None
+        if resolved_sparse_path.exists():
+            print(f"[retriever-load] sparse {resolved_sparse_path}", file=sys.stderr, flush=True)
+            with resolved_sparse_path.open("rb") as handle:
+                sparse_payload = pickle.load(handle)
         print(f"[retriever-load] bm25 {bm25_tokens_path}", file=sys.stderr, flush=True)
-        with bm25_tokens_path.open("rb") as handle:
-            tokenized_corpus = pickle.load(handle)
-        bm25 = BM25Okapi(tokenized_corpus)
+        if sparse_payload is None:
+            with bm25_tokens_path.open("rb") as handle:
+                tokenized_corpus = pickle.load(handle)
+            sparse_payload = {
+                "version": 1,
+                "lanes": {"legacy": tokenized_corpus},
+                "lane_weights": {"legacy": 1.0},
+                "domain_terms": [],
+            }
+        lanes_payload = sparse_payload.get("lanes") if isinstance(sparse_payload, dict) else None
+        if not isinstance(lanes_payload, dict) or not lanes_payload:
+            raise ValueError(f"Invalid sparse index payload: {resolved_sparse_path}")
+        lane_weights = sparse_payload.get("lane_weights") or {}
+        domain_terms = [str(term) for term in sparse_payload.get("domain_terms") or []]
+        word_tokenizer = cls._make_domain_tokenizer(domain_terms)
+        exact_tokenizer = cls._make_exact_tokenizer(domain_terms)
+        lane_tokenizers: dict[str, Callable[[str], list[str]]] = {
+            "legacy": tokenize_for_bm25,
+            "char": tokenize_char_bigrams,
+            "word": word_tokenizer,
+            "title": word_tokenizer,
+            "alias": exact_tokenizer,
+            "exact": exact_tokenizer,
+        }
+        sparse_lanes = [
+            SparseLane(
+                str(name),
+                BM25Okapi(tokenized_corpus),
+                lane_tokenizers.get(str(name), tokenize_for_bm25),
+                float(lane_weights.get(name, 1.0)),
+            )
+            for name, tokenized_corpus in lanes_payload.items()
+        ]
+        bm25 = sparse_lanes[0].bm25
         print(f"[retriever-load] bm25 loaded elapsed={time.time() - started:.1f}s", file=sys.stderr, flush=True)
+        resolved_metadata_path = index_metadata_path or documents_path.with_name(CORPUS_METADATA_PATH.name)
+        metadata: dict[str, Any] = {}
+        if resolved_metadata_path.exists():
+            payload = json.loads(resolved_metadata_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                metadata = payload
         print(f"[retriever-load] embedding {embedding_model_path} device={device}", file=sys.stderr, flush=True)
         embedding_model = SentenceTransformer(str(embedding_model_path), device=device)
         print(f"[retriever-load] embedding loaded elapsed={time.time() - started:.1f}s", file=sys.stderr, flush=True)
@@ -418,28 +655,114 @@ class ArknightsHybridRetriever:
             embedding_model=embedding_model,
             reranker=reranker,
             minirag_index=minirag_index,
+            sparse_lanes=sparse_lanes,
+            domain_terms=domain_terms,
+            dense_query_prompt=str(metadata.get("dense_query_prompt") or ""),
+            dense_truncate_dim=(
+                int(metadata["embedding_truncate_dim"])
+                if metadata.get("embedding_truncate_dim") is not None
+                else None
+            ),
+            dense_query_max_length=(
+                int(metadata["dense_query_max_length"])
+                if metadata.get("dense_query_max_length") is not None
+                else None
+            ),
         )
 
-    def dense_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
-        vector = self.embedding_model.encode(
-            [query],
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
-        scores, indices = self.index.search(vector.astype(np.float32), top_k)
-        hits: list[dict[str, Any]] = []
-        for score, doc_index in zip(scores[0].tolist(), indices[0].tolist()):
-            if doc_index < 0:
-                continue
-            doc = self.documents[doc_index]
-            hits.append(
-                {
-                    "doc_index": doc_index,
-                    "score": float(score),
-                    "document": doc,
-                }
+    @staticmethod
+    def _make_domain_tokenizer(domain_terms: list[str]) -> Callable[[str], list[str]]:
+        try:
+            import jieba
+        except ImportError:
+            return lambda text: tokenize_domain_words(text)
+        tokenizer = jieba.Tokenizer()
+        for term in domain_terms:
+            tokenizer.add_word(term, freq=10_000_000)
+        return lambda text: tokenize_domain_words(text, cut_for_search=tokenizer.cut_for_search)
+
+    @staticmethod
+    def _make_exact_tokenizer(domain_terms: list[str]) -> Callable[[str], list[str]]:
+        natural_terms = {
+            term.lower() for term in domain_terms if _natural_alias(term)
+        }
+
+        def tokenize(text: str) -> list[str]:
+            lowered = str(text or "").lower()
+            tokens = list(ASCII_EXACT_TOKEN_RE.findall(lowered))
+            tokens.extend(
+                span
+                for span in CJK_SPAN_RE.findall(lowered)
+                if len(span) >= 2 and span in natural_terms
             )
-        return hits
+            return _dedupe_tokens(tokens)
+
+        return tokenize
+
+    def _encode_dense_queries(self, queries: list[str]) -> np.ndarray:
+        kwargs: dict[str, Any] = {
+            "normalize_embeddings": True,
+            "convert_to_numpy": True,
+        }
+        if self.dense_query_prompt:
+            kwargs["prompt"] = self.dense_query_prompt
+        if self.dense_truncate_dim is not None:
+            kwargs["truncate_dim"] = self.dense_truncate_dim
+        previous_max_length = getattr(self.embedding_model, "max_seq_length", None)
+        if self.dense_query_max_length is not None:
+            self.embedding_model.max_seq_length = min(
+                self.dense_query_max_length,
+                max(128, max((len(query) for query in queries), default=0) * 2 + 64),
+            )
+        try:
+            try:
+                embeddings = self.embedding_model.encode(queries, **kwargs)
+            except TypeError as exc:
+                if "truncate_dim" not in str(exc):
+                    raise
+                kwargs.pop("truncate_dim", None)
+                embeddings = self.embedding_model.encode(queries, **kwargs)
+                if self.dense_truncate_dim is not None:
+                    embeddings = embeddings[:, : self.dense_truncate_dim]
+                    embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-12)
+        finally:
+            if previous_max_length is not None:
+                self.embedding_model.max_seq_length = previous_max_length
+        return np.asarray(embeddings, dtype=np.float32)
+
+    def dense_search(self, query: str, top_k: int) -> list[dict[str, Any]]:
+        vector = self._encode_dense_queries([query])
+        return self._dense_hits_from_vectors(vector, top_k=top_k)[0]
+
+    def dense_search_many(self, queries: list[str], top_k: int) -> list[list[dict[str, Any]]]:
+        if not queries:
+            return []
+        vectors = self._encode_dense_queries(queries)
+        return self._dense_hits_from_vectors(vectors, top_k=top_k)
+
+    def _dense_hits_from_vectors(
+        self,
+        vectors: np.ndarray,
+        *,
+        top_k: int,
+    ) -> list[list[dict[str, Any]]]:
+        scores, indices = self.index.search(vectors, top_k)
+        batches: list[list[dict[str, Any]]] = []
+        for row_scores, row_indices in zip(scores, indices):
+            hits: list[dict[str, Any]] = []
+            for score, doc_index in zip(row_scores.tolist(), row_indices.tolist()):
+                if doc_index < 0:
+                    continue
+                doc = self.documents[doc_index]
+                hits.append(
+                    {
+                        "doc_index": doc_index,
+                        "score": float(score),
+                        "document": doc,
+                    }
+                )
+            batches.append(hits)
+        return batches
 
     def dense_search_chapter(
         self,
@@ -456,11 +779,7 @@ class ArknightsHybridRetriever:
         scoped_indices, scoped_vectors = self._dense_scope_vectors(chapter_scope, doc_indices)
         if scoped_vectors.size == 0:
             return []
-        vector = self.embedding_model.encode(
-            [query],
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        ).astype(np.float32)[0]
+        vector = self._encode_dense_queries([query])[0]
         scores = scoped_vectors @ vector
         take = min(top_k, len(scores))
         if take <= 0:
@@ -516,8 +835,7 @@ class ArknightsHybridRetriever:
         *,
         storyline_scope: str | None = None,
     ) -> list[dict[str, Any]]:
-        tokens = tokenize_for_bm25(query)
-        scores = self.bm25.get_scores(tokens)
+        scores, lane_scores = self._sparse_scores(query)
         allowed_indices: list[int] | None = None
         if storyline_scope:
             allowed_indices = self.storyline_doc_indices.get(storyline_scope, [])
@@ -553,9 +871,40 @@ class ArknightsHybridRetriever:
                     "doc_index": int(doc_index),
                     "score": score,
                     "document": self.documents[int(doc_index)],
+                    "sparse_lane_scores": {
+                        name: float(values[doc_index])
+                        for name, values in lane_scores.items()
+                        if float(values[doc_index]) > 0
+                    },
                 }
             )
         return hits
+
+    def _sparse_scores(self, query: str) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        cached = self._sparse_query_cache.get(query)
+        if cached is not None:
+            return cached
+        combined = np.zeros(len(self.documents), dtype=np.float32)
+        per_lane: dict[str, np.ndarray] = {}
+        for lane in self.sparse_lanes:
+            tokens = lane.tokenizer(query)
+            raw_scores = np.asarray(lane.bm25.get_scores(tokens), dtype=np.float32)
+            positive = raw_scores > 0
+            normalized = np.zeros_like(raw_scores)
+            if np.any(positive):
+                positive_scores = raw_scores[positive]
+                scale = float(np.percentile(positive_scores, 99.5))
+                if scale <= 0:
+                    scale = float(positive_scores.max())
+                normalized[positive] = np.minimum(positive_scores / max(scale, 1e-6), 1.5)
+            weighted = normalized * lane.weight
+            combined += weighted
+            per_lane[lane.name] = raw_scores
+        payload = (combined, per_lane)
+        if len(self._sparse_query_cache) >= 64:
+            self._sparse_query_cache.pop(next(iter(self._sparse_query_cache)))
+        self._sparse_query_cache[query] = payload
+        return payload
 
     def sparse_search_chapter(
         self,
@@ -569,8 +918,7 @@ class ArknightsHybridRetriever:
         allowed_indices = self.chapter_doc_indices.get(chapter_scope, [])
         if not allowed_indices:
             return []
-        tokens = tokenize_for_bm25(query)
-        scores = self.bm25.get_scores(tokens)
+        scores, lane_scores = self._sparse_scores(query)
         candidate_indices = np.array(allowed_indices, dtype=np.int64)
         candidate_scores = scores[candidate_indices]
         positive_mask = candidate_scores > 0
@@ -592,6 +940,11 @@ class ArknightsHybridRetriever:
                     "score": float(candidate_scores[offset]),
                     "document": self.documents[doc_index],
                     "scoped_source": "chapter_sparse",
+                    "sparse_lane_scores": {
+                        name: float(values[doc_index])
+                        for name, values in lane_scores.items()
+                        if float(values[doc_index]) > 0
+                    },
                 }
             )
         return hits
@@ -623,6 +976,8 @@ class ArknightsHybridRetriever:
         dense_weight: float,
         sparse_weight: float,
         minirag_weight: float = 0.0,
+        dense_min_quota: int = 0,
+        sparse_min_quota: int = 0,
     ) -> list[dict[str, Any]]:
         fused: dict[int, dict[str, Any]] = {}
 
@@ -676,11 +1031,62 @@ class ArknightsHybridRetriever:
             item["minirag_score"] = hit.get("minirag_score", hit.get("score"))
             item["fusion_score"] += minirag_weight / (rrf_k + rank + 1)
 
-        return sorted(
+        ranked = sorted(
             fused.values(),
             key=lambda item: item["fusion_score"],
             reverse=True,
-        )[:top_k]
+        )
+        return self.apply_source_quotas(
+            ranked,
+            dense_hits=dense_hits,
+            sparse_hits=sparse_hits,
+            top_k=top_k,
+            dense_min_quota=dense_min_quota,
+            sparse_min_quota=sparse_min_quota,
+        )
+
+    @staticmethod
+    def apply_source_quotas(
+        ranked: list[dict[str, Any]],
+        *,
+        dense_hits: list[dict[str, Any]],
+        sparse_hits: list[dict[str, Any]],
+        top_k: int,
+        dense_min_quota: int,
+        sparse_min_quota: int,
+    ) -> list[dict[str, Any]]:
+        if top_k <= 0:
+            return []
+        dense_quota = min(max(0, dense_min_quota), top_k)
+        sparse_quota = min(max(0, sparse_min_quota), top_k)
+        if dense_quota <= 0 and sparse_quota <= 0:
+            return ranked[:top_k]
+        by_doc_index = {int(item["doc_index"]): item for item in ranked}
+        selected_ids: set[int] = set()
+
+        def reserve_from(hits: list[dict[str, Any]], quota: int, source: str) -> None:
+            for hit in hits[:quota]:
+                doc_index = int(hit["doc_index"])
+                if doc_index not in by_doc_index:
+                    continue
+                item = by_doc_index[doc_index]
+                quota_sources = item.setdefault("quota_sources", [])
+                if source not in quota_sources:
+                    quota_sources.append(source)
+                selected_ids.add(doc_index)
+
+        reserve_from(sparse_hits, sparse_quota, "sparse")
+        reserve_from(dense_hits, dense_quota, "dense")
+        for item in ranked:
+            if len(selected_ids) >= top_k:
+                break
+            doc_index = int(item["doc_index"])
+            if doc_index in selected_ids:
+                continue
+            selected_ids.add(doc_index)
+        return [
+            item for item in ranked if int(item["doc_index"]) in selected_ids
+        ][:top_k]
 
     @staticmethod
     def append_supplemental_hits(
@@ -2122,6 +2528,8 @@ class ArknightsHybridRetriever:
                 dense_weight=query_config.dense_weight,
                 sparse_weight=query_config.sparse_weight,
                 minirag_weight=0.0,
+                dense_min_quota=query_config.dense_min_quota,
+                sparse_min_quota=query_config.sparse_min_quota,
             )
             fused_hits = self.append_supplemental_hits(
                 primary_hits,
@@ -2139,6 +2547,8 @@ class ArknightsHybridRetriever:
                 dense_weight=query_config.dense_weight,
                 sparse_weight=query_config.sparse_weight,
                 minirag_weight=minirag_weight,
+                dense_min_quota=query_config.dense_min_quota,
+                sparse_min_quota=query_config.sparse_min_quota,
             )
         if query_config.enable_neighbor_expansion:
             fused_hits = self.expand_hits_with_neighbors(
