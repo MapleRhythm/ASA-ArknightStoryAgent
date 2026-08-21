@@ -38,7 +38,6 @@ from tqdm import tqdm
 
 from goldenglow.config import (
     BM25_TOKENS_PATH,
-    CHUNKS_DEBUG_PATH,
     CORPUS_METADATA_PATH,
     DOCUMENTS_PATH,
     EMBEDDING_MODEL_DIR,
@@ -47,10 +46,21 @@ from goldenglow.config import (
     INDEX_ROOT,
     OPERATOR_ALIAS_MAP_PATH,
     STORY_ROOT,
+    SPARSE_INDEX_PATH,
     BuildConfig,
 )
 from goldenglow.data.story_parser import build_corpus_documents, build_operator_alias_lookup
-from goldenglow.retrieval.hybrid import tokenize_for_bm25
+from goldenglow.retrieval.hybrid import (
+    build_domain_terms,
+    serialize_sparse_bundle,
+    tokenize_for_bm25,
+)
+
+
+DEFAULT_QWEN3_QUERY_PROMPT = (
+    "Instruct: Given a question about Arknights story and lore, retrieve passages "
+    "containing the evidence needed to answer it.\nQuery: "
+)
 
 
 def save_jsonl(path: Path, records: list[dict]) -> None:
@@ -104,6 +114,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=INDEX_ROOT,
+        help="Write the complete index to this directory; use an absolute mounted-disk path for sidecar builds.",
+    )
+    parser.add_argument(
+        "--embedding-dim",
+        type=int,
+        default=None,
+        help="Optional Matryoshka output dimension, e.g. 1024 for Qwen3-Embedding-0.6B.",
+    )
+    parser.add_argument(
+        "--max-seq-length",
+        type=int,
+        default=1024,
+        help="Maximum document/query token length used by the embedding model.",
+    )
+    parser.add_argument(
+        "--dense-query-prompt",
+        type=str,
+        default=None,
+        help="Query-only instruction persisted in index_meta.json; documents are encoded without it.",
+    )
+    parser.add_argument(
         "--embedding-model",
         type=Path,
         default=EMBEDDING_MODEL_DIR,
@@ -139,38 +173,83 @@ def main() -> None:
     if not documents:
         raise RuntimeError("No story documents were parsed from the source data.")
 
-    INDEX_ROOT.mkdir(parents=True, exist_ok=True)
-    CHUNKS_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save_jsonl(DOCUMENTS_PATH, documents)
-    save_jsonl(CHUNKS_DEBUG_PATH, documents[:200])
-    OPERATOR_ALIAS_MAP_PATH.write_text(
+    output_dir = args.output_dir if args.output_dir.is_absolute() else PROJECT_ROOT / args.output_dir
+    documents_path = output_dir / DOCUMENTS_PATH.name
+    faiss_index_path = output_dir / FAISS_INDEX_PATH.name
+    bm25_tokens_path = output_dir / BM25_TOKENS_PATH.name
+    sparse_index_path = output_dir / SPARSE_INDEX_PATH.name
+    metadata_path = output_dir / CORPUS_METADATA_PATH.name
+    aliases_path = output_dir / OPERATOR_ALIAS_MAP_PATH.name
+    chunks_debug_path = output_dir / "story_chunks_preview.jsonl"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_jsonl(documents_path, documents)
+    save_jsonl(chunks_debug_path, documents[:200])
+    aliases_path.write_text(
         json.dumps(operator_alias_map, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
     embedding_model = SentenceTransformer(str(args.embedding_model), device=args.device)
+    embedding_model.max_seq_length = args.max_seq_length
     search_texts = [document["search_text"] for document in documents]
-    embeddings = embedding_model.encode(
-        search_texts,
-        batch_size=config.embedding_batch_size,
-        show_progress_bar=True,
-        normalize_embeddings=config.normalize_embeddings,
-        convert_to_numpy=True,
-    ).astype(np.float32)
+    encode_kwargs = {
+        "batch_size": config.embedding_batch_size,
+        "show_progress_bar": True,
+        "normalize_embeddings": config.normalize_embeddings,
+        "convert_to_numpy": True,
+    }
+    if args.embedding_dim is not None:
+        encode_kwargs["truncate_dim"] = args.embedding_dim
+    try:
+        embeddings = embedding_model.encode(search_texts, **encode_kwargs)
+    except TypeError as exc:
+        if "truncate_dim" not in str(exc):
+            raise
+        encode_kwargs.pop("truncate_dim", None)
+        embeddings = embedding_model.encode(search_texts, **encode_kwargs)
+        if args.embedding_dim is not None:
+            embeddings = embeddings[:, : args.embedding_dim]
+            embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-12)
+    embeddings = np.asarray(embeddings, dtype=np.float32)
 
     index = faiss.IndexFlatIP(embeddings.shape[1])
     index.add(embeddings)
-    faiss.write_index(index, str(FAISS_INDEX_PATH))
+    faiss.write_index(index, str(faiss_index_path))
 
     tokenized_corpus = [tokenize_for_bm25(text) for text in tqdm(search_texts, desc="Tokenizing BM25")]
-    with BM25_TOKENS_PATH.open("wb") as handle:
+    with bm25_tokens_path.open("wb") as handle:
         pickle.dump(tokenized_corpus, handle)
+
+    try:
+        import jieba
+    except ImportError as exc:
+        raise RuntimeError(
+            "jieba is required to build the v2 sparse index; install it in the active environment"
+        ) from exc
+    domain_terms = build_domain_terms(documents, operator_alias_map)
+    domain_tokenizer = jieba.Tokenizer()
+    for term in domain_terms:
+        domain_tokenizer.add_word(term, freq=10_000_000)
+    sparse_bundle = serialize_sparse_bundle(
+        documents,
+        alias_lookup=operator_alias_map,
+        cut_for_search=domain_tokenizer.cut_for_search,
+    )
+    with sparse_index_path.open("wb") as handle:
+        pickle.dump(sparse_bundle, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    query_prompt = args.dense_query_prompt
+    if query_prompt is None and "qwen3-embedding" in args.embedding_model.name.lower():
+        query_prompt = DEFAULT_QWEN3_QUERY_PROMPT
 
     meta = {
         "documents": len(documents),
         "embedding_dim": int(embeddings.shape[1]),
         "story_root": str(STORY_ROOT),
         "embedding_model": str(args.embedding_model),
+        "embedding_truncate_dim": args.embedding_dim,
+        "dense_query_prompt": query_prompt or "",
+        "dense_query_max_length": args.max_seq_length,
         "max_chars": config.max_chars,
         "overlap_segments": config.overlap_segments,
         "operator_aliases": len(operator_alias_map),
@@ -179,8 +258,12 @@ def main() -> None:
             str(path if path.is_absolute() else PROJECT_ROOT / path)
             for path in args.extra_documents
         ],
+        "sparse_index_version": int(sparse_bundle["version"]),
+        "sparse_lanes": sorted(sparse_bundle["lanes"]),
+        "sparse_lane_weights": sparse_bundle["lane_weights"],
+        "domain_terms": len(sparse_bundle["domain_terms"]),
     }
-    CORPUS_METADATA_PATH.write_text(
+    metadata_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

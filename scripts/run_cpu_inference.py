@@ -156,7 +156,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not load a LoRA adapter. Use this with --base-model pointing to a merged Hugging Face model.",
     )
-    parser.add_argument("--embedding-model", type=Path, default=EMBEDDING_MODEL_DIR)
+    parser.add_argument("--embedding-model", type=Path, default=None)
+    parser.add_argument(
+        "--index-dir",
+        type=Path,
+        default=None,
+        help="Complete retrieval index directory. Overrides retrieval.index_dir when provided.",
+    )
     parser.add_argument(
         "--reranker-model",
         type=Path,
@@ -377,6 +383,10 @@ def main() -> None:
     backend = resolve_config_value(args.backend, generator_cfg, "backend", "llama.cpp")
     dense_top_k = int(resolve_config_value(args.dense_top_k, retrieval_cfg, "dense_top_k", 60))
     sparse_top_k = int(resolve_config_value(args.sparse_top_k, retrieval_cfg, "sparse_top_k", 60))
+    dense_weight = float(retrieval_cfg.get("dense_weight", 1.0))
+    sparse_weight = float(retrieval_cfg.get("sparse_weight", 0.8))
+    dense_min_quota = int(retrieval_cfg.get("dense_min_quota", 0))
+    sparse_min_quota = int(retrieval_cfg.get("sparse_min_quota", 0))
     fusion_top_k = int(resolve_config_value(args.fusion_top_k, retrieval_cfg, "fusion_top_k", 40))
     rerank_top_k = int(resolve_config_value(args.rerank_top_k, retrieval_cfg, "rerank_top_k", 15))
     rerank_batch_size = int(
@@ -580,12 +590,39 @@ def main() -> None:
     from goldenglow.inference.cpu_pipeline import LlamaCppRunner, VllmRunner  # noqa: E402
     from goldenglow.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
+    configured_index_dir = args.index_dir or retrieval_cfg.get("index_dir")
+    index_dir = None
+    if configured_index_dir:
+        index_dir = Path(configured_index_dir)
+        if not index_dir.is_absolute():
+            index_dir = PROJECT_ROOT / index_dir
+    configured_embedding_model = args.embedding_model or retrieval_cfg.get("embedding_model_path")
+    if configured_embedding_model is None and index_dir is not None:
+        metadata_path = index_dir / "index_meta.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            configured_embedding_model = metadata.get("embedding_model")
+    embedding_model_path = Path(configured_embedding_model or EMBEDDING_MODEL_DIR)
+    if not embedding_model_path.is_absolute():
+        embedding_model_path = PROJECT_ROOT / embedding_model_path
+
     retriever = ArknightsHybridRetriever.from_paths(
-        embedding_model_path=args.embedding_model,
+        embedding_model_path=embedding_model_path,
         reranker_model_path=reranker_model,
         reranker_max_length=reranker_max_length,
         minirag_index_path=minirag_index_path,
         device=device,
+        **(
+            {
+                "documents_path": index_dir / "documents.jsonl",
+                "faiss_index_path": index_dir / "faiss.index",
+                "bm25_tokens_path": index_dir / "bm25_tokens.pkl",
+                "sparse_index_path": index_dir / "sparse_index.pkl",
+                "index_metadata_path": index_dir / "index_meta.json",
+            }
+            if index_dir is not None
+            else {}
+        ),
     )
     if backend == "vllm":
         base_model = resolve_path_value(args.base_model, vllm_cfg, "base_model_path", DEFAULT_BASE_MODEL_PATH)
@@ -660,6 +697,10 @@ def main() -> None:
             minirag_top_k=minirag_top_k,
             fusion_top_k=fusion_top_k,
             rerank_top_k=rerank_top_k,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+            dense_min_quota=dense_min_quota,
+            sparse_min_quota=sparse_min_quota,
             minirag_weight=minirag_weight,
             minirag_mode_weights={str(key): float(value) for key, value in minirag_mode_weights.items()},
             minirag_fusion_mode=minirag_fusion_mode,

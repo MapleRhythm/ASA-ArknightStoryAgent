@@ -27,6 +27,7 @@ RERANKER_MODEL_DIR = (
 DOCUMENTS_PATH = INDEX_ROOT / "documents.jsonl"
 FAISS_INDEX_PATH = INDEX_ROOT / "faiss.index"
 BM25_TOKENS_PATH = INDEX_ROOT / "bm25_tokens.pkl"
+SPARSE_INDEX_PATH = INDEX_ROOT / "sparse_index.pkl"
 CORPUS_METADATA_PATH = INDEX_ROOT / "index_meta.json"
 OPERATOR_ALIAS_MAP_PATH = INDEX_ROOT / "operator_aliases.json"
 MINIRAG_INDEX_ROOT = PROJECT_ROOT / "indexes" / "arknights_story_minirag"
@@ -53,6 +54,8 @@ class QueryConfig:
     rrf_k: int = 60
     dense_weight: float = 1.0
     sparse_weight: float = 0.8
+    dense_min_quota: int = 0
+    sparse_min_quota: int = 0
     minirag_weight: float = 0.35
     minirag_mode_weights: dict[str, float] = field(default_factory=dict)
     minirag_fusion_mode: str = "score"
