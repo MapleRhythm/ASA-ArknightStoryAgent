@@ -154,7 +154,7 @@ def evidence_text_from_hits(
     total_chars = 0
     for index, item in enumerate(hits[:top_k], start=1):
         doc = item.get("document") or {}
-        text = str(item.get("evidence_chain_text") or doc.get("clean_text") or doc.get("text") or "").strip()
+        text = str(doc.get("clean_text") or doc.get("text") or item.get("evidence_chain_text") or "").strip()
         if len(text) > max_chars_per_doc:
             text = text[:max_chars_per_doc].rstrip() + "..."
         doc_id = str(doc.get("id") or "")
@@ -438,7 +438,7 @@ class OpenAICompatibleAPIRunner:
             if wants_json:
                 # The shared pipeline uses small local-4B budgets for JSON tasks.
                 # Remote models may emit longer valid JSON, so keep a safer floor.
-                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0, 4096)
+                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0)
             else:
                 # Local 4B prompts often pass 512-token answer budgets. Remote API
                 # models answer more verbosely and can otherwise stop mid-sentence,
@@ -572,7 +572,7 @@ class ResponsesAPIRunner(OpenAICompatibleAPIRunner):
         requested_max_tokens = None if self.max_tokens is None else (max_tokens if max_tokens is not None else self.max_tokens)
         if requested_max_tokens is not None:
             if wants_json:
-                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0, 4096)
+                requested_max_tokens = max(requested_max_tokens, self.max_tokens or 0)
             else:
                 requested_max_tokens = max(requested_max_tokens, min(self.max_tokens or 1536, 1536))
         payload: dict[str, Any] = {

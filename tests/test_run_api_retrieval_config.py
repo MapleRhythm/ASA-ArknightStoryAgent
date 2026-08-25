@@ -63,3 +63,13 @@ def test_api_query_config_receives_hybrid_fusion_controls() -> None:
         "sparse_min_quota",
     } <= keyword_names
     assert "max_retrieval_queries" in keyword_names
+
+
+def test_api_answer_prompts_prefer_direct_chunks_over_chain_metadata() -> None:
+    source = _source()
+    assert 'doc.get("clean_text") or doc.get("text") or item.get("evidence_chain_text")' in source
+
+
+def test_api_respects_configured_json_output_ceiling() -> None:
+    source = _source()
+    assert "self.max_tokens or 0, 4096" not in source
