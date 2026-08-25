@@ -113,6 +113,57 @@ ACTION_COST_MARKERS = (
     "本人",
     "血脉",
 )
+SUBCLAIM_INTERROGATIVE_MARKERS = (
+    "为什么",
+    "为何",
+    "怎样",
+    "怎么",
+    "如何",
+    "哪些",
+    "哪件",
+    "哪种",
+    "什么",
+    "谁",
+    "是否",
+    "有何",
+)
+SUBCLAIM_CAUSAL_MARKERS = (
+    "因为",
+    "如果",
+    "就会",
+    "所以",
+    "因此",
+    "由于",
+    "为了",
+    "才会",
+    "才能",
+    "才选",
+    "原因",
+    "目的",
+    "动机",
+    "初衷",
+    "避免",
+    "以免",
+    "免得",
+    "不得不",
+)
+# These are generic event/answer-type families rather than story entities.
+# They let a compound question's ``how/what`` slot prefer a direct chunk that
+# contains the requested kind of detail, without asking a second LLM to label
+# prompt evidence on the latency-critical path.
+SUBCLAIM_SIGNAL_FAMILIES = (
+    (("选择", "决定", "隐居"), ("选择", "选了", "决定", "打算", "隐居")),
+    (("买田", "田地", "务农", "乡间生活"), ("买田", "买下", "田", "务农", "作物", "村庄", "橄榄")),
+    (("认出", "认得", "辨认", "识别"), ("认出", "认得", "辨认", "识别", "猜", "怎么称呼", "该不会是", "身份")),
+    (("影响", "后果", "结果"), ("影响", "导致", "因此", "结果", "后果", "被迫", "解雇", "失去", "撤出")),
+    (("拒绝", "不愿", "不肯"), ("拒绝", "不愿", "不肯", "不能", "不会", "敌人", "竞争")),
+    (("承认", "坦白"), ("承认", "坦白", "供认", "是我", "亲口")),
+    (
+        ("评价", "意义", "说明", "意味着"),
+        ("评价", "认为", "意义", "说明", "意味着", "证明", "体现", "认同", "相称", "荣耀"),
+    ),
+    (("回忆", "记忆"), ("回忆", "记忆", "记得", "想起", "过去")),
+)
 CHAPTER_TOKEN_RE = re.compile(r"(?:第[一二三四五六七八九十百零〇两0-9]+章|[0-9]{1,2}章)")
 MAIN_CHAPTER_REF_RE = re.compile(
     r"(?:第\s*([一二三四五六七八九十百零〇两0-9]{1,4})\s*章|([0-9]{1,2})\s*章|level_main[_-]([0-9]{1,2})|main[_-]([0-9]{1,2}))",
@@ -1118,7 +1169,7 @@ def build_conclusion_prompt(
                 'retrieve_more: {"next_action":"retrieve_more","follow_up_hypothesis":{"question":"","query_type":"","entities":[],"keywords":[],"expected_answer_type":"","dialogue_context":""}}',
                 'abstain: {"next_action":"abstain","final_answer":"现有证据不足以确认。"}',
                 'follow_up_hypothesis_fields: question,query_type,entities,keywords,expected_answer_type,dialogue_context',
-                "rules: JSON only；只能使用 evidence_brief 中的证据；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足才 retrieve_more；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
+                "rules: JSON only；只能使用 evidence_brief 中的证据；先把原问题按而且/又/以及/与等连接词拆成待回答子问题；answer_directly 前逐项确认每个子问题是否有同一人物和同一事件的直接证据；已有证据能回答至少一个子问题时，优先一次性输出可确认部分并在 final_answer 明确缺失项，不要为缺失项重复检索整个问题；只有所有子问题都无直接证据，或缺口能写成未检索过的具体实体/事件查询时才 retrieve_more；不得把别的人物、旁白或相似地点的背景描述推成当前人物的动机；不得把证据中的他/她/它们擅自展开成原文未明确绑定的实体；不得给巨物/那个人/它们等泛称添加括号别名或自行绑定具体类别，即使同一证据块提到了该类别；inferred_facts 只允许直接证据间的保守连接，不能补出原文没有的因果；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
             ]
         )
         return (
@@ -2012,10 +2063,6 @@ def render_minirag_hints_for_prompt(evidence: list[dict[str, Any]], hypothesis: 
             text = str(role or "").strip()
             if text:
                 neighbors.append(text)
-        chain_text = str(item.get("evidence_chain_text") or "").strip()
-        if chain_text:
-            for token in extract_question_anchor_terms(chain_text, hypothesis)[:4]:
-                entities.append(token)
     entities = _dedupe_keep_order(hypothesis.entities + entities)[:12]
     keywords = _dedupe_keep_order(hypothesis.keywords + neighbors)[:12]
     if len(entities) >= 2:
@@ -2044,7 +2091,6 @@ def _evidence_identity(item: dict[str, Any]) -> str:
 def _evidence_text(item: dict[str, Any]) -> str:
     doc = item.get("document") or {}
     parts = [
-        str(item.get("evidence_chain_text") or ""),
         str(doc.get("clean_text") or ""),
         str(doc.get("search_text") or ""),
         str(doc.get("activity_name") or ""),
@@ -3425,6 +3471,260 @@ def split_evidence_strips(text: str, *, max_strips: int) -> list[str]:
     return strips[:max_strips]
 
 
+def _split_compound_question_subclaims(question: str) -> list[str]:
+    clauses = [
+        re.sub(r"\s+", " ", clause).strip(" ，,。！？?；;、")
+        for clause in re.split(r"[，,。！？?；;]+", question or "")
+    ]
+    interrogative_clauses = [
+        clause
+        for clause in clauses
+        if clause and any(marker in clause for marker in SUBCLAIM_INTERROGATIVE_MARKERS)
+    ]
+    # Pinning is deliberately limited to explicit compound questions. A
+    # single-clause question should continue to follow the finalized retrieval
+    # order without heuristic reshuffling.
+    return interrogative_clauses[:4] if len(interrogative_clauses) >= 2 else []
+
+
+def _subclaim_anchor_terms(subclaim: str, hypothesis: HypothesisDocument) -> list[str]:
+    compact_subclaim = re.sub(r"\s+", "", subclaim or "")
+    terms = _dedupe_keep_order(
+        [
+            *QUOTED_TERM_RE.findall(subclaim or ""),
+            *hypothesis.entities,
+            *hypothesis.keywords,
+            *_extract_content_tokens(subclaim),
+        ]
+    )
+    return [
+        term
+        for term in terms
+        if (
+            len(re.sub(r"\s+", "", term)) >= 2
+            and re.sub(r"\s+", "", term) in compact_subclaim
+            and term not in COMMON_NON_ENTITY_WORDS
+            and term not in NOISY_RETRIEVAL_TOKENS
+            and term not in PRONOUN_REFERENCES
+        )
+    ][:12]
+
+
+def _subclaim_signal_terms(subclaim: str) -> tuple[str, ...]:
+    signals: list[str] = []
+    for question_terms, evidence_terms in SUBCLAIM_SIGNAL_FAMILIES:
+        if any(term in subclaim for term in question_terms):
+            signals.extend(evidence_terms)
+    return tuple(_dedupe_keep_order(signals))
+
+
+def _subclaim_signal_groups(subclaim: str) -> list[tuple[str, ...]]:
+    return [
+        evidence_terms
+        for question_terms, evidence_terms in SUBCLAIM_SIGNAL_FAMILIES
+        if any(term in subclaim for term in question_terms)
+    ]
+
+
+def _has_local_marker_pair(text: str, left_terms: tuple[str, ...], right_terms: tuple[str, ...], *, window: int) -> bool:
+    left_positions = [
+        match.start()
+        for term in left_terms
+        if term
+        for match in re.finditer(re.escape(term), text)
+    ]
+    right_positions = [
+        match.start()
+        for term in right_terms
+        if term
+        for match in re.finditer(re.escape(term), text)
+    ]
+    return any(abs(left - right) <= window for left in left_positions for right in right_positions)
+
+
+def _compound_subclaim_evidence_score(
+    subclaim: str,
+    hypothesis: HypothesisDocument,
+    item: dict[str, Any],
+) -> int:
+    # Answer selection must only inspect the direct chunk. The evidence chain
+    # remains valuable to the reranker but may contain a matching sentence from
+    # another document, speaker, or event.
+    compact_text = re.sub(r"\s+", "", _document_clean_text(item))
+    if not compact_text:
+        return 0
+    anchor_terms = _subclaim_anchor_terms(subclaim, hypothesis)
+    anchor_hits = [
+        term
+        for term in anchor_terms
+        if re.sub(r"\s+", "", term) in compact_text
+    ]
+    if not anchor_hits:
+        return 0
+
+    is_causal = any(marker in subclaim for marker in ("为什么", "为何", "原因", "动机", "目的"))
+    causal_hits = sum(1 for marker in SUBCLAIM_CAUSAL_MARKERS if marker in compact_text)
+    signal_groups = _subclaim_signal_groups(subclaim)
+    signal_terms = _subclaim_signal_terms(subclaim)
+    signal_hits = sum(1 for marker in signal_terms if marker in compact_text)
+    matched_signal_groups = sum(
+        1
+        for group in signal_groups
+        if any(marker in compact_text for marker in group)
+    )
+    # A causal slot needs an explicit causal bridge. Merely mentioning the
+    # character and event is exactly how the old top-k produced circular
+    # answers such as “he bought land because he bought land”.
+    if is_causal:
+        if causal_hits <= 0:
+            return 0
+        if signal_terms:
+            if matched_signal_groups < len(signal_groups) or not _has_local_marker_pair(
+                compact_text,
+                SUBCLAIM_CAUSAL_MARKERS,
+                signal_terms,
+                window=56,
+            ):
+                return 0
+        else:
+            local_answer_markers = (
+                *tuple(re.sub(r"\s+", "", term) for term in anchor_hits),
+                "如果",
+                "就会",
+                "会",
+                "不能",
+                "没有",
+                "放过",
+                "贯穿",
+                "危险",
+            )
+            if not _has_local_marker_pair(
+                compact_text,
+                SUBCLAIM_CAUSAL_MARKERS,
+                local_answer_markers,
+                window=72,
+            ):
+                return 0
+    if not is_causal and signal_groups and matched_signal_groups < len(signal_groups):
+        return 0
+
+    entity_terms = [
+        term
+        for term in hypothesis.entities
+        if term and term in subclaim and term in anchor_hits
+    ]
+    weighted_anchor_score = sum(min(6, max(2, len(term))) for term in anchor_hits)
+    return (
+        weighted_anchor_score
+        + min(3, len(entity_terms)) * 3
+        + min(3, causal_hits) * 6
+        + min(4, signal_hits) * 4
+        + matched_signal_groups * 6
+    )
+
+
+def _subclaim_window_score(
+    subclaim: str,
+    hypothesis: HypothesisDocument,
+    text: str,
+) -> int:
+    temporary_item = {"document": {"clean_text": text, "search_text": text}}
+    direct_score = _compound_subclaim_evidence_score(subclaim, hypothesis, temporary_item)
+    if direct_score > 0:
+        return direct_score
+    compact_text = re.sub(r"\s+", "", text or "")
+    signal_groups = _subclaim_signal_groups(subclaim)
+    if not compact_text or not signal_groups:
+        return 0
+    matched_signal_groups = sum(
+        1
+        for group in signal_groups
+        if any(marker in compact_text for marker in group)
+    )
+    if matched_signal_groups < len(signal_groups):
+        return 0
+    is_causal = any(marker in subclaim for marker in ("为什么", "为何", "原因", "动机", "目的"))
+    signal_terms = _subclaim_signal_terms(subclaim)
+    if is_causal and not _has_local_marker_pair(
+        compact_text,
+        SUBCLAIM_CAUSAL_MARKERS,
+        signal_terms,
+        window=72,
+    ):
+        return 0
+    anchor_hits = sum(
+        1
+        for term in _subclaim_anchor_terms(subclaim, hypothesis)
+        if re.sub(r"\s+", "", term) in compact_text
+    )
+    if not is_causal and anchor_hits <= 0:
+        return 0
+    return matched_signal_groups * 12 + min(4, anchor_hits) * 3
+
+
+def _pin_compound_subclaim_evidence(
+    question: str,
+    hypothesis: HypothesisDocument,
+    evidence: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    subclaims = _split_compound_question_subclaims(question)
+    if limit <= 0 or not subclaims:
+        return selected[:limit]
+    candidates = _dedupe_prompt_evidence_candidates(evidence)
+
+    candidate_positions = {
+        _evidence_identity(item): index
+        for index, item in enumerate(candidates)
+    }
+    selected_identities = {_evidence_identity(item) for item in selected[:limit]}
+    outside_pins: list[dict[str, Any]] = []
+    outside_pin_identities: set[str] = set()
+    pinned_subclaims: dict[str, list[str]] = {}
+    max_outside_pins = min(len(subclaims), max(1, limit // 4))
+    for subclaim in subclaims:
+        scored = [
+            (
+                _compound_subclaim_evidence_score(subclaim, hypothesis, item),
+                -index,
+                item,
+            )
+            for index, item in enumerate(candidates)
+        ]
+        score, _, best_item = max(scored, key=lambda entry: (entry[0], entry[1]))
+        identity = _evidence_identity(best_item)
+        if score <= 0:
+            continue
+        pinned_subclaims.setdefault(identity, []).append(subclaim)
+        if identity in selected_identities or identity in outside_pin_identities:
+            continue
+        outside_pins.append(best_item)
+        outside_pin_identities.add(identity)
+        if len(outside_pins) >= max_outside_pins:
+            break
+
+    keep_count = max(0, limit - len(outside_pins))
+    keep_identities = {
+        _evidence_identity(item)
+        for item in selected[:keep_count]
+    } | outside_pin_identities
+    # Preserve the finalized retrieval order. Pinning only reserves capacity in
+    # top-k; it never compares fusion, reranker, or chain scores across scales.
+    ordered: list[dict[str, Any]] = []
+    for item in candidates:
+        identity = _evidence_identity(item)
+        if identity not in keep_identities:
+            continue
+        if identity in pinned_subclaims:
+            item = dict(item)
+            item["prompt_subclaim_pins"] = _dedupe_keep_order(pinned_subclaims[identity])
+        ordered.append(item)
+    ordered.sort(key=lambda item: candidate_positions[_evidence_identity(item)])
+    return ordered[:limit]
+
+
 def select_prompt_evidence(
     question: str,
     hypothesis: HypothesisDocument,
@@ -3432,16 +3732,23 @@ def select_prompt_evidence(
     *,
     prompt_evidence_top_k: int,
 ) -> list[dict[str, Any]]:
-    del question, hypothesis
     if prompt_evidence_top_k <= 0 or not evidence:
         return []
+    # ``_finalize_hits`` already returns the intended online order: exact
+    # anchor-rescue hits first, followed by the reranker output. Do not sort
+    # that list again here. The available score fields are not comparable:
+    # rescue hits may only carry a small RRF ``fusion_score`` while reranked
+    # hits carry logits and evidence-chain scores on completely different
+    # scales. Re-sorting by the first present score silently dropped rescued
+    # top evidence from the answer prompt even though retrieval had found it.
     candidates = _dedupe_prompt_evidence_candidates(evidence)
-    ranked = sorted(
-        enumerate(candidates),
-        key=lambda pair: (_prompt_evidence_score(pair[1]), -pair[0]),
-        reverse=True,
+    return _pin_compound_subclaim_evidence(
+        question,
+        hypothesis,
+        candidates,
+        candidates[:prompt_evidence_top_k],
+        limit=prompt_evidence_top_k,
     )
-    return [item for _, item in ranked[:prompt_evidence_top_k]]
 
 
 def summarize_evidence_for_trace(
@@ -3619,7 +3926,7 @@ def build_answer_prompt(
             "action_set: answer_directly,abstain",
             'answer_directly: {"next_action":"answer_directly","supported_facts":[{"fact":"","evidence_refs":[{"evidence_id":"","quote":""}]}],"inferred_facts":[],"final_answer":""}',
             'abstain: {"next_action":"abstain","final_answer":"现有证据不足以确认。"}',
-            "rules: JSON only；只能使用 evidence_brief 中的证据；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足则 abstain；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
+            "rules: JSON only；只能使用 evidence_brief 中的证据；先把原问题按而且/又/以及/与等连接词拆成待回答子问题；逐项确认每个子问题都有同一人物和同一事件的直接证据；证据只能回答一部分时输出可确认部分并明确哪一项不足，只有全部子问题均无证据才 abstain；不得把别的人物、旁白或相似地点的背景描述推成当前人物的动机；不得把证据中的他/她/它们擅自展开成原文未明确绑定的实体；不得给巨物/那个人/它们等泛称添加括号别名或自行绑定具体类别，即使同一证据块提到了该类别；inferred_facts 只允许直接证据间的保守连接，不能补出原文没有的因果；单条 quote 必须从 evidence_brief 原文精确复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；不要输出 current_round、confidence、decision、missing_slots、clarification_question。",
         ]
     )
     return (
@@ -4473,7 +4780,6 @@ def _grounding_evidence_pool(evidence: list[dict[str, Any]]) -> str:
     for item in evidence[:GROUNDING_EVIDENCE_POOL_TOP_K]:
         document = item.get("document") or {}
         for value in (
-            item.get("evidence_chain_text"),
             document.get("clean_text"),
             document.get("search_text"),
             document.get("activity_name"),
@@ -4488,6 +4794,15 @@ def _grounding_evidence_pool(evidence: list[dict[str, Any]]) -> str:
 
 def _normalize_for_evidence_match(text: str) -> str:
     return re.sub(r"\s+", "", strip_internal_evidence_meta(str(text or "")))
+
+
+def _normalize_quote_without_speaker_labels(text: str) -> str:
+    without_labels = re.sub(
+        r"(^|[\s。！？；])(?:[\u4e00-\u9fffA-Za-z0-9·“”\"（）()]{1,24})：",
+        r"\1",
+        strip_internal_evidence_meta(str(text or "")),
+    )
+    return re.sub(r"[\s，,。！？?；;：:]+", "", without_labels)
 
 
 def _grounded_supported_fact_texts(conclusion: ConclusionResult) -> list[str]:
@@ -4526,6 +4841,85 @@ def _grounded_quote_texts(conclusion: ConclusionResult) -> list[str]:
     return _dedupe_keep_order(texts)
 
 
+GENERIC_REFERENT_ALIAS_RE = re.compile(
+    r"(巨物|那个人|这个人|它们|他们|她们|那个存在|这个存在)"
+    r"[（(]([^（）()]{1,24})[）)]"
+)
+
+
+def _unbound_generic_referent_aliases(
+    conclusion: ConclusionResult,
+    *,
+    evidence_prompt_text: str,
+) -> list[tuple[str, str]]:
+    claim_text = "\n".join(
+        [
+            conclusion.answer,
+            *[
+                str(fact.get("fact") or "")
+                for fact in conclusion.supported_facts
+                if isinstance(fact, dict)
+            ],
+        ]
+    )
+    compact_evidence = _normalize_for_evidence_match(evidence_prompt_text)
+    unbound: list[tuple[str, str]] = []
+    for generic, alias in GENERIC_REFERENT_ALIAS_RE.findall(claim_text):
+        compact_generic = _normalize_for_evidence_match(generic)
+        compact_alias = _normalize_for_evidence_match(alias)
+        if not compact_generic or not compact_alias:
+            continue
+        explicit_patterns = (
+            compact_generic + "（" + compact_alias + "）",
+            compact_generic + "(" + compact_alias + ")",
+            compact_generic + "就是" + compact_alias,
+            compact_generic + "即" + compact_alias,
+            compact_generic + "是" + compact_alias,
+        )
+        if not any(pattern in compact_evidence for pattern in explicit_patterns):
+            unbound.append((generic, alias))
+    return list(dict.fromkeys(unbound))
+
+
+def _strip_unbound_generic_referent_aliases(
+    conclusion: ConclusionResult,
+    *,
+    evidence_prompt_text: str,
+) -> ConclusionResult:
+    unbound = _unbound_generic_referent_aliases(
+        conclusion,
+        evidence_prompt_text=evidence_prompt_text,
+    )
+    if not unbound:
+        return conclusion
+
+    def strip_aliases(text: str) -> str:
+        output = str(text or "")
+        for generic, alias in unbound:
+            output = re.sub(
+                re.escape(generic) + r"[（(]" + re.escape(alias) + r"[）)]",
+                generic,
+                output,
+            )
+        return output
+
+    supported_facts: list[dict[str, Any]] = []
+    for fact in conclusion.supported_facts:
+        if not isinstance(fact, dict):
+            supported_facts.append(fact)
+            continue
+        normalized_fact = dict(fact)
+        normalized_fact["fact"] = strip_aliases(str(fact.get("fact") or ""))
+        supported_facts.append(normalized_fact)
+    conclusion.answer = strip_aliases(conclusion.answer)
+    conclusion.supported_facts = supported_facts
+    conclusion.grounding_warnings.extend(
+        f"removed_unbound_generic_alias:{generic}({alias})"
+        for generic, alias in unbound
+    )
+    return conclusion
+
+
 QUOTE_REQUIRED_RELATION_TERMS = (
     "未婚夫",
     "未婚妻",
@@ -4559,30 +4953,6 @@ def _claim_has_unsupported_quote_required_terms(claim: str, quote_pool: str) -> 
         if token.isascii() and len(token) >= 3 and _normalize_for_evidence_match(token) not in quote_pool:
             missing.append(token)
     return _dedupe_keep_order(missing)
-
-
-def _answer_from_grounded_facts(conclusion: ConclusionResult) -> str:
-    quote_pool = _normalize_for_evidence_match("\n".join(_grounded_quote_texts(conclusion)))
-    facts = [
-        str(fact.get("fact") or "").strip()
-        for fact in conclusion.supported_facts
-        if (
-            isinstance(fact, dict)
-            and str(fact.get("fact") or "").strip()
-            and not _claim_has_unsupported_quote_required_terms(str(fact.get("fact") or ""), quote_pool)
-        )
-    ]
-    inferred = [
-        str(fact.get("fact") or "").strip() if isinstance(fact, dict) else str(fact or "").strip()
-        for fact in conclusion.inferred_facts
-    ]
-    inferred = [item for item in inferred if item and not _claim_has_unsupported_quote_required_terms(item, quote_pool)]
-    selected = _dedupe_keep_order([*facts, *inferred])
-    if not selected:
-        return conclusion.answer
-    if len(selected) == 1:
-        return selected[0]
-    return "根据当前证据可确认：" + "；".join(selected) + "。"
 
 
 def _validate_grounded_quotes(
@@ -4627,7 +4997,15 @@ def _validate_grounded_quotes(
             total_quote_chars += len(quote)
             if len(quote) > 80:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_quote_over_80")
-            if _normalize_for_evidence_match(quote) not in evidence_pool:
+            quote_matches = _normalize_for_evidence_match(quote) in evidence_pool
+            if not quote_matches:
+                quote_matches = (
+                    _normalize_quote_without_speaker_labels(quote)
+                    in _normalize_quote_without_speaker_labels(
+                        evidence_prompt_text or _grounding_evidence_pool(evidence)
+                    )
+                )
+            if not quote_matches:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_quote_not_found")
         if fact_quote_chars > 160:
             issues.append(f"supported_fact_{fact_index}_quote_total_over_160")
@@ -4768,7 +5146,7 @@ def _build_grounded_fallback_answer(
     for item in evidence[:6]:
         document = item.get("document") or {}
         text = strip_internal_evidence_meta(
-            str(item.get("evidence_chain_text") or document.get("clean_text") or document.get("search_text") or "")
+            str(document.get("clean_text") or document.get("search_text") or "")
         ).strip()
         if not text:
             continue
@@ -5222,19 +5600,26 @@ def validate_conclusion_grounding(
                 grounding_warnings=quote_issues,
             )
         if quote_warnings:
-            repaired_answer = _answer_from_grounded_facts(conclusion)
-            if repaired_answer and repaired_answer != conclusion.answer:
-                return ConclusionResult(
-                    next_action=conclusion.next_action,
-                    answer=repaired_answer,
-                    missing_slots=conclusion.missing_slots,
-                    clarification_question=conclusion.clarification_question,
-                    follow_up_hypothesis=conclusion.follow_up_hypothesis,
-                    supported_facts=conclusion.supported_facts,
-                    inferred_facts=conclusion.inferred_facts,
-                    grounding_warnings=quote_warnings,
-                )
+            # Quotes are exact and every supported fact passed the hard checks
+            # above.  These warnings come from a deliberately conservative
+            # lexical comparison between the final prose and the short quote
+            # strings.  Keep the model's grounded final answer instead of
+            # mechanically rebuilding it from fact labels: the latter loses
+            # explicit partial-answer caveats and often produces stilted or
+            # circular prose.  The warnings remain available for audit.
             conclusion.grounding_warnings.extend(quote_warnings)
+        conclusion = _strip_unbound_generic_referent_aliases(
+            conclusion,
+            evidence_prompt_text=evidence_prompt_text or _grounding_evidence_pool(evidence),
+        )
+        # The structured quote checks above are the authoritative grounding
+        # path for strict/quote modes. Once every cited quote is found and each
+        # supported fact passes its hard relation checks, do not run the legacy
+        # free-form token-overlap gate as a second verifier. Chinese token
+        # extraction can split a supported paraphrase into arbitrary substrings
+        # (for example ``娜塔莉娅解释乌萨``), causing false retrieve_more or
+        # abstain decisions even with exact quotes in the prompt.
+        return conclusion
 
     answer_tokens = _grounding_extract_answer_tokens(conclusion.answer, question)
     long_tokens = [token for token in answer_tokens if len(token) >= GROUNDING_LONG_TOKEN_MIN_LEN]
@@ -5741,6 +6126,13 @@ class CPUInferencePipeline:
                 prompt_evidence_top_k=self.prompt_evidence_top_k,
                 lambda_mult=self.mmr_lambda,
             )
+            selected = _pin_compound_subclaim_evidence(
+                question,
+                hypothesis,
+                evidence,
+                selected,
+                limit=self.prompt_evidence_top_k,
+            )
         else:
             selected = select_prompt_evidence(
                 question,
@@ -5795,9 +6187,8 @@ class CPUInferencePipeline:
         refined: list[dict[str, Any]] = []
         for item in evidence:
             doc = item.get("document") or {}
-            chain_text = strip_internal_evidence_meta(str(item.get("evidence_chain_text") or "")).strip()
             clean_text = strip_internal_evidence_meta(str(doc.get("clean_text") or ""))
-            if not (chain_text or clean_text):
+            if not clean_text:
                 refined.append(item)
                 continue
             strips = split_evidence_strips(clean_text, max_strips=self.crag_refine_max_sentences)
@@ -5830,6 +6221,35 @@ class CPUInferencePipeline:
             ]
             for index in action_indices[:3]:
                 selected_indices.add(index)
+            subclaim_indices: list[int] = []
+            for subclaim in item.get("prompt_subclaim_pins") or []:
+                scored_subclaim_indices = [
+                    (
+                        _subclaim_window_score(
+                            str(subclaim),
+                            hypothesis,
+                            "\n".join(strips[max(0, index - 1) : min(len(strips), index + 2)]),
+                        ),
+                        index,
+                    )
+                    for index in range(len(strips))
+                ]
+                ranked_subclaim_indices = sorted(
+                    scored_subclaim_indices,
+                    key=lambda entry: (entry[0], -entry[1]),
+                    reverse=True,
+                )
+                chosen_indices: list[int] = []
+                for score, index in ranked_subclaim_indices:
+                    if score <= 0:
+                        break
+                    if any(abs(index - chosen) <= 2 for chosen in chosen_indices):
+                        continue
+                    selected_indices.add(index)
+                    subclaim_indices.append(index)
+                    chosen_indices.append(index)
+                    if len(chosen_indices) >= 2:
+                        break
             reveal_indices: list[int] = []
             if _is_reveal_question(question, hypothesis):
                 scored_reveal_indices = sorted(
@@ -5842,27 +6262,37 @@ class CPUInferencePipeline:
                 reveal_indices = [index for score, index in scored_reveal_indices if score > 0][:4]
                 for index in reveal_indices:
                     selected_indices.add(index)
+            # Sentence-only refinement breaks narrative evidence: the selected
+            # line often contains a question or action while its immediately
+            # adjacent line contains the reason, referent, or outcome. Preserve
+            # a one-strip context window around every selected line so the
+            # answering model sees local causal bridges without restoring the
+            # large cross-document evidence chain.
+            seed_indices = sorted(selected_indices)
+            context_indices: set[int] = set()
+            for index in seed_indices:
+                for neighbor_index in (index - 1, index + 1):
+                    if 0 <= neighbor_index < len(strips):
+                        context_indices.add(neighbor_index)
+            selected_indices.update(context_indices)
             selected_indices_list = sorted(selected_indices)
             selected_strips = [strips[index] for index in selected_indices_list]
-            if chain_text and not _is_reveal_question(question, hypothesis) and _anchor_hit_count(chain_text, anchors) >= 2:
-                selected_strips.insert(0, chain_text)
-                selected_strips = _dedupe_keep_order(selected_strips)
             refined_doc = dict(doc)
             refined_doc["original_clean_text"] = clean_text
             refined_doc["clean_text"] = "\n".join(selected_strips)
             refined_doc["search_text"] = refined_doc["clean_text"]
             refined_item = dict(item)
             refined_item["document"] = refined_doc
-            if _is_reveal_question(question, hypothesis):
-                refined_item["prompt_prefer_clean_text"] = True
-            if chain_text:
-                refined_item["evidence_chain_text"] = chain_text
+            refined_item["prompt_prefer_clean_text"] = True
+            refined_item.pop("evidence_chain_text", None)
             refined_item["crag_refinement"] = {
                 "enabled": True,
                 "original_sentence_count": len(strips),
                 "kept_sentence_count": len(selected_strips),
                 "kept_sentence_indices": selected_indices_list,
                 "anchor_sentence_indices": anchor_indices[:2],
+                "context_sentence_indices": sorted(context_indices),
+                "subclaim_sentence_indices": sorted(set(subclaim_indices)),
                 "reveal_sentence_indices": reveal_indices,
                 "max_sentence_score": max(float(score) for score in scores) if scores else None,
             }
