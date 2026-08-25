@@ -22,6 +22,15 @@ def test_api_cli_exposes_hybrid_fusion_controls() -> None:
         assert option in source
 
 
+def test_api_cli_exposes_sidecar_index_controls() -> None:
+    source = _source()
+    assert '"--index-dir"' in source
+    assert 'retrieval_cfg.get("index_dir")' in source
+    assert 'retrieval_cfg.get("embedding_model_path")' in source
+    assert '"documents_path": index_dir / "documents.jsonl"' in source
+    assert '"sparse_index_path": index_dir / "sparse_index.pkl"' in source
+
+
 def test_api_query_config_receives_hybrid_fusion_controls() -> None:
     tree = ast.parse(_source(), filename=str(API_SCRIPT))
     query_config_calls = [

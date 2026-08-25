@@ -588,7 +588,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dialogue-context", type=str, default="", help="Optional multi-turn context.")
     parser.add_argument("--runtime-config", type=Path, default=DEFAULT_RUNTIME_CONFIG_PATH)
     parser.add_argument("--device", type=str, default=None, help="Retrieval device. Overrides runtime config.")
-    parser.add_argument("--embedding-model", type=Path, default=EMBEDDING_MODEL_DIR)
+    parser.add_argument(
+        "--index-dir",
+        type=Path,
+        default=None,
+        help="Complete retrieval index directory. Overrides retrieval.index_dir when provided.",
+    )
+    parser.add_argument("--embedding-model", type=Path, default=None)
     parser.add_argument("--reranker-model", type=Path, default=None)
     parser.add_argument("--no-reranker", action="store_true")
     parser.add_argument("--dense-top-k", type=int, default=None)
@@ -884,12 +890,40 @@ def main() -> None:
     )
     from goldenglow.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
+    configured_index_dir = args.index_dir or retrieval_cfg.get("index_dir")
+    index_dir = None
+    if configured_index_dir:
+        index_dir = Path(configured_index_dir)
+        if not index_dir.is_absolute():
+            index_dir = PROJECT_ROOT / index_dir
+    configured_embedding_model = args.embedding_model or retrieval_cfg.get("embedding_model_path")
+    if configured_embedding_model is None and index_dir is not None:
+        metadata_path = index_dir / "index_meta.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            configured_embedding_model = metadata.get("embedding_model")
+    embedding_model_path = Path(configured_embedding_model or EMBEDDING_MODEL_DIR)
+    if not embedding_model_path.is_absolute():
+        embedding_model_path = PROJECT_ROOT / embedding_model_path
+    index_kwargs = (
+        {
+            "documents_path": index_dir / "documents.jsonl",
+            "faiss_index_path": index_dir / "faiss.index",
+            "bm25_tokens_path": index_dir / "bm25_tokens.pkl",
+            "sparse_index_path": index_dir / "sparse_index.pkl",
+            "index_metadata_path": index_dir / "index_meta.json",
+        }
+        if index_dir is not None
+        else {}
+    )
+
     retriever = ArknightsHybridRetriever.from_paths(
-        embedding_model_path=args.embedding_model,
+        embedding_model_path=embedding_model_path,
         reranker_model_path=reranker_model,
         reranker_max_length=reranker_max_length,
         minirag_index_path=minirag_index_path,
         device=device,
+        **index_kwargs,
     )
     pipeline = CPUInferencePipeline(
         retriever=retriever,
