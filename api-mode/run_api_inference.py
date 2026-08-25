@@ -645,6 +645,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
     parser.add_argument("--max-retrieval-rounds", type=int, default=None)
+    parser.add_argument(
+        "--max-retrieval-queries",
+        type=int,
+        default=None,
+        help="Experimental cap on the actual dense/sparse query fan-out per retrieval round; unset keeps current behavior.",
+    )
     parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)
@@ -662,6 +668,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     parser.add_argument("--no-save-run", action="store_true")
     parser.add_argument("--answer-only", action="store_true")
+    parser.add_argument(
+        "--questions-file",
+        type=Path,
+        default=None,
+        help="UTF-8 text file with one independent question per non-empty line.",
+    )
+    parser.add_argument(
+        "--batch-output",
+        type=Path,
+        default=None,
+        help="JSONL output for --questions-file; each record includes total and per-stage timing.",
+    )
     parser.add_argument(
         "--pipeline-mode",
         choices=("standard", "answer_then_retrieve_refine", "question_retrieve_answer_retrieve_refine"),
@@ -767,6 +785,17 @@ def main() -> None:
         resolve_config_value(args.max_retrieval_rounds, inference_cfg, "max_retrieval_rounds", 2)
     )
     max_retrieval_rounds = min(2, max(1, max_retrieval_rounds))
+    configured_max_retrieval_queries = resolve_config_value(
+        args.max_retrieval_queries,
+        retrieval_cfg,
+        "max_retrieval_queries",
+        0,
+    )
+    max_retrieval_queries = (
+        None
+        if configured_max_retrieval_queries is None or int(configured_max_retrieval_queries) <= 0
+        else int(configured_max_retrieval_queries)
+    )
     prompt_evidence_top_k = int(
         resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 12)
     )
@@ -929,6 +958,7 @@ def main() -> None:
         retriever=retriever,
         generator=generator,
         query_config=QueryConfig(
+            max_retrieval_queries=max_retrieval_queries or 0,
             dense_top_k=dense_top_k,
             sparse_top_k=sparse_top_k,
             minirag_top_k=minirag_top_k,
@@ -958,6 +988,7 @@ def main() -> None:
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
+        max_retrieval_queries=max_retrieval_queries,
         prompt_evidence_top_k=prompt_evidence_top_k,
         prompt_evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
         prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
@@ -977,14 +1008,45 @@ def main() -> None:
         web_context_config=inference_cfg.get("web_context") if isinstance(inference_cfg.get("web_context"), dict) else None,
     )
 
+    if args.questions_file is not None and args.question:
+        raise SystemExit("Pass either a positional question or --questions-file, not both.")
+    if args.batch_output is not None and args.questions_file is None:
+        raise SystemExit("--batch-output requires --questions-file.")
+    batch_questions: list[str] | None = None
+    batch_output_path: Path | None = None
+    if args.questions_file is not None:
+        batch_questions = [
+            line.strip()
+            for line in args.questions_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if not batch_questions:
+            raise SystemExit(f"No questions found in {args.questions_file}.")
+        batch_output_path = args.batch_output
+        if batch_output_path is None:
+            batch_output_path = (run_log_dir or DEFAULT_LOG_DIR) / "independent_results.jsonl"
+        if not batch_output_path.is_absolute():
+            batch_output_path = PROJECT_ROOT / batch_output_path
+        batch_output_path.parent.mkdir(parents=True, exist_ok=True)
+        batch_output_path.write_text("", encoding="utf-8")
+
     dialogue_history: list[str] = []
     if args.dialogue_context.strip():
         dialogue_history.extend(line.strip() for line in args.dialogue_context.splitlines() if line.strip())
 
     pending_question = args.question
-    print("API-mode inference ready. Type /exit to quit, /clear to reset dialogue context.", flush=True)
+    batch_index = 0
+    if batch_questions is None:
+        print("API-mode inference ready. Type /exit to quit, /clear to reset dialogue context.", flush=True)
+    else:
+        print(f"API-mode independent batch ready: {len(batch_questions)} questions.", flush=True)
     while True:
-        if pending_question is not None:
+        if batch_questions is not None:
+            if batch_index >= len(batch_questions):
+                break
+            question = batch_questions[batch_index]
+            batch_index += 1
+        elif pending_question is not None:
             question = pending_question.strip()
             pending_question = None
         else:
@@ -1004,11 +1066,38 @@ def main() -> None:
             continue
 
         started = time.perf_counter()
+        question_api_request_start = generator._request_index
+        current_stage: str | None = None
+        last_stage_time = started
+        stage_timings: list[dict[str, Any]] = []
+
+        def mark_stage(stage: str) -> None:
+            nonlocal current_stage, last_stage_time
+            now = time.perf_counter()
+            if current_stage is not None:
+                stage_timings.append(
+                    {"stage": current_stage, "elapsed_seconds": round(now - last_stage_time, 6)}
+                )
+            current_stage = stage
+            last_stage_time = now
+            print(f"[stage] {stage}", file=sys.stderr, flush=True)
+
+        def finish_stage_timing() -> None:
+            nonlocal current_stage, last_stage_time
+            if current_stage is None:
+                return
+            now = time.perf_counter()
+            stage_timings.append(
+                {"stage": current_stage, "elapsed_seconds": round(now - last_stage_time, 6)}
+            )
+            current_stage = None
+            last_stage_time = now
+
         print(f"[running] api-mode pipeline start mode={pipeline_mode}", file=sys.stderr, flush=True)
         try:
-            dialogue_context = render_dialogue_context(dialogue_history)
+            dialogue_context = "" if batch_questions is not None else render_dialogue_context(dialogue_history)
             if pipeline_mode == "answer_then_retrieve_refine":
-                print("[stage] initial_direct_answer", file=sys.stderr, flush=True)
+                mark_stage("initial_direct_answer")
                 initial_prompt = build_plain_initial_prompt(
                     question,
                     dialogue_context,
@@ -1021,7 +1110,7 @@ def main() -> None:
                     top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
                 )
                 retrieval_query = f"{question}\n\n初步回答：{initial_answer}"
-                print("[stage] retrieval_from_initial_answer", file=sys.stderr, flush=True)
+                mark_stage("retrieval_from_initial_answer")
                 if enable_reranker:
                     hits = retriever.search(retrieval_query, config=pipeline.query_config)
                 else:
@@ -1032,7 +1121,7 @@ def main() -> None:
                     max_chars_per_doc=prompt_evidence_max_chars_per_doc,
                     max_total_chars=prompt_conclusion_evidence_max_total_chars,
                 )
-                print("[stage] evidence_grounded_revision", file=sys.stderr, flush=True)
+                mark_stage("evidence_grounded_revision")
                 final_answer = generator.generate(
                     build_revision_prompt(question, initial_answer, evidence_text, dialogue_context),
                     max_tokens=refine_answer_max_tokens,
@@ -1072,12 +1161,13 @@ def main() -> None:
                     answer=final_answer,
                 )
             elif pipeline_mode == "question_retrieve_answer_retrieve_refine":
-                print("[stage] hypothesis", file=sys.stderr, flush=True)
+                mark_stage("hypothesis")
                 current_hypothesis = pipeline.build_hypothesis(question, dialogue_context)
                 first_round_queries = [question, build_retrieval_query(current_hypothesis)]
                 first_round_queries.extend(build_follow_up_hypothesis_queries(question, current_hypothesis))
+                first_round_queries = pipeline.limit_retrieval_queries(first_round_queries)
 
-                print("[stage] retrieval_round1_from_question", file=sys.stderr, flush=True)
+                mark_stage("retrieval_round1_from_question")
                 minirag_expansion_record = None
                 retained_chapter_scope = None
                 retained_storyline_scope = None
@@ -1109,7 +1199,7 @@ def main() -> None:
                         first_round_queries,
                 )
 
-                print("[stage] draft_answer_from_round1_evidence", file=sys.stderr, flush=True)
+                mark_stage("draft_answer_from_round1_evidence")
                 first_prompt_evidence = pipeline.prepare_prompt_evidence(
                     question,
                     current_hypothesis,
@@ -1136,8 +1226,9 @@ def main() -> None:
                     f"{question}\n初步答案待核验，不一定正确：{draft_for_query}",
                     f"{question} 直接证据 具体行动 亲口承认 结果 反证",
                 ]
+                second_round_queries = pipeline.limit_retrieval_queries(second_round_queries)
 
-                print("[stage] retrieval_round2_from_draft_answer", file=sys.stderr, flush=True)
+                mark_stage("retrieval_round2_from_draft_answer")
                 _, _, second_evidence = pipeline._retrieve_round(
                     question,
                     current_hypothesis,
@@ -1163,7 +1254,7 @@ def main() -> None:
                     max_total_chars=prompt_conclusion_evidence_max_total_chars,
                 )
 
-                print("[stage] final_answer_from_combined_evidence", file=sys.stderr, flush=True)
+                mark_stage("final_answer_from_combined_evidence")
                 final_answer = generator.generate(
                     build_revision_prompt(question, draft_answer, evidence_text, dialogue_context),
                     max_tokens=refine_answer_max_tokens,
@@ -1225,52 +1316,88 @@ def main() -> None:
                 result = pipeline.run(
                     question,
                     dialogue_context,
-                    progress_callback=lambda stage: print(f"[stage] {stage}", file=sys.stderr, flush=True),
+                    progress_callback=mark_stage,
                 )
             else:
                 raise ValueError(f"Unsupported pipeline_mode: {pipeline_mode}")
         except Exception as exc:
+            finish_stage_timing()
             elapsed = time.perf_counter() - started
             if run_log_dir is not None:
+                failure_name = f"failure_{batch_index:04d}.json" if batch_questions is not None else "failure.json"
                 failure = {
                     "question": question,
                     "elapsed_seconds": round(elapsed, 3),
                     "error_type": type(exc).__name__,
                     "error": str(exc),
                     "api_request_count": generator._request_index,
+                    "api_request_count_question": generator._request_index - question_api_request_start,
                 }
-                (run_log_dir / "failure.json").write_text(
+                (run_log_dir / failure_name).write_text(
                     json.dumps(failure, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
                 print(f"[saved] {run_log_dir}", file=sys.stderr, flush=True)
             print(f"[error] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             print(f"[failed] {elapsed:.2f}s", file=sys.stderr, flush=True)
+            if batch_output_path is not None:
+                failure_record = {
+                    "index": batch_index,
+                    "question": question,
+                    "elapsed_seconds": round(elapsed, 3),
+                    "stage_timings": stage_timings,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+                with batch_output_path.open("a", encoding="utf-8") as output_file:
+                    output_file.write(json.dumps(failure_record, ensure_ascii=False) + "\n")
             continue
+        finish_stage_timing()
         elapsed = time.perf_counter() - started
         print(f"[done] {elapsed:.2f}s", file=sys.stderr, flush=True)
         if run_log_dir is not None:
-            result_path = run_log_dir / "result.json"
-            result_path.write_text(json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8")
-            summary_path = run_log_dir / "summary.json"
+            result_name = f"result_{batch_index:04d}.json" if batch_questions is not None else "result.json"
+            summary_name = f"summary_{batch_index:04d}.json" if batch_questions is not None else "summary.json"
+            result_path = run_log_dir / result_name
+            result_payload = asdict(result)
+            result_payload["elapsed_seconds"] = round(elapsed, 3)
+            result_payload["stage_timings"] = stage_timings
+            result_path.write_text(json.dumps(result_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            summary_path = run_log_dir / summary_name
             summary = {
                 "question": question,
                 "answer": result.answer,
                 "elapsed_seconds": round(elapsed, 3),
                 "result_path": str(result_path),
                 "api_request_count": generator._request_index,
+                "api_request_count_question": generator._request_index - question_api_request_start,
                 "retrieval_query": result.retrieval_query,
+                "stage_timings": stage_timings,
             }
             summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"[saved] {run_log_dir}", file=sys.stderr, flush=True)
 
+        if batch_output_path is not None:
+            batch_record = asdict(result)
+            batch_record["index"] = batch_index
+            batch_record["elapsed_seconds"] = round(elapsed, 3)
+            batch_record["stage_timings"] = stage_timings
+            batch_record["api_request_count_cumulative"] = generator._request_index
+            batch_record["api_request_count_question"] = generator._request_index - question_api_request_start
+            with batch_output_path.open("a", encoding="utf-8") as output_file:
+                output_file.write(json.dumps(batch_record, ensure_ascii=False) + "\n")
+
         if args.answer_only:
             print(result.answer, flush=True)
-        else:
+        elif batch_questions is None:
             print(json.dumps(asdict(result), ensure_ascii=False, indent=2), flush=True)
 
-        append_dialogue_turn(dialogue_history, "user", question)
-        append_dialogue_turn(dialogue_history, "assistant", result.answer)
+        if batch_questions is None:
+            append_dialogue_turn(dialogue_history, "user", question)
+            append_dialogue_turn(dialogue_history, "assistant", result.answer)
+
+    if batch_output_path is not None:
+        print(f"[batch-done] {batch_output_path}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,18 @@ def test_api_cli_exposes_sidecar_index_controls() -> None:
     assert '"sparse_index_path": index_dir / "sparse_index.pkl"' in source
 
 
+def test_api_cli_exposes_independent_batch_and_query_cap() -> None:
+    source = _source()
+    for option in (
+        "--questions-file",
+        "--batch-output",
+        "--max-retrieval-queries",
+    ):
+        assert option in source
+    assert 'dialogue_context = "" if batch_questions is not None' in source
+    assert '"stage_timings"' in source
+
+
 def test_api_query_config_receives_hybrid_fusion_controls() -> None:
     tree = ast.parse(_source(), filename=str(API_SCRIPT))
     query_config_calls = [
@@ -48,3 +60,4 @@ def test_api_query_config_receives_hybrid_fusion_controls() -> None:
         "dense_min_quota",
         "sparse_min_quota",
     } <= keyword_names
+    assert "max_retrieval_queries" in keyword_names

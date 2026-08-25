@@ -5648,6 +5648,7 @@ class CPUInferencePipeline:
         self_consistency_samples: int = 1,
         self_consistency_temperature: float = 0.7,
         answer_grounding_mode: str = "weak",
+        max_retrieval_queries: int | None = None,
         max_follow_up_rounds: int | None = None,
         use_model_hypothesis: bool = True,
         use_model_conclusion_generation: bool = True,
@@ -5660,6 +5661,16 @@ class CPUInferencePipeline:
         self.generator = generator
         self.query_config = query_config or QueryConfig()
         self.max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
+        configured_max_retrieval_queries = (
+            self.query_config.max_retrieval_queries
+            if max_retrieval_queries is None
+            else max_retrieval_queries
+        )
+        self.max_retrieval_queries = (
+            None
+            if int(configured_max_retrieval_queries) <= 0
+            else int(configured_max_retrieval_queries)
+        )
         if not use_model_hypothesis:
             raise ValueError("heuristic hypothesis generation is disabled; set use_model_hypothesis=true")
         if use_model_retrieval_planner is not None:
@@ -5692,6 +5703,18 @@ class CPUInferencePipeline:
             if isinstance(web_context_config, WebContextConfig)
             else build_web_context_config(web_context_config)
         )
+
+    def limit_retrieval_queries(self, queries: list[str]) -> list[str]:
+        """Deduplicate and cap model-expanded retrieval queries per round.
+
+        A non-positive or unset cap preserves the historical behavior.  The
+        cap is applied after deterministic chapter expansion so it bounds the
+        actual dense/sparse fan-out, not just the planner's seed list.
+        """
+        deduped = _dedupe_keep_order(queries)
+        if self.max_retrieval_queries is None:
+            return deduped
+        return deduped[: self.max_retrieval_queries]
 
     def prepare_prompt_evidence(
         self,
@@ -6351,7 +6374,7 @@ class CPUInferencePipeline:
         sparse_storyline_scope: str | None = None,
         enable_minirag: bool = True,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        expanded_queries = expand_queries_with_main_chapter_terms(queries)
+        expanded_queries = self.limit_retrieval_queries(expand_queries_with_main_chapter_terms(queries))
         dense_hits, sparse_hits, minirag_hits = self._search_queries(
             expanded_queries,
             minirag_chapter_scope=minirag_chapter_scope,
@@ -6380,7 +6403,7 @@ class CPUInferencePipeline:
         hypothesis: HypothesisDocument,
         queries: list[str],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any] | None]:
-        expanded_queries = expand_queries_with_main_chapter_terms(queries)
+        expanded_queries = self.limit_retrieval_queries(expand_queries_with_main_chapter_terms(queries))
         dense_hits, sparse_hits, _ = self._search_queries(expanded_queries, enable_minirag=False)
         first_pass_evidence = self._finalize_hits(question, hypothesis, dense_hits, sparse_hits, [])
         scope_info = infer_dominant_minirag_chapter_scope(
@@ -6446,13 +6469,15 @@ class CPUInferencePipeline:
             top_k=max(1, int(self.query_config.minirag_expansion_query_top_k)),
         )
         second_dense_hits, second_sparse_hits, second_minirag_hits = self._search_queries(
-            expand_queries_with_main_chapter_terms(second_pass_queries),
+            self.limit_retrieval_queries(expand_queries_with_main_chapter_terms(second_pass_queries)),
             minirag_chapter_scope=graph_scope,
             sparse_storyline_scope=sparse_storyline_scope,
             enable_minirag=True,
         )
         local_dense_hits, local_sparse_hits = self._search_scoped_chapter_queries(
-            [*expanded_queries, *expand_queries_with_main_chapter_terms(second_pass_queries)],
+            self.limit_retrieval_queries(
+                [*expanded_queries, *expand_queries_with_main_chapter_terms(second_pass_queries)]
+            ),
             chapter_scope=chapter_scope,
         )
         scoped_dense_hits = merge_ranked_hits(
@@ -6542,7 +6567,7 @@ class CPUInferencePipeline:
             build_retrieval_query(current_hypothesis),
         ]
         pending_queries.extend(build_follow_up_hypothesis_queries(question, current_hypothesis))
-        pending_queries = expand_queries_with_main_chapter_terms(pending_queries)
+        pending_queries = self.limit_retrieval_queries(expand_queries_with_main_chapter_terms(pending_queries))
         current_hypothesis_task_type = INITIAL_HYPOTHESIS_TASK_TYPE
 
         for round_index in range(1, self.max_retrieval_rounds + 1):
@@ -6679,6 +6704,9 @@ class CPUInferencePipeline:
 
             pending_queries = [build_retrieval_query(current_hypothesis)]
             pending_queries.extend(build_follow_up_hypothesis_queries(question, current_hypothesis))
+            pending_queries = self.limit_retrieval_queries(
+                expand_queries_with_main_chapter_terms(pending_queries)
+            )
             step_record["next_round_queries"] = pending_queries
             current_hypothesis_task_type = FOLLOW_UP_HYPOTHESIS_TASK_TYPE
 
@@ -6724,6 +6752,7 @@ class CPUInferencePipeline:
                 **self.generator.describe_runtime(),
                 "prompt_evidence_strategy": {
                     "top_k": self.prompt_evidence_top_k,
+                    "max_retrieval_queries": self.max_retrieval_queries,
                     "mmr_enabled": self.enable_mmr,
                     "mmr_lambda": self.mmr_lambda,
                     "pyramid_order_enabled": self.enable_pyramid_order,
