@@ -46,6 +46,8 @@ class BuildConfig:
 
 @dataclass(slots=True)
 class QueryConfig:
+    # Zero preserves the historical unlimited planner/query-expansion fan-out.
+    max_retrieval_queries: int = 0
     dense_top_k: int = 60
     sparse_top_k: int = 60
     minirag_top_k: int = 120
