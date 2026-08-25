@@ -593,6 +593,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-reranker", action="store_true")
     parser.add_argument("--dense-top-k", type=int, default=None)
     parser.add_argument("--sparse-top-k", type=int, default=None)
+    parser.add_argument("--dense-weight", type=float, default=None)
+    parser.add_argument("--sparse-weight", type=float, default=None)
+    parser.add_argument("--dense-min-quota", type=int, default=None)
+    parser.add_argument("--sparse-min-quota", type=int, default=None)
     parser.add_argument("--fusion-top-k", type=int, default=None)
     parser.add_argument("--rerank-top-k", type=int, default=None)
     parser.add_argument("--rerank-batch-size", type=int, default=None)
@@ -672,6 +676,14 @@ def main() -> None:
     device = str(resolve_config_value(args.device, retrieval_cfg, "device", "cpu"))
     dense_top_k = int(resolve_config_value(args.dense_top_k, retrieval_cfg, "dense_top_k", 60))
     sparse_top_k = int(resolve_config_value(args.sparse_top_k, retrieval_cfg, "sparse_top_k", 60))
+    dense_weight = float(resolve_config_value(args.dense_weight, retrieval_cfg, "dense_weight", 1.0))
+    sparse_weight = float(resolve_config_value(args.sparse_weight, retrieval_cfg, "sparse_weight", 0.8))
+    dense_min_quota = int(
+        resolve_config_value(args.dense_min_quota, retrieval_cfg, "dense_min_quota", 0)
+    )
+    sparse_min_quota = int(
+        resolve_config_value(args.sparse_min_quota, retrieval_cfg, "sparse_min_quota", 0)
+    )
     fusion_top_k = int(resolve_config_value(args.fusion_top_k, retrieval_cfg, "fusion_top_k", 40))
     rerank_top_k = int(resolve_config_value(args.rerank_top_k, retrieval_cfg, "rerank_top_k", 15))
     rerank_batch_size = int(resolve_config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8))
@@ -888,6 +900,10 @@ def main() -> None:
             minirag_top_k=minirag_top_k,
             fusion_top_k=fusion_top_k,
             rerank_top_k=rerank_top_k,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+            dense_min_quota=dense_min_quota,
+            sparse_min_quota=sparse_min_quota,
             minirag_weight=minirag_weight,
             minirag_mode_weights={str(key): float(value) for key, value in minirag_mode_weights.items()},
             minirag_fusion_mode=minirag_fusion_mode,
