@@ -41,6 +41,8 @@ def test_api_cli_exposes_independent_batch_and_query_cap() -> None:
         assert option in source
     assert 'dialogue_context = "" if batch_questions is not None' in source
     assert '"stage_timings"' in source
+    assert 'generator_cfg.get("task_extra_body")' in source
+    assert "prompt_task_name(prompt)" in source
 
 
 def test_api_query_config_receives_hybrid_fusion_controls() -> None:
