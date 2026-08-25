@@ -253,6 +253,11 @@ def prompt_wants_json(prompt: str) -> bool:
     )
 
 
+def prompt_task_name(prompt: str) -> str:
+    match = re.search(r"(?m)^task:\s*([^\s]+)", prompt)
+    return match.group(1).strip() if match else ""
+
+
 def validate_api_key(api_key: str, api_key_env: str) -> None:
     if "你的" in api_key or "API key" in api_key or "api key" in api_key:
         raise SystemExit(f"{api_key_env} still contains a placeholder. Replace it with the real API key.")
@@ -332,6 +337,7 @@ class OpenAICompatibleAPIRunner:
         top_p: float = 0.9,
         response_format_json: bool = True,
         extra_body: dict[str, Any] | None = None,
+        task_extra_body: dict[str, dict[str, Any]] | None = None,
         request_log_dir: Path | None = None,
     ) -> None:
         self.api_base_url = normalize_chat_completions_url(api_base_url)
@@ -345,6 +351,7 @@ class OpenAICompatibleAPIRunner:
         self.repeat_penalty = 1.0
         self.response_format_json = response_format_json
         self.extra_body = extra_body or {}
+        self.task_extra_body = task_extra_body or {}
         self.request_log_dir = request_log_dir
         self._request_index = 0
 
@@ -362,6 +369,7 @@ class OpenAICompatibleAPIRunner:
             "temperature": self.temperature,
             "top_p": self.top_p,
             "extra_body": self.extra_body,
+            "task_extra_body": self.task_extra_body,
         }
 
     def _post_chat_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -445,6 +453,9 @@ class OpenAICompatibleAPIRunner:
         if requested_max_tokens is not None:
             payload["max_tokens"] = requested_max_tokens
         payload.update(self.extra_body)
+        task_name = prompt_task_name(prompt)
+        if task_name:
+            payload.update(self.task_extra_body.get(task_name) or {})
         if self.response_format_json and wants_json:
             payload["response_format"] = {"type": "json_object"}
 
@@ -573,6 +584,9 @@ class ResponsesAPIRunner(OpenAICompatibleAPIRunner):
         if requested_max_tokens is not None:
             payload["max_output_tokens"] = requested_max_tokens
         payload.update(self.extra_body)
+        task_name = prompt_task_name(prompt)
+        if task_name:
+            payload.update(self.task_extra_body.get(task_name) or {})
         try:
             response = self._post_chat_completion(payload)
             self._write_request_log(payload=payload, response=response)
@@ -905,6 +919,11 @@ def main() -> None:
         top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
         response_format_json=bool(generator_cfg.get("response_format_json", True)) and not args.no_json_response_format,
         extra_body=generator_cfg.get("extra_body") if isinstance(generator_cfg.get("extra_body"), dict) else None,
+        task_extra_body=(
+            generator_cfg.get("task_extra_body")
+            if isinstance(generator_cfg.get("task_extra_body"), dict)
+            else None
+        ),
         request_log_dir=run_log_dir,
     )
 
