@@ -7,6 +7,10 @@ from goldenglow.inference.cpu_pipeline import (
     ConclusionResult,
     HypothesisDocument,
     _grounding_evidence_pool,
+    _resolve_referential_question,
+    build_answer_prompt,
+    normalize_hypothesis_payload,
+    render_evidence_blocks,
     render_short_evidence_brief,
     render_minirag_hints_for_prompt,
     select_prompt_evidence,
@@ -19,6 +23,147 @@ class _Reranker:
     def score(self, *, query: str, documents: list[str], batch_size: int) -> list[float]:
         del query, batch_size
         return [float(index) for index, _ in enumerate(documents)]
+
+
+def test_model_hypothesis_is_not_polluted_by_heuristic_chinese_fragments() -> None:
+    question = "哈洛德为何开始厌倦战争，到了晚年又为什么仍在四处奔走？"
+    hypothesis = normalize_hypothesis_payload(
+        {
+            "entities": ["哈洛德"],
+            "keywords": ["厌倦战争", "晚年", "四处奔走", "原因"],
+            "query_type": "causality",
+            "expected_answer_type": "原因与动机",
+        },
+        question=question,
+        dialogue_context="",
+    )
+
+    assert hypothesis.entities == ["哈洛德"]
+    assert hypothesis.keywords[:4] == ["厌倦战争", "晚年", "四处奔走", "原因"]
+    assert not {"何开始厌", "倦战争", "到了晚年又"} & set(
+        hypothesis.entities + hypothesis.keywords
+    )
+
+
+def test_singular_pronoun_resolution_uses_only_primary_model_entity() -> None:
+    question = "爱国者声称自己毫无复仇之心，那他为什么仍决定与罗德岛战斗？"
+
+    resolved = _resolve_referential_question(question, ["爱国者", "罗德岛"])
+
+    assert resolved == "爱国者声称自己毫无复仇之心，那爱国者为什么仍决定与罗德岛战斗？"
+    assert "爱国者和罗德岛" not in resolved
+
+
+def test_full_evidence_rendering_keeps_every_selected_document_intact() -> None:
+    evidence = [
+        {
+            "doc_index": index,
+            "document": {
+                "id": f"story#full-{index:02d}",
+                "clean_text": f"第{index}条证据开始。" + (f"完整内容{index}。" * 80) + f"第{index}条证据结束。",
+                "search_text": "",
+            },
+        }
+        for index in range(1, 13)
+    ]
+
+    brief = render_short_evidence_brief(
+        evidence,
+        max_chars_per_doc=None,
+        max_total_chars=None,
+    )
+    blocks = render_evidence_blocks(
+        evidence,
+        max_chars_per_doc=None,
+        max_total_chars=None,
+    )
+
+    for index, item in enumerate(evidence, start=1):
+        clean_text = item["document"]["clean_text"]
+        assert clean_text in brief
+        assert clean_text in blocks
+        assert f"story#full-{index:02d}" in brief
+    assert brief.count("条证据结束。") == 12
+    assert "…" not in brief
+
+
+def test_full_evidence_pipeline_selects_twelve_and_bypasses_crag_stripping() -> None:
+    retriever = SimpleNamespace(reranker=_Reranker())
+    pipeline = CPUInferencePipeline(
+        retriever=retriever,
+        generator=object(),
+        prompt_evidence_top_k=12,
+        prompt_evidence_max_chars_per_doc=0,
+        prompt_conclusion_evidence_max_total_chars=0,
+        prompt_evidence_require_full_documents=True,
+        enable_crag_refinement=True,
+        crag_refine_top_sentences=1,
+        crag_refine_max_sentences=8,
+    )
+    question = "哈洛德晚年为何奔走？"
+    hypothesis = HypothesisDocument(
+        question=question,
+        intent="plot_reasoning",
+        query_type="causality",
+        entities=["哈洛德"],
+        keywords=["晚年", "奔走"],
+        expected_answer_type="原因",
+        dialogue_context="",
+    )
+    evidence = [
+        {
+            "doc_index": index,
+            "document": {
+                "id": f"story#candidate-{index:02d}",
+                "clean_text": (
+                    f"候选{index}第一句。"
+                    + (chr(0x4E00 + index) * (index + 2))
+                    + f"这是编号{index}的独立剧情细节。候选{index}完整结尾。"
+                ),
+                "search_text": "",
+            },
+        }
+        for index in range(1, 14)
+    ]
+
+    selected = pipeline.prepare_prompt_evidence(question, hypothesis, evidence)
+    prompt = build_answer_prompt(
+        question,
+        hypothesis,
+        evidence,
+        prompt_evidence_top_k=pipeline.prompt_evidence_top_k,
+        prompt_evidence=selected,
+        evidence_max_chars_per_doc=pipeline.prompt_evidence_max_chars_per_doc,
+        evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
+    )
+
+    assert len(selected) == 12
+    assert pipeline.prompt_evidence_max_chars_per_doc is None
+    assert pipeline.prompt_conclusion_evidence_max_total_chars is None
+    assert all("crag_refinement" not in item for item in selected)
+    for index in range(1, 13):
+        assert f"候选{index}完整结尾。" in prompt
+    assert "story#candidate-13" not in prompt
+
+
+def test_positive_total_budget_never_slices_an_evidence_document() -> None:
+    first_text = "甲" * 80 + "第一条完整结束"
+    second_text = "乙" * 80 + "第二条完整结束"
+    evidence = [
+        {"document": {"id": "story#first", "clean_text": first_text, "search_text": ""}},
+        {"document": {"id": "story#second", "clean_text": second_text, "search_text": ""}},
+    ]
+
+    rendered = render_short_evidence_brief(
+        evidence,
+        max_chars_per_doc=None,
+        max_total_chars=len(first_text) + 30,
+    )
+
+    assert first_text in rendered
+    assert "第一条完整结束" in rendered
+    assert "story#second" not in rendered
+    assert "…" not in rendered
 
 
 def test_conclusion_prompt_forbids_alias_expansion_of_generic_referents() -> None:

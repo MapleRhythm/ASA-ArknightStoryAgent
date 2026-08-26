@@ -146,7 +146,7 @@ def evidence_text_from_hits(
     hits: list[dict[str, Any]],
     *,
     top_k: int,
-    max_chars_per_doc: int = 700,
+    max_chars_per_doc: int | None = 700,
     max_total_chars: int | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     blocks: list[str] = []
@@ -155,11 +155,14 @@ def evidence_text_from_hits(
     for index, item in enumerate(hits[:top_k], start=1):
         doc = item.get("document") or {}
         text = str(doc.get("clean_text") or doc.get("text") or item.get("evidence_chain_text") or "").strip()
-        if len(text) > max_chars_per_doc:
+        if max_chars_per_doc is not None and len(text) > max_chars_per_doc:
             text = text[:max_chars_per_doc].rstrip() + "..."
         doc_id = str(doc.get("id") or "")
         title = " / ".join(str(v) for v in [doc.get("activity_name"), doc.get("story_name"), doc.get("stage_code")] if v)
-        blocks.append(f"[证据{index}] {title}\nID: {doc_id}\n{text}")
+        block = f"[证据{index}] {title}\nID: {doc_id}\n{text}"
+        if max_total_chars is not None and blocks and total_chars + len(block) > max_total_chars:
+            break
+        blocks.append(block)
         simplified.append(
             {
                 "id": doc_id,
@@ -179,8 +182,6 @@ def evidence_text_from_hits(
             }
         )
         total_chars += len(blocks[-1])
-        if max_total_chars is not None and total_chars >= max_total_chars:
-            break
     return "\n\n".join(blocks), simplified
 
 
@@ -658,6 +659,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
     parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
+    parser.add_argument(
+        "--require-full-prompt-evidence",
+        dest="prompt_evidence_require_full_documents",
+        action="store_true",
+        default=None,
+        help="Keep every selected evidence document intact and bypass CRAG sentence stripping.",
+    )
+    parser.add_argument(
+        "--allow-truncated-prompt-evidence",
+        dest="prompt_evidence_require_full_documents",
+        action="store_false",
+    )
     parser.add_argument("--max-retrieval-rounds", type=int, default=None)
     parser.add_argument(
         "--max-retrieval-queries",
@@ -813,6 +826,14 @@ def main() -> None:
     prompt_evidence_top_k = int(
         resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 12)
     )
+    prompt_evidence_require_full_documents = bool(
+        resolve_config_value(
+            args.prompt_evidence_require_full_documents,
+            inference_cfg,
+            "prompt_evidence_require_full_documents",
+            False,
+        )
+    )
     enable_mmr = bool(resolve_config_value(args.enable_mmr, inference_cfg, "enable_mmr", False))
     mmr_lambda = float(resolve_config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72))
     enable_pyramid_order = bool(
@@ -845,6 +866,16 @@ def main() -> None:
             "prompt_conclusion_evidence_max_total_chars",
             5000,
         )
+    )
+    effective_prompt_evidence_max_chars_per_doc = (
+        None
+        if prompt_evidence_require_full_documents or prompt_evidence_max_chars_per_doc <= 0
+        else prompt_evidence_max_chars_per_doc
+    )
+    effective_prompt_conclusion_evidence_max_total_chars = (
+        None
+        if prompt_conclusion_evidence_max_total_chars <= 0
+        else prompt_conclusion_evidence_max_total_chars
     )
     self_consistency_samples = int(
         resolve_config_value(args.self_consistency_samples, inference_cfg, "self_consistency_samples", 1)
@@ -1009,12 +1040,13 @@ def main() -> None:
         max_retrieval_rounds=max_retrieval_rounds,
         max_retrieval_queries=max_retrieval_queries,
         prompt_evidence_top_k=prompt_evidence_top_k,
-        prompt_evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
-        prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
+        prompt_evidence_max_chars_per_doc=effective_prompt_evidence_max_chars_per_doc,
+        prompt_conclusion_evidence_max_total_chars=effective_prompt_conclusion_evidence_max_total_chars,
         enable_mmr=enable_mmr,
         mmr_lambda=mmr_lambda,
         enable_pyramid_order=enable_pyramid_order,
         enable_evidence_pinning=enable_evidence_pinning,
+        prompt_evidence_require_full_documents=prompt_evidence_require_full_documents,
         enable_crag_refinement=enable_crag_refinement,
         crag_refine_top_sentences=crag_refine_top_sentences,
         crag_refine_max_sentences=crag_refine_max_sentences,
@@ -1137,8 +1169,8 @@ def main() -> None:
                 evidence_text, simplified_evidence = evidence_text_from_hits(
                     hits,
                     top_k=prompt_evidence_top_k,
-                    max_chars_per_doc=prompt_evidence_max_chars_per_doc,
-                    max_total_chars=prompt_conclusion_evidence_max_total_chars,
+                    max_chars_per_doc=effective_prompt_evidence_max_chars_per_doc,
+                    max_total_chars=effective_prompt_conclusion_evidence_max_total_chars,
                 )
                 mark_stage("evidence_grounded_revision")
                 final_answer = generator.generate(
@@ -1231,8 +1263,8 @@ def main() -> None:
                         first_evidence,
                         prompt_evidence_top_k=prompt_evidence_top_k,
                         prompt_evidence=first_prompt_evidence,
-                        evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
-                        evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
+                        evidence_max_chars_per_doc=effective_prompt_evidence_max_chars_per_doc,
+                        evidence_max_total_chars=effective_prompt_conclusion_evidence_max_total_chars,
                     ),
                     max_tokens=initial_answer_max_tokens,
                     temperature=0.1,
@@ -1269,8 +1301,8 @@ def main() -> None:
                 evidence_text, simplified_evidence = evidence_text_from_hits(
                     final_prompt_evidence,
                     top_k=len(final_prompt_evidence),
-                    max_chars_per_doc=prompt_evidence_max_chars_per_doc,
-                    max_total_chars=prompt_conclusion_evidence_max_total_chars,
+                    max_chars_per_doc=effective_prompt_evidence_max_chars_per_doc,
+                    max_total_chars=effective_prompt_conclusion_evidence_max_total_chars,
                 )
 
                 mark_stage("final_answer_from_combined_evidence")

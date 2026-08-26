@@ -73,3 +73,23 @@ def test_api_answer_prompts_prefer_direct_chunks_over_chain_metadata() -> None:
 def test_api_respects_configured_json_output_ceiling() -> None:
     source = _source()
     assert "self.max_tokens or 0, 4096" not in source
+
+
+def test_api_exposes_full_prompt_evidence_mode() -> None:
+    source = _source()
+    assert '"--require-full-prompt-evidence"' in source
+    assert '"prompt_evidence_require_full_documents"' in source
+    assert "prompt_evidence_require_full_documents=prompt_evidence_require_full_documents" in source
+    assert "effective_prompt_evidence_max_chars_per_doc" in source
+
+
+def test_api_revision_evidence_budget_uses_whole_documents() -> None:
+    tree = ast.parse(_source(), filename=str(API_SCRIPT))
+    evidence_function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "evidence_text_from_hits"
+    )
+    source = ast.unparse(evidence_function)
+    assert "total_chars + len(block) > max_total_chars" in source
+    assert "total_chars >= max_total_chars" not in source
