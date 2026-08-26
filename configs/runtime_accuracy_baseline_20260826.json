@@ -1,0 +1,70 @@
+{
+  "retrieval": {
+    "index_dir": "/mnt/wwn-0x5000cca295f3594f/zhb_asa/rank_v8_coverage/indexes/qwen3_embedding_0.6b_1024_sparse_v2",
+    "embedding_model_path": "/mnt/wwn-0x5000cca295f3594f/zhb_asa/rank_v8_coverage/models/Qwen3-Embedding-0.6B",
+    "device": "cuda",
+    "enable_reranker": true,
+    "reranker_model_path": "/mnt/wwn-0x5000cca295f3594f/zhb_asa/rank_v8_coverage/runs/query_listwise_v2_20260823/full_train",
+    "dense_top_k": 120,
+    "sparse_top_k": 120,
+    "dense_weight": 0.5,
+    "sparse_weight": 1.0,
+    "dense_min_quota": 20,
+    "sparse_min_quota": 100,
+    "max_retrieval_queries": 4,
+    "enable_minirag": false,
+    "minirag_top_k": 0,
+    "minirag_weight": 0.0,
+    "fusion_top_k": 120,
+    "rerank_top_k": 32,
+    "rerank_batch_size": 16,
+    "reranker_max_length": 1024,
+    "reranker_candidate_top_k": 120,
+    "minirag_chapter_isolation": false,
+    "minirag_auto_second_retrieval": false,
+    "enable_storyline_sparse_scope": false,
+    "enable_scoped_chapter_search": false,
+    "enable_neighbor_expansion": false,
+    "enable_same_story_sweep": false
+  },
+  "generator": {
+    "backend": "vllm",
+    "ctx_size": 12000,
+    "max_tokens": 1536,
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "repeat_penalty": 1.0,
+    "vllm": {
+      "base_model_path": "model/qwen3.5-4b",
+      "lora_path": "model/lora/teacher_scored_kto_mix_v1_from_soda_lora_qwen35_4b_lr8e7_beta001_epoch2",
+      "tensor_parallel_size": 1,
+      "gpu_memory_utilization": 0.52,
+      "max_model_len": 12000,
+      "dtype": "auto",
+      "max_num_batched_tokens": 4096,
+      "enforce_eager": true
+    }
+  },
+  "inference": {
+    "max_retrieval_rounds": 2,
+    "prompt_evidence_top_k": 12,
+    "prompt_evidence_max_chars_per_doc": 0,
+    "prompt_conclusion_evidence_max_total_chars": 0,
+    "prompt_evidence_require_full_documents": true,
+    "enable_mmr": false,
+    "enable_pyramid_order": false,
+    "enable_evidence_pinning": false,
+    "enable_crag_refinement": false,
+    "crag_refine_top_sentences": 5,
+    "crag_refine_max_sentences": 32,
+    "self_consistency_samples": 1,
+    "self_consistency_temperature": 0.7,
+    "conclusion_prompt_mode": "minimal",
+    "answer_grounding_mode": "strict",
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true,
+    "web_context": {
+      "enabled": false
+    }
+  }
+}
