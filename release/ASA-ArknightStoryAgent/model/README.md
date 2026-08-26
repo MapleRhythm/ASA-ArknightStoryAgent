@@ -5,7 +5,7 @@
 推理时推荐目录结构如下，通常不需要手工创建，直接使用下载脚本即可：
 
 ```text
-model/embeddings/bge-small-zh-v1.5/
+model/embeddings/Qwen3-Embedding-0.6B/
 model/reranker/bge-reranker-v2-m3/
 model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch/
 model/qwen3.5-4b/
@@ -17,6 +17,12 @@ model/gguf/qwen3.5-4b-lora-merged-q4_k_m.gguf
 
 ```text
 MapleRhythm/asa-arknightstoryagent-4b-lora
+```
+
+2026-08-26 正确率冻结版使用 Hugging Face revision：
+
+```text
+accuracy-baseline-20260826
 ```
 
 常用下载命令：

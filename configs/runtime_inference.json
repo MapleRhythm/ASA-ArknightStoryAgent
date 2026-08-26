@@ -4,9 +4,9 @@
     "enable_reranker": false,
     "dense_top_k": 60,
     "sparse_top_k": 60,
-    "enable_minirag": true,
+    "enable_minirag": false,
     "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
-    "minirag_weight": 0.35,
+    "minirag_weight": 0.0,
     "minirag_mode_weights": {
       "fact": 0.5,
       "relation": 1.0,
@@ -19,19 +19,21 @@
     "fusion_top_k": 40,
     "rerank_top_k": 15,
     "rerank_batch_size": 4,
-    "minirag_chapter_isolation": true,
-    "minirag_auto_second_retrieval": true,
+    "minirag_chapter_isolation": false,
+    "minirag_auto_second_retrieval": false,
     "minirag_scope_seed_top_k": 40,
     "minirag_expansion_query_top_k": 8,
     "minirag_graph_scope_min_ratio": 1.0,
     "minirag_second_pass_scope_min_ratio": 1.0,
-    "enable_storyline_sparse_scope": true,
+    "enable_storyline_sparse_scope": false,
     "storyline_scope_seed_top_k": 40,
     "storyline_sparse_scope_min_ratio": 1.5,
+    "enable_scoped_chapter_search": false,
     "enable_neighbor_expansion": false,
     "neighbor_max_seed_docs": 24,
     "neighbor_story_window": 2,
-    "neighbor_activity_story_sort_window": 1
+    "neighbor_activity_story_sort_window": 1,
+    "enable_same_story_sweep": false
   },
   "generator": {
     "backend": "llama.cpp"
