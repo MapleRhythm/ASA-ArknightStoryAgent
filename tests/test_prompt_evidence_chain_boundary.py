@@ -45,13 +45,18 @@ def test_model_hypothesis_is_not_polluted_by_heuristic_chinese_fragments() -> No
     )
 
 
-def test_singular_pronoun_resolution_uses_only_primary_model_entity() -> None:
-    question = "爱国者声称自己毫无复仇之心，那他为什么仍决定与罗德岛战斗？"
+def test_referential_question_preserves_original_pronouns() -> None:
+    questions = [
+        "爱国者声称自己毫无复仇之心，那他为什么仍决定与罗德岛战斗？",
+        "苏茜为什么买下绿意火花，后来又为什么把它改成理发店？",
+        "古米独自难过时，凛冬和真理怎样照顾了她？",
+    ]
 
-    resolved = _resolve_referential_question(question, ["爱国者", "罗德岛"])
-
-    assert resolved == "爱国者声称自己毫无复仇之心，那爱国者为什么仍决定与罗德岛战斗？"
-    assert "爱国者和罗德岛" not in resolved
+    for question in questions:
+        assert _resolve_referential_question(
+            f"  {question}  ",
+            ["爱国者", "苏茜", "古米", "罗德岛"],
+        ) == question
 
 
 def test_full_evidence_rendering_keeps_every_selected_document_intact() -> None:

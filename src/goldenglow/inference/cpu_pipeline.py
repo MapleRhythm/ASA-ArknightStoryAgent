@@ -895,19 +895,12 @@ def render_dialogue_context_for_prompt(dialogue_context: str) -> str:
 
 
 def _resolve_referential_question(question: str, entities: list[str]) -> str:
-    normalized_question = question.strip()
-    if not normalized_question or not entities:
-        return normalized_question
-    # A singular pronoun refers to one discourse entity.  Joining the first
-    # two model entities used to turn e.g. "那他为什么..." into
-    # "那爱国者和罗德岛为什么...", polluting both retrieval and reranking.
-    anchor = entities[0]
-    resolved = normalized_question
-    for pronoun in sorted(PRONOUN_REFERENCES, key=len, reverse=True):
-        if pronoun in resolved:
-            resolved = resolved.replace(pronoun, anchor, 1)
-            break
-    return resolved
+    # Preserve the original query verbatim apart from surrounding whitespace.
+    # Heuristic referent replacement cannot reliably determine whether 他/她/它
+    # points to a person, place, object, or a noun phrase in another clause; a
+    # wrong substitution directly pollutes sparse retrieval and reranking.
+    del entities
+    return question.strip()
 
 
 def detect_intent(question: str) -> tuple[str, str]:
