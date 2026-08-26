@@ -228,6 +228,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--crag-refine-max-sentences", type=int, default=None)
     parser.add_argument("--prompt-evidence-max-chars-per-doc", type=int, default=None)
     parser.add_argument("--prompt-conclusion-evidence-max-total-chars", type=int, default=None)
+    parser.add_argument("--prompt-evidence-top-k", type=int, default=None)
+    parser.add_argument(
+        "--require-full-prompt-evidence",
+        dest="prompt_evidence_require_full_documents",
+        action="store_true",
+        default=None,
+        help="Keep every selected evidence document intact and bypass CRAG sentence stripping.",
+    )
+    parser.add_argument(
+        "--allow-truncated-prompt-evidence",
+        dest="prompt_evidence_require_full_documents",
+        action="store_false",
+    )
+    parser.add_argument(
+        "--max-retrieval-queries",
+        type=int,
+        default=None,
+        help="Cap the actual dense/sparse query fan-out per retrieval round; unset preserves current behavior.",
+    )
     parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument(
         "--answer-grounding-mode",
@@ -415,7 +434,28 @@ def main() -> None:
     if max_retrieval_rounds is None:
         max_retrieval_rounds = 2
     max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
-    prompt_evidence_top_k = int(inference_cfg.get("prompt_evidence_top_k", 8))
+    configured_max_retrieval_queries = resolve_config_value(
+        args.max_retrieval_queries,
+        retrieval_cfg,
+        "max_retrieval_queries",
+        0,
+    )
+    max_retrieval_queries = (
+        None
+        if configured_max_retrieval_queries is None or int(configured_max_retrieval_queries) <= 0
+        else int(configured_max_retrieval_queries)
+    )
+    prompt_evidence_top_k = int(
+        resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 8)
+    )
+    prompt_evidence_require_full_documents = bool(
+        resolve_config_value(
+            args.prompt_evidence_require_full_documents,
+            inference_cfg,
+            "prompt_evidence_require_full_documents",
+            False,
+        )
+    )
     use_model_hypothesis = bool(inference_cfg.get("use_model_hypothesis", True))
     use_model_conclusion_generation = bool(
         inference_cfg.get(
@@ -728,6 +768,7 @@ def main() -> None:
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
+        max_retrieval_queries=max_retrieval_queries,
         prompt_evidence_top_k=prompt_evidence_top_k,
         prompt_evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
         prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
@@ -735,6 +776,7 @@ def main() -> None:
         mmr_lambda=mmr_lambda,
         enable_pyramid_order=enable_pyramid_order,
         enable_evidence_pinning=enable_evidence_pinning,
+        prompt_evidence_require_full_documents=prompt_evidence_require_full_documents,
         enable_crag_refinement=enable_crag_refinement,
         crag_refine_top_sentences=crag_refine_top_sentences,
         crag_refine_max_sentences=crag_refine_max_sentences,
