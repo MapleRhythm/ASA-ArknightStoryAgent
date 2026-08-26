@@ -898,7 +898,10 @@ def _resolve_referential_question(question: str, entities: list[str]) -> str:
     normalized_question = question.strip()
     if not normalized_question or not entities:
         return normalized_question
-    anchor = "和".join(entities[:2]) if len(entities) >= 2 else entities[0]
+    # A singular pronoun refers to one discourse entity.  Joining the first
+    # two model entities used to turn e.g. "那他为什么..." into
+    # "那爱国者和罗德岛为什么...", polluting both retrieval and reranking.
+    anchor = entities[0]
     resolved = normalized_question
     for pronoun in sorted(PRONOUN_REFERENCES, key=len, reverse=True):
         if pronoun in resolved:
@@ -1109,8 +1112,8 @@ def build_conclusion_prompt(
     max_retrieval_rounds: int,
     prompt_evidence_top_k: int,
     prompt_evidence: list[dict[str, Any]] | None = None,
-    evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
-    evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
+    evidence_max_chars_per_doc: int | None = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
+    evidence_max_total_chars: int | None = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
     prompt_mode: str = "full",
 ) -> str:
     rendered_dialogue_context = _truncate_text(
@@ -2017,8 +2020,8 @@ def render_evidence_blocks(
 def render_short_evidence_brief(
     evidence: list[dict[str, Any]],
     *,
-    max_chars_per_doc: int = 260,
-    max_total_chars: int = 2200,
+    max_chars_per_doc: int | None = 260,
+    max_total_chars: int | None = 2200,
 ) -> str:
     lines: list[str] = []
     total_chars = 0
@@ -2034,9 +2037,10 @@ def render_short_evidence_brief(
         if key in seen:
             continue
         seen.add(key)
-        text = _truncate_text(text, max_chars_per_doc)
+        if max_chars_per_doc is not None:
+            text = _truncate_text(text, max_chars_per_doc)
         line = f"{len(lines) + 1}. {doc_id or '<unknown>'}: {text}"
-        if lines and total_chars + len(line) > max_total_chars:
+        if max_total_chars is not None and lines and total_chars + len(line) > max_total_chars:
             break
         lines.append(line)
         total_chars += len(line)
@@ -3894,8 +3898,8 @@ def build_answer_prompt(
     *,
     prompt_evidence_top_k: int,
     prompt_evidence: list[dict[str, Any]] | None = None,
-    evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
-    evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
+    evidence_max_chars_per_doc: int | None = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
+    evidence_max_total_chars: int | None = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
 ) -> str:
     selected_evidence = (
         prompt_evidence
@@ -4152,13 +4156,14 @@ def normalize_hypothesis_payload(
     keywords = _normalize_string_list(payload.get("keywords"), limit=20)
     if not keywords:
         raise ModelOutputError("hypothesis must contain non-empty keywords")
-    heuristic_entities = extract_entities(question, dialogue_context)
-    heuristic_keywords = _extract_content_tokens(question)
-    entities = _dedupe_keep_order(entities + heuristic_entities)[:12]
+    # The model schema already requires non-empty entities and keywords.  Do
+    # not append the heuristic Chinese splitter here: it can mechanically cut
+    # a fluent question into fragments such as "何开始厌" and "倦战争" even
+    # when the model returned a clean hypothesis.  Heuristics remain the
+    # fallback used by build_hypothesis() when model generation itself fails.
     keywords = _dedupe_keep_order(
         keywords
-        + heuristic_keywords
-        + expand_related_retrieval_terms(entities + keywords + heuristic_keywords)
+        + expand_related_retrieval_terms(entities + keywords)
     )[:24]
 
     expected_answer_type = str(payload.get("expected_answer_type", "")).strip() or inferred_answer_type
@@ -6022,8 +6027,8 @@ class CPUInferencePipeline:
         query_config: QueryConfig | None = None,
         max_retrieval_rounds: int = 2,
         prompt_evidence_top_k: int = 8,
-        prompt_evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
-        prompt_conclusion_evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
+        prompt_evidence_max_chars_per_doc: int | None = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
+        prompt_conclusion_evidence_max_total_chars: int | None = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
         enable_mmr: bool = False,
         mmr_lambda: float = 0.72,
         enable_pyramid_order: bool = False,
@@ -6040,6 +6045,7 @@ class CPUInferencePipeline:
         use_model_retrieval_planner: bool | None = None,
         conclusion_prompt_mode: str = "full",
         enable_evidence_pinning: bool = False,
+        prompt_evidence_require_full_documents: bool = False,
         web_context_config: dict[str, Any] | WebContextConfig | None = None,
     ) -> None:
         self.retriever = retriever
@@ -6069,11 +6075,24 @@ class CPUInferencePipeline:
             raise ValueError("conclusion_prompt_mode must be 'full' or 'minimal'")
         self.enable_evidence_pinning = enable_evidence_pinning
         self.prompt_evidence_top_k = max(1, prompt_evidence_top_k)
-        self.prompt_evidence_max_chars_per_doc = max(120, prompt_evidence_max_chars_per_doc)
-        self.prompt_conclusion_evidence_max_total_chars = max(
-            self.prompt_evidence_max_chars_per_doc,
-            prompt_conclusion_evidence_max_total_chars,
+        self.prompt_evidence_require_full_documents = bool(prompt_evidence_require_full_documents)
+        normalized_per_doc_limit = (
+            None
+            if prompt_evidence_max_chars_per_doc is None or int(prompt_evidence_max_chars_per_doc) <= 0
+            else max(120, int(prompt_evidence_max_chars_per_doc))
         )
+        normalized_total_limit = (
+            None
+            if prompt_conclusion_evidence_max_total_chars is None
+            or int(prompt_conclusion_evidence_max_total_chars) <= 0
+            else int(prompt_conclusion_evidence_max_total_chars)
+        )
+        if self.prompt_evidence_require_full_documents:
+            normalized_per_doc_limit = None
+        if normalized_per_doc_limit is not None and normalized_total_limit is not None:
+            normalized_total_limit = max(normalized_per_doc_limit, normalized_total_limit)
+        self.prompt_evidence_max_chars_per_doc = normalized_per_doc_limit
+        self.prompt_conclusion_evidence_max_total_chars = normalized_total_limit
         self.enable_mmr = enable_mmr
         self.mmr_lambda = min(1.0, max(0.0, mmr_lambda))
         self.enable_pyramid_order = enable_pyramid_order
@@ -6148,7 +6167,7 @@ class CPUInferencePipeline:
                 selected,
                 limit=self.prompt_evidence_top_k,
             )
-        if self.enable_crag_refinement:
+        if self.enable_crag_refinement and not self.prompt_evidence_require_full_documents:
             selected = self.refine_evidence_strips(question, hypothesis, selected)
         if self.enable_pyramid_order:
             selected = apply_pyramid_evidence_order(selected)
@@ -7182,6 +7201,9 @@ class CPUInferencePipeline:
                 **self.generator.describe_runtime(),
                 "prompt_evidence_strategy": {
                     "top_k": self.prompt_evidence_top_k,
+                    "require_full_documents": self.prompt_evidence_require_full_documents,
+                    "max_chars_per_doc": self.prompt_evidence_max_chars_per_doc,
+                    "max_total_chars": self.prompt_conclusion_evidence_max_total_chars,
                     "max_retrieval_queries": self.max_retrieval_queries,
                     "mmr_enabled": self.enable_mmr,
                     "mmr_lambda": self.mmr_lambda,
