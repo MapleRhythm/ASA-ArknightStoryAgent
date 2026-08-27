@@ -1,0 +1,60 @@
+model_name_or_path: /mnt/store/zhb/ASA-ArknightStoryAgent/model/qwen3.5-4b
+adapter_name_or_path: /mnt/store/zhb/exx_grounding_v1/models/exx_grounding_v1_sft_full_a100_r16_lr3e6_e1_20260827
+trust_remote_code: true
+enable_liger_kernel: true
+
+stage: kto
+do_train: true
+do_eval: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+dataset_dir: /mnt/store/zhb/exx_grounding_v1/data/exx_grounding_v1_kto_paired_20260827
+dataset: exx_grounding_v1_kto_train
+eval_dataset: exx_grounding_v1_kto_val
+template: qwen3_nothink
+cutoff_len: 10000
+max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 4
+dataloader_num_workers: 1
+
+output_dir: /mnt/store/zhb/exx_grounding_v1/models/exx_grounding_v1_kto_from_full_sft_a100_r16_lr5e7_beta005_e1_20260827
+run_name: exx_grounding_v1_kto_from_full_sft_a100_r16_lr5e7_beta005_e1_20260827
+logging_steps: 2
+save_strategy: steps
+save_steps: 25
+save_total_limit: 1
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+plot_loss: true
+overwrite_output_dir: false
+report_to: none
+
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 5.0e-7
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+max_grad_norm: 0.5
+bf16: true
+fp16: false
+gradient_checkpointing: true
+ddp_timeout: 180000000
+
+pref_beta: 0.005
+kto_chosen_weight: 1.0
+kto_rejected_weight: 1.0
+pref_ftx: 0.0
+
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 25
+predict_with_generate: false
+do_sample: false
+packing: false
