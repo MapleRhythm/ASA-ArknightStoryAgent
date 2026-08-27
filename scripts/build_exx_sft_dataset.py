@@ -383,12 +383,20 @@ def main() -> int:
     # one final text-level audit across their union so no train row shares a
     # question with validation or test, even when ids came from different
     # source datasets.
-    held_out_questions = {
-        key
-        for split in ("val", "test")
-        for row in output_rows[split]
-        if (key := question_key(row))
-    }
+    val_questions = {key for row in output_rows["val"] if (key := question_key(row))}
+    test_questions = {key for row in output_rows["test"] if (key := question_key(row))}
+    val_test_overlap = val_questions & test_questions
+    if val_test_overlap:
+        filtered_val: list[dict[str, Any]] = []
+        for row in output_rows["val"]:
+            key = question_key(row)
+            if key and key in val_test_overlap:
+                output_stats["reject:val:test_question_overlap"] += 1
+                continue
+            filtered_val.append(row)
+        output_rows["val"] = filtered_val
+        val_questions -= val_test_overlap
+    held_out_questions = val_questions | test_questions
     isolated_train: list[dict[str, Any]] = []
     for row in output_rows["train"]:
         key = question_key(row)
