@@ -30,6 +30,27 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT_CANDIDATES = (
+    PROJECT_ROOT / "src",
+    PROJECT_ROOT / "release" / "ASA-ArknightStoryAgent" / "src",
+)
+SOURCE_ROOT = next(
+    (
+        candidate
+        for candidate in SOURCE_ROOT_CANDIDATES
+        if (candidate / "asa_arknight_story_agent").is_dir()
+    ),
+    SOURCE_ROOT_CANDIDATES[0],
+)
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from asa_arknight_story_agent.inference.generation.exx_prompt import (  # noqa: E402
+    EXX_PROTOCOL,
+    EXX_SYSTEM_PROMPT,
+    render_exx_user_prompt,
+)
+
 CONVERTER_PATH = Path(__file__).with_name("convert_grounded_training_to_exx.py")
 SPEC = importlib.util.spec_from_file_location("asa_exx_converter", CONVERTER_PATH)
 if SPEC is None or SPEC.loader is None:
@@ -38,8 +59,8 @@ CONVERTER = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = CONVERTER
 SPEC.loader.exec_module(CONVERTER)
 
-PROTOCOL = CONVERTER.PROTOCOL
-SYSTEM_PROMPT = CONVERTER.SYSTEM_PROMPT
+PROTOCOL = EXX_PROTOCOL
+SYSTEM_PROMPT = EXX_SYSTEM_PROMPT
 SPLIT_PRIORITY = {"train": 0, "val": 1, "test": 2}
 ALLOWED_ACTIONS = {"answer_directly", "retrieve_more", "abstain"}
 DOC_PREFIXES = ("[uc]info/", "[uc]info\\")
@@ -595,8 +616,13 @@ def build_sft(output_dir: Path, tasks: list[Task], labels: dict[str, dict[str, A
             "conversations": [
                 {
                     "from": "human",
-                    "value": CONVERTER.render_prompt(
-                        task.question, task.hypothesis, task.round_value, task.evidence
+                    "value": render_exx_user_prompt(
+                        question=task.question,
+                        hypothesis=task.hypothesis,
+                        round_value=task.round_value or "unknown",
+                        evidence_text="\n".join(
+                            f"[{item.label}]\n{item.text}" for item in task.evidence
+                        ),
                     ),
                 },
                 {"from": "gpt", "value": compact_json(result["label"])},
