@@ -12,7 +12,7 @@ lora_rank: 16
 lora_alpha: 32
 lora_dropout: 0.05
 
-dataset_dir: /mnt/store/zhb/exx_grounding_v1/data/exx_grounding_v1_sft_merged_20260827
+dataset_dir: /mnt/store/zhb/exx_grounding_v1/data/exx_grounding_v1_sft_full_20260827
 dataset: exx_grounding_v1_sft_train
 eval_dataset: exx_grounding_v1_sft_val
 template: qwen3_nothink
@@ -22,8 +22,8 @@ overwrite_cache: true
 preprocessing_num_workers: 4
 dataloader_num_workers: 1
 
-output_dir: /mnt/store/zhb/exx_grounding_v1/models/exx_grounding_v1_sft_from_frozen_kto_a100_r16_lr3e6_e1_20260827
-run_name: exx_grounding_v1_sft_from_frozen_kto_a100_r16_lr3e6_e1_20260827
+output_dir: /mnt/store/zhb/exx_grounding_v1/models/exx_grounding_v1_sft_full_a100_r16_lr3e6_e1_20260827
+run_name: exx_grounding_v1_sft_full_a100_r16_lr3e6_e1_20260827
 logging_steps: 2
 save_strategy: steps
 save_steps: 50
