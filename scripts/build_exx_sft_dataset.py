@@ -15,17 +15,30 @@ import hashlib
 import json
 import random
 import re
+import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
-PROTOCOL = "grounded_action_exx_v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = PROJECT_ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from asa_arknight_story_agent.inference.generation.exx_prompt import (  # noqa: E402
+    EXX_PROTOCOL,
+    EXX_RULES,
+    EXX_SYSTEM_PROMPT,
+    render_exx_user_prompt,
+)
+
+PROTOCOL = EXX_PROTOCOL
 ANSWER_TASK = "grounded_action_generation"
 PLANNING_TASKS = {"user_question_hypothesis_generation", "follow_up_hypothesis_generation"}
 EVIDENCE_RE = re.compile(r"^\[E(\d+)\]\s*$", re.MULTILINE)
-FORBIDDEN_OUTPUT_KEYS = {"quote", "final_answer", "inferred_facts", "evidence_refs"}
+FORBIDDEN_OUTPUT_KEYS = {"quote", "final_answer", "inferred_facts", "evidence_refs", "answer"}
 QUESTION_RE = re.compile(r"^(?:question|问题)[:：]\s*(.+)$", re.MULTILINE)
 
 
@@ -103,6 +116,43 @@ def question_key(record: dict[str, Any]) -> str:
     return re.sub(r"\s+", "", match.group(1)).strip()
 
 
+def canonicalize_grounded_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Re-render an existing Exx row with the shared training/runtime prompt.
+
+    Deterministic rows predate the canonical renderer. Their evidence and
+    labels stay unchanged, but leaving the older rules in half of the full
+    dataset would preserve the exact prompt drift this rebuild is intended to
+    remove.
+    """
+    conversations = record.get("conversations")
+    if not isinstance(conversations, list) or len(conversations) < 2:
+        raise ValueError("invalid conversations")
+    prompt = str(conversations[0].get("value", ""))
+    question_match = re.search(r"^question:\s*(.+)$", prompt, re.MULTILINE)
+    hypothesis_match = re.search(r"^hypothesis:\s*(.*)$", prompt, re.MULTILINE)
+    round_match = re.search(r"^round:\s*(.+)$", prompt, re.MULTILINE)
+    evidence_match = re.search(
+        r"^evidence:\s*\n(.*?)\noutput_schema:\s*[^\n]+(?:\n|$)",
+        prompt,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not all((question_match, hypothesis_match, round_match, evidence_match)):
+        raise ValueError(f"cannot parse grounded prompt for canonicalization: {record.get('id')}")
+    canonical_prompt = render_exx_user_prompt(
+        question=question_match.group(1).strip(),
+        hypothesis=hypothesis_match.group(1).strip() or "{}",
+        round_value=round_match.group(1).strip(),
+        evidence_text=evidence_match.group(1).strip(),
+    )
+    canonical = dict(record)
+    canonical["system"] = EXX_SYSTEM_PROMPT
+    canonical["conversations"] = [
+        {**conversation, "value": canonical_prompt} if index == 0 else dict(conversation)
+        for index, conversation in enumerate(conversations)
+    ]
+    return canonical
+
+
 def validate_grounded_record(record: dict[str, Any]) -> str:
     if record.get("task_type") != ANSWER_TASK:
         raise ValueError("not a grounded-action record")
@@ -110,6 +160,10 @@ def validate_grounded_record(record: dict[str, Any]) -> str:
     if not isinstance(conversations, list) or len(conversations) < 2:
         raise ValueError("invalid conversations")
     prompt = str(conversations[0].get("value", ""))
+    if record.get("system") != EXX_SYSTEM_PROMPT:
+        raise ValueError("non-canonical Exx system prompt")
+    if f"output_schema: {PROTOCOL}" not in prompt or f"rules: {EXX_RULES}" not in prompt:
+        raise ValueError("non-canonical Exx user prompt")
     visible = {f"E{number}" for number in EVIDENCE_RE.findall(prompt)}
     if not visible:
         raise ValueError("prompt contains no visible evidence ids")
@@ -121,18 +175,30 @@ def validate_grounded_record(record: dict[str, Any]) -> str:
     if action not in {"answer_directly", "retrieve_more", "abstain"}:
         raise ValueError("invalid next_action")
     if action == "answer_directly":
+        if set(payload) != {"next_action", "supported_facts"}:
+            raise ValueError("invalid answer_directly top-level schema")
         facts = payload.get("supported_facts")
         if not isinstance(facts, list) or not 1 <= len(facts) <= 8:
             raise ValueError("invalid supported_facts count")
         for fact in facts:
             ids = fact.get("evidence_ids") if isinstance(fact, dict) else None
             if (
-                not str(fact.get("fact", "")).strip()
+                set(fact) != {"fact", "evidence_ids"}
+                or not str(fact.get("fact", "")).strip()
                 or not isinstance(ids, list)
                 or not 1 <= len(ids) <= 2
+                or len({str(item) for item in ids}) != len(ids)
                 or any(str(item) not in visible for item in ids)
             ):
                 raise ValueError("invalid fact evidence binding")
+    elif action == "retrieve_more":
+        if set(payload) != {"next_action", "follow_up_hypothesis"}:
+            raise ValueError("invalid retrieve_more top-level schema")
+        follow_up = payload.get("follow_up_hypothesis")
+        if not isinstance(follow_up, dict) or not str(follow_up.get("question", "")).strip():
+            raise ValueError("invalid retrieve_more follow_up_hypothesis")
+    elif set(payload) != {"next_action", "reason"} or not str(payload.get("reason", "")).strip():
+        raise ValueError("invalid abstain schema")
     return str(action)
 
 
@@ -175,28 +241,21 @@ def choose_planning_rows(
 
 
 def teacher_record(task: dict[str, Any], result: dict[str, Any], provider: str) -> dict[str, Any]:
-    evidence_lines: list[str] = []
-    for item in task["evidence"]:
-        evidence_lines.extend((f"[{item['label']}]", str(item["text"])))
-    prompt = "\n".join(
-        (
-            "task: grounded_action_generation",
-            f"question: {task['question']}",
-            f"hypothesis: {task.get('hypothesis') or '{}'}",
-            f"round: {task.get('round') or 'unknown'}",
-            "evidence:",
-            *evidence_lines,
-            f"output_schema: {PROTOCOL}",
-            "rules: 只使用当前可见证据；回答时把每个可核验原子事实绑定到1至2个当前存在的E编号；"
-            "不要复制引文，不要输出quote、final_answer或inferred_facts；证据不足时才retrieve_more。",
-        )
+    evidence_text = "\n".join(
+        f"[{item['label']}]\n{item['text']}" for item in task["evidence"]
+    )
+    prompt = render_exx_user_prompt(
+        question=str(task["question"]),
+        hypothesis=task.get("hypothesis"),
+        round_value=str(task.get("round") or "unknown"),
+        evidence_text=evidence_text,
     )
     model = result.get("api", {}).get("model")
     return {
         "id": f"relabel-{task['task_id']}",
         "task_type": ANSWER_TASK,
         "bucket": "teacher_relabel_exx",
-        "system": "你是《明日方舟》剧情RAG证据动作模块。只输出合法JSON。",
+        "system": EXX_SYSTEM_PROMPT,
         "tools": "[]",
         "conversations": [
             {"from": "human", "value": prompt},
@@ -282,7 +341,11 @@ def main() -> int:
                 "sha256": sha256_file(source_path) if source_path.exists() else None,
             }
         )
-        grounded = [row for row in source_rows if row.get("task_type") == ANSWER_TASK]
+        grounded = [
+            canonicalize_grounded_record(row)
+            for row in source_rows
+            if row.get("task_type") == ANSWER_TASK
+        ]
         planning = [row for row in source_rows if row.get("task_type") in PLANNING_TASKS]
         for row in grounded:
             action_stats[f"deterministic:{split}:{validate_grounded_record(row)}"] += 1

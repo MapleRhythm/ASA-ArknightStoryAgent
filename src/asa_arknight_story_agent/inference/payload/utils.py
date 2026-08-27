@@ -18,7 +18,7 @@ def normalize_string_list(value: Any, *, limit: int) -> list[str]:
     return dedupe_keep_order([str(item).strip() for item in items if str(item).strip()])[:limit]
 
 
-def compact_supported_facts_payload(value: Any, *, max_facts: int = 6, max_refs: int = 2) -> list[dict[str, Any]]:
+def compact_supported_facts_payload(value: Any, *, max_facts: int = 8, max_refs: int = 2) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     compact: list[dict[str, Any]] = []
@@ -29,6 +29,19 @@ def compact_supported_facts_payload(value: Any, *, max_facts: int = 6, max_refs:
         if not fact:
             continue
         refs: list[dict[str, str]] = []
+        # grounded_action_exx_v1 emits compact E identifiers directly. Keep
+        # the existing internal evidence_refs representation so legacy
+        # validators and result rendering do not need two code paths.
+        raw_ids = item.get("evidence_ids")
+        if isinstance(raw_ids, list):
+            for evidence_id in raw_ids:
+                normalized_id = str(evidence_id or "").strip()
+                if normalized_id and normalized_id not in {
+                    ref.get("evidence_id") for ref in refs
+                }:
+                    refs.append({"evidence_id": normalized_id})
+                if len(refs) >= max_refs:
+                    break
         raw_refs = item.get("evidence_refs")
         if isinstance(raw_refs, list):
             for ref in raw_refs:
@@ -43,7 +56,7 @@ def compact_supported_facts_payload(value: Any, *, max_facts: int = 6, max_refs:
                     new_ref["evidence_id"] = evidence_id
                 if quote:
                     new_ref["quote"] = quote
-                if new_ref:
+                if new_ref and new_ref not in refs:
                     refs.append(new_ref)
                 if len(refs) >= max_refs:
                     break
@@ -70,14 +83,14 @@ def answer_from_structured_facts(
     supported_facts: list[dict[str, Any]],
     inferred_facts: list[dict[str, Any]],
     *,
-    max_chars: int = 280,
+    max_chars: int = 800,
 ) -> str:
     facts = [
         str(item.get("fact") or "").strip()
         for item in [*supported_facts, *inferred_facts]
         if isinstance(item, dict) and str(item.get("fact") or "").strip()
     ]
-    facts = dedupe_keep_order(facts)[:3]
+    facts = dedupe_keep_order(facts)[:8]
     answer = "；".join(facts)
     if len(answer) > max_chars:
         answer = answer[: max_chars - 1].rstrip("；，。 ") + "。"

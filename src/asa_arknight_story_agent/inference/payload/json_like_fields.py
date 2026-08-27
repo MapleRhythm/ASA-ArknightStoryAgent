@@ -113,14 +113,39 @@ def extract_json_like_repeated_string_field(text: str, field: str, *, limit: int
     return dedupe_keep_order(values)[:limit]
 
 
-def extract_truncated_supported_facts(text: str, *, limit: int = 2) -> list[dict[str, Any]]:
+def extract_json_like_evidence_ids(text: str, *, limit: int = 16) -> list[list[str]]:
+    """Best-effort extraction of completed Exx evidence_ids arrays.
+
+    This is used only for truncated-output recovery. The normal strict JSON
+    parser remains the primary path.
+    """
+    output: list[list[str]] = []
+    pattern = re.compile(r'"?evidence_ids"?\s*:\s*\[')
+    for match in pattern.finditer(text):
+        end = text.find("]", match.end())
+        if end < 0:
+            continue
+        ids = dedupe_keep_order(re.findall(r'"(E\d+)"', text[match.end() : end]))[:2]
+        output.append(ids)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def extract_truncated_supported_facts(text: str, *, limit: int = 8) -> list[dict[str, Any]]:
     facts = extract_json_like_repeated_string_field(text, "fact", limit=limit)
     quotes = extract_json_like_repeated_string_field(text, "quote", limit=limit)
     evidence_ids = extract_json_like_repeated_string_field(text, "evidence_id", limit=limit)
+    compact_evidence_ids = extract_json_like_evidence_ids(text, limit=limit)
     supported: list[dict[str, Any]] = []
     for index, fact in enumerate(facts):
         item: dict[str, Any] = {"fact": fact}
-        if index < len(quotes):
+        if index < len(compact_evidence_ids) and compact_evidence_ids[index]:
+            item["evidence_refs"] = [
+                {"evidence_id": evidence_id}
+                for evidence_id in compact_evidence_ids[index]
+            ]
+        elif index < len(quotes):
             ref: dict[str, Any] = {"quote": quotes[index]}
             if index < len(evidence_ids):
                 ref["evidence_id"] = evidence_ids[index]

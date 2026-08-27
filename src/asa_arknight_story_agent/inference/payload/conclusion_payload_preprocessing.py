@@ -18,6 +18,11 @@ def preprocess_conclusion_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payload["missing_slots"] = additional_evidence if isinstance(additional_evidence, list) else []
     if not str(payload.get("answer") or "").strip() and str(payload.get("final_answer") or "").strip():
         payload["answer"] = payload.get("final_answer")
+    if (
+        str(payload.get("next_action") or "").strip() == "abstain"
+        and not str(payload.get("answer") or "").strip()
+    ):
+        payload["answer"] = str(payload.get("reason") or "现有证据不足以确认。").strip()
     payload.setdefault("answer", "")
     return {key: value for key, value in payload.items() if key not in CONCLUSION_IGNORED_EXTRA_FIELDS}
 

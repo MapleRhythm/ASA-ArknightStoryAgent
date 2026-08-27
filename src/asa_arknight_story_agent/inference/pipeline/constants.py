@@ -61,6 +61,7 @@ CONCLUSION_SCHEMA_FIELDS = (
     "next_action",
     "answer",
     "final_answer",
+    "reason",
     "supported_facts",
     "inferred_facts",
     "missing_slots",

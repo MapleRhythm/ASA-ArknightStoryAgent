@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from asa_arknight_story_agent.inference.generation.conclusion_generation import (
@@ -41,6 +42,7 @@ def generate_conclusion_from_model(
         evidence_max_chars_per_doc=pipeline.prompt_evidence_max_chars_per_doc,
         evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
         prompt_mode=pipeline.conclusion_prompt_mode,
+        grounding_mode=pipeline.answer_grounding_mode,
     )
     conclusions = sample_grounded_conclusions(
         pipeline=pipeline,
@@ -94,19 +96,34 @@ def sample_grounded_conclusions(
 ) -> list[ConclusionResult]:
     conclusions: list[ConclusionResult] = []
     sample_count = pipeline.self_consistency_samples
-    for _ in range(sample_count):
+    for sample_index in range(sample_count):
         raw_output = ""
+        normalized_output = ""
         try:
+            generation_max_tokens = (
+                min(pipeline.generator.max_tokens, 768)
+                if pipeline.answer_grounding_mode.strip().lower() == "evidence_id"
+                else min(max(pipeline.generator.max_tokens, 1536), 2048)
+            )
             raw_output = pipeline.generator.generate(
                 prompt,
-                max_tokens=min(max(pipeline.generator.max_tokens, 1536), 2048),
+                max_tokens=generation_max_tokens,
                 temperature=pipeline.self_consistency_temperature if sample_count > 1 else 0.1,
                 top_p=0.9 if sample_count > 1 else 0.8,
                 repeat_penalty=1.0,
             )
-            raw_output = normalize_minimal_conclusion_output(raw_output, pipeline.conclusion_prompt_mode)
+            normalized_output = normalize_minimal_conclusion_output(raw_output, pipeline.conclusion_prompt_mode)
+            try:
+                raw_payload = json.loads(raw_output.strip())
+                parse_status = "strict_json" if isinstance(raw_payload, dict) else "non_object_json"
+            except json.JSONDecodeError:
+                parse_status = (
+                    "assistant_prefix_repaired"
+                    if normalized_output != raw_output
+                    else "repaired_or_json_like"
+                )
             conclusion = parse_conclusion_output(
-                raw_output,
+                normalized_output,
                 question=question,
                 current_hypothesis=current_hypothesis,
                 max_round_reached=current_round >= pipeline.max_retrieval_rounds,
@@ -120,10 +137,21 @@ def sample_grounded_conclusions(
                 mode=pipeline.answer_grounding_mode,
                 evidence_prompt_text=evidence_prompt_text or prompt,
             )
+            conclusion.generation_diagnostics = {
+                **conclusion.generation_diagnostics,
+                "raw_output": raw_output,
+                "normalized_output": normalized_output,
+                "parse_status": parse_status,
+                "grounding_status": conclusion.generation_diagnostics.get(
+                    "grounding_status",
+                    "accepted" if conclusion.next_action == "answer_directly" else conclusion.next_action,
+                ),
+                "grounding_warnings": list(conclusion.grounding_warnings),
+            }
             conclusions.append(conclusion)
-        except Exception:
+        except Exception as exc:
             recovered = recover_truncated_grounded_answer(
-                raw_output,
+                normalized_output or raw_output,
                 question=question,
                 max_round_reached=current_round >= pipeline.max_retrieval_rounds,
             )
@@ -138,6 +166,18 @@ def sample_grounded_conclusions(
                         mode=pipeline.answer_grounding_mode,
                         evidence_prompt_text=evidence_prompt_text or prompt,
                     )
+                    recovered.generation_diagnostics = {
+                        **recovered.generation_diagnostics,
+                        "raw_output": raw_output,
+                        "normalized_output": normalized_output,
+                        "parse_status": "recovered_truncated",
+                        "initial_error": f"{type(exc).__name__}: {exc}",
+                        "grounding_status": recovered.generation_diagnostics.get(
+                            "grounding_status",
+                            "accepted" if recovered.next_action == "answer_directly" else recovered.next_action,
+                        ),
+                        "grounding_warnings": list(recovered.grounding_warnings),
+                    }
                     conclusions.append(recovered)
                     continue
                 except Exception:
@@ -148,6 +188,17 @@ def sample_grounded_conclusions(
                 and has_answerable_evidence(prompt_evidence)
             ):
                 raise
+            # Preserve a failed sample in the trace when other
+            # self-consistency samples can still decide the action.
+            if retrieval_trace:
+                retrieval_trace[-1].setdefault("generation_failures", []).append(
+                    {
+                        "sample_index": sample_index,
+                        "raw_output": raw_output,
+                        "normalized_output": normalized_output,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
             continue
     return conclusions
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from asa_arknight_story_agent.inference.grounding.validation import validate_conclusion_grounding
@@ -26,14 +27,27 @@ def generate_direct_answer_from_model(
         prompt_evidence=prompt_evidence,
         evidence_max_chars_per_doc=pipeline.prompt_evidence_max_chars_per_doc,
         evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
+        grounding_mode=pipeline.answer_grounding_mode,
+        round_value=f"{pipeline.max_retrieval_rounds}/{pipeline.max_retrieval_rounds}",
+    )
+    generation_max_tokens = (
+        min(pipeline.generator.max_tokens, 768)
+        if pipeline.answer_grounding_mode.strip().lower() == "evidence_id"
+        else min(max(pipeline.generator.max_tokens, 1536), 2048)
     )
     raw_output = pipeline.generator.generate(
         prompt,
-        max_tokens=min(max(pipeline.generator.max_tokens, 1536), 2048),
+        max_tokens=generation_max_tokens,
         temperature=0.1,
         top_p=0.8,
         repeat_penalty=1.0,
     )
+    original_raw_output = raw_output
+    try:
+        raw_payload = json.loads(original_raw_output.strip())
+        parse_status = "strict_json" if isinstance(raw_payload, dict) else "non_object_json"
+    except json.JSONDecodeError:
+        parse_status = "repaired_json"
     if not raw_output.lstrip().startswith(("{", "<think>")):
         raw_output = "{" + raw_output
     raw_output = repair_json_like_output(raw_output)
@@ -58,7 +72,7 @@ def generate_direct_answer_from_model(
             clarification_question="",
             follow_up_hypothesis=None,
         )
-    return validate_conclusion_grounding(
+    conclusion = validate_conclusion_grounding(
         question=question,
         hypothesis=current_hypothesis,
         evidence=prompt_evidence,
@@ -67,3 +81,16 @@ def generate_direct_answer_from_model(
         mode=pipeline.answer_grounding_mode,
         evidence_prompt_text=evidence_prompt_text,
     )
+    conclusion.generation_diagnostics = {
+        **conclusion.generation_diagnostics,
+        "raw_output": original_raw_output,
+        "normalized_output": raw_output,
+        "parse_status": parse_status if payload else "unparsed_fallback",
+        "grounding_status": conclusion.generation_diagnostics.get(
+            "grounding_status",
+            "accepted" if conclusion.next_action == "answer_directly" else conclusion.next_action,
+        ),
+        "grounding_warnings": list(conclusion.grounding_warnings),
+        "direct_answer_fallback": True,
+    }
+    return conclusion

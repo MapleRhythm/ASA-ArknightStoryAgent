@@ -180,9 +180,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conclusion-prompt-mode", choices=("full", "minimal"), default=None)
     parser.add_argument(
         "--answer-grounding-mode",
-        choices=("off", "weak", "strict", "quote", "grounded"),
+        choices=("off", "weak", "strict", "quote", "grounded", "evidence_id"),
         default=None,
-        help="Runtime grounding guard. quote requires answer_directly quotes to match visible evidence text.",
+        help="Runtime grounding guard. evidence_id validates compact Exx claim-to-evidence bindings.",
     )
     parser.add_argument("--self-consistency-samples", type=int, default=None)
     parser.add_argument("--self-consistency-temperature", type=float, default=None)

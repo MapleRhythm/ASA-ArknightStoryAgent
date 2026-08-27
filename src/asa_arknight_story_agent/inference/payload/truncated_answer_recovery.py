@@ -28,14 +28,14 @@ def recover_truncated_grounded_answer(
     if final_answer:
         answer = final_answer
     else:
-        facts = extract_json_like_repeated_string_field(text, "fact", limit=2)
+        facts = extract_json_like_repeated_string_field(text, "fact", limit=8)
         if not facts:
             return None
         # Use only completed fact strings from the truncated JSON. The regular
         # grounding guard still verifies the recovered answer against evidence.
         answer = "；".join(facts)
-        if len(answer) > 280:
-            answer = answer[:279].rstrip("；，。 ") + "。"
+        if len(answer) > 800:
+            answer = answer[:799].rstrip("；，。 ") + "。"
 
     if not answer:
         return None
@@ -45,6 +45,6 @@ def recover_truncated_grounded_answer(
         missing_slots=[],
         clarification_question="",
         follow_up_hypothesis=None,
-        supported_facts=extract_truncated_supported_facts(text, limit=2),
+        supported_facts=extract_truncated_supported_facts(text, limit=8),
         grounding_warnings=["recovered_from_truncated_json"],
     )

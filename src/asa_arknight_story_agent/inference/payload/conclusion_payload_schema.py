@@ -36,6 +36,7 @@ def validate_conclusion_schema(payload: dict[str, Any], *, question: str) -> Non
         "final_answer",
         "supported_facts",
         "inferred_facts",
+        "reason",
     }
     missing_fields = [
         field for field in CONCLUSION_SCHEMA_FIELDS if field not in payload and field not in optional_missing_fields

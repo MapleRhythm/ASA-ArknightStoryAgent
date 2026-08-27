@@ -14,7 +14,10 @@ from asa_arknight_story_agent.inference.grounding.quote_match_utils import (
     normalize_for_evidence_match,
 )
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
-from asa_arknight_story_agent.inference.evidence.rendering import evidence_id_text_map
+from asa_arknight_story_agent.inference.evidence.rendering import (
+    evidence_id_text_map,
+    evidence_id_text_map_from_prompt,
+)
 
 
 def validate_grounded_quotes(
@@ -27,7 +30,7 @@ def validate_grounded_quotes(
     issues: list[str] = []
     warnings: list[str] = []
     # evidence_id -> 该编号对应的证据文本(与渲染进 prompt 的 [E编号] 一致)
-    eid_map = evidence_id_text_map(evidence)
+    eid_map = evidence_id_text_map_from_prompt(evidence_prompt_text) or evidence_id_text_map(evidence)
     # 证据全池(用于 evidence_id 缺失时的兜底 quote 核对)
     evidence_pool = normalize_for_evidence_match(evidence_prompt_text or grounding_evidence_pool(evidence))
     if not conclusion.supported_facts:

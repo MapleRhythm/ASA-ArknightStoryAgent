@@ -38,6 +38,7 @@ def build_conclusion_prompt(
     evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
     evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
     prompt_mode: str = "full",
+    grounding_mode: str = "quote",
 ) -> tuple[str, str]:
     """Build the conclusion prompt and the evidence text shown to the model.
 
@@ -61,7 +62,9 @@ def build_conclusion_prompt(
         max_chars_per_doc=evidence_max_chars_per_doc,
         max_total_chars=evidence_max_total_chars,
     )
-    if prompt_mode == "minimal":
+    # Evidence-id output uses the compact structured-facts schema.  Reuse that
+    # schema even if a legacy deployment still requests the verbose prompt.
+    if prompt_mode == "minimal" or grounding_mode.strip().lower() == "evidence_id":
         return build_minimal_conclusion_prompt(
             question=question,
             current_hypothesis=current_hypothesis,
@@ -72,6 +75,7 @@ def build_conclusion_prompt(
             prompt_evidence=prompt_evidence,
             evidence_max_chars_per_doc=evidence_max_chars_per_doc,
             evidence_max_total_chars=evidence_max_total_chars,
+            grounding_mode=grounding_mode,
         )
     system_prompt = "\n".join(
         [

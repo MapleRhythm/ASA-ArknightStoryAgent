@@ -41,3 +41,4 @@ class ConclusionResult:
     supported_facts: list[dict[str, Any]] = field(default_factory=list)
     inferred_facts: list[dict[str, Any]] = field(default_factory=list)
     grounding_warnings: list[str] = field(default_factory=list)
+    generation_diagnostics: dict[str, Any] = field(default_factory=dict)
