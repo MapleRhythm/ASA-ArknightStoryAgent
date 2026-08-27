@@ -73,6 +73,7 @@ def main() -> int:
     samples: dict[str, list[dict[str, Any]]] = defaultdict(list)
     question_sets: dict[str, set[str]] = defaultdict(set)
     signature_labels: dict[str, set[bool]] = defaultdict(set)
+    prompt_labels: dict[str, set[bool]] = defaultdict(set)
     row_records: list[dict[str, Any]] = []
 
     held_out_questions: set[str] = set()
@@ -161,6 +162,7 @@ def main() -> int:
             signature = question + "\n" + prompt + "\n" + assistant_text
             if isinstance(tag, bool):
                 signature_labels[signature].add(tag)
+                prompt_labels[str(row.get("system") or "") + "\n" + prompt].add(tag)
             if question in held_out_questions:
                 row_problems.append("sft_eval_question_leakage")
             for problem in sorted(set(row_problems)):
@@ -182,6 +184,11 @@ def main() -> int:
     for labels in signature_labels.values():
         if len(labels) > 1:
             problems["identical_prompt_output_conflicting_tag"] += 1
+    for labels in prompt_labels.values():
+        if True not in labels:
+            problems["preference_prompt_without_positive"] += 1
+        if False not in labels:
+            problems["preference_prompt_without_negative"] += 1
     overlap = {
         "train_val": len(question_sets["train"] & question_sets["val"]),
         "train_test": len(question_sets["train"] & question_sets["test"]),
@@ -212,7 +219,7 @@ def main() -> int:
             indent=2,
         )
     )
-    return 0
+    return 1 if problems or any(overlap.values()) else 0
 
 
 if __name__ == "__main__":

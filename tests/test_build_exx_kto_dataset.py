@@ -70,3 +70,32 @@ def test_rejects_retrieve_more_at_max_round() -> None:
             ),
             task("2/2"),
         )
+
+
+def test_uses_explicitly_rejected_first_pass_as_negative() -> None:
+    task_object = MODULE.RELABEL.Task(
+        task_id="t1",
+        split="train",
+        question="测试问题",
+        hypothesis="{}",
+        round_value="1/2",
+        evidence=[MODULE.RELABEL.CONVERTER.Evidence("E1", "d1", "证据")],
+        source_refs=[],
+    )
+    positive = {"next_action": "abstain", "reason": "现有证据不足以确认。"}
+    first_pass = {
+        "next_action": "retrieve_more",
+        "follow_up_hypothesis": {"question": "继续查"},
+    }
+    result = {
+        "first_pass_label": first_pass,
+        "semantic_verifier": {"valid": False, "issues": ["OVER_RETRIEVE"]},
+    }
+
+    assert MODULE.semantic_verifier_negative(result, task_object, positive) == first_pass
+
+
+def test_does_not_infer_negative_without_explicit_verifier_rejection() -> None:
+    assert MODULE.semantic_verifier_negative(
+        {"first_pass_label": {"next_action": "abstain"}}, object(), {"next_action": "abstain"}
+    ) is None

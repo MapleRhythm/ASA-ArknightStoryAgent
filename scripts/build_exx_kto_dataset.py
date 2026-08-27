@@ -182,6 +182,24 @@ def convert_legacy_negative(source: dict[str, Any], task: dict[str, Any]) -> dic
     return RELABEL.validate_label(candidate, task_object)
 
 
+def semantic_verifier_negative(
+    result: dict[str, Any],
+    task_object: Any,
+    positive: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return a first-pass hard negative only after an explicit verifier rejection."""
+    verifier = result.get("semantic_verifier")
+    first_pass = result.get("first_pass_label")
+    if not isinstance(verifier, dict) or verifier.get("valid") is not False:
+        return None
+    if not isinstance(first_pass, dict):
+        raise ValueError("rejected_first_pass_missing")
+    negative = RELABEL.validate_label(first_pass, task_object)
+    if compact_json(negative) == compact_json(positive):
+        raise ValueError("rejected_first_pass_equals_final")
+    return negative
+
+
 def normalize_question(prompt: str) -> str:
     match = QUESTION_RE.search(prompt)
     return re.sub(r"\s+", "", match.group(1)).strip() if match else ""
@@ -193,7 +211,10 @@ def main() -> int:
     parser.add_argument("--teacher-labels", action="append", type=Path, required=True)
     parser.add_argument("--source-dir", action="append", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--max-negatives-per-task", type=int, default=2)
     args = parser.parse_args()
+    if args.max_negatives_per_task < 1:
+        parser.error("--max-negatives-per-task must be at least 1")
 
     output_dir = args.output_dir.resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -237,22 +258,27 @@ def main() -> int:
             source_refs=list(task.get("source_refs") or []),
         )
         positive = RELABEL.validate_label(result["label"], task_object)
-        rows_by_split[split].append(
-            make_row(
-                task=task,
-                payload=positive,
-                desirable=True,
-                suffix="teacher-positive",
-                metadata={
-                    "source": "semantic_teacher_final_label",
-                    "teacher_labels_path": str(label_path),
-                    "teacher_model": result.get("api", {}).get("model"),
-                },
-            )
-        )
-        stats[f"output:{split}:positive:{positive['next_action']}"] += 1
+        negative_candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        try:
+            first_pass_negative = semantic_verifier_negative(result, task_object, positive)
+        except Exception as exc:
+            reason = str(exc) or type(exc).__name__
+            stats[f"quarantine:{reason}"] += 1
+        else:
+            if first_pass_negative is not None:
+                negative_candidates.append(
+                    (
+                        first_pass_negative,
+                        {
+                            "source": "semantic_verifier_rejected_first_pass",
+                            "teacher_labels_path": str(label_path),
+                            "semantic_verifier_issues": result.get("semantic_verifier", {}).get(
+                                "issues", []
+                            ),
+                        },
+                    )
+                )
 
-        negative_payloads: set[str] = set()
         for ref in task.get("source_refs") or []:
             source = sources.get((str(Path(ref["path"]).resolve()), str(ref["id"])))
             if source is None:
@@ -273,6 +299,20 @@ def main() -> int:
                     }
                 )
                 continue
+            negative_candidates.append(
+                (
+                    negative,
+                    {
+                        "source": "explicit_legacy_kto_negative",
+                        "source_path": ref["path"],
+                        "source_id": ref["id"],
+                    },
+                )
+            )
+
+        unique_negatives: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        negative_payloads: set[str] = set()
+        for negative, metadata in negative_candidates:
             serialized = compact_json(negative)
             if serialized == compact_json(positive):
                 stats["quarantine:negative_equals_positive"] += 1
@@ -281,17 +321,38 @@ def main() -> int:
                 stats["quarantine:duplicate_negative_for_task"] += 1
                 continue
             negative_payloads.add(serialized)
+            unique_negatives.append((negative, metadata))
+        if not unique_negatives:
+            stats["quarantine:teacher_positive_without_proven_negative"] += 1
+            continue
+        if len(unique_negatives) > args.max_negatives_per_task:
+            stats["quarantine:negative_cap_excess"] += (
+                len(unique_negatives) - args.max_negatives_per_task
+            )
+            unique_negatives = unique_negatives[: args.max_negatives_per_task]
+
+        rows_by_split[split].append(
+            make_row(
+                task=task,
+                payload=positive,
+                desirable=True,
+                suffix="teacher-positive",
+                metadata={
+                    "source": "semantic_teacher_final_label",
+                    "teacher_labels_path": str(label_path),
+                    "teacher_model": result.get("api", {}).get("model"),
+                },
+            )
+        )
+        stats[f"output:{split}:positive:{positive['next_action']}"] += 1
+        for negative_index, (negative, metadata) in enumerate(unique_negatives, start=1):
             rows_by_split[split].append(
                 make_row(
                     task=task,
                     payload=negative,
                     desirable=False,
-                    suffix=f"legacy-negative-{len(negative_payloads)}",
-                    metadata={
-                        "source": "explicit_legacy_kto_negative",
-                        "source_path": ref["path"],
-                        "source_id": ref["id"],
-                    },
+                    suffix=f"negative-{negative_index}",
+                    metadata=metadata,
                 )
             )
             stats[f"output:{split}:negative:{negative['next_action']}"] += 1
@@ -327,6 +388,8 @@ def main() -> int:
             "unprovable_polarity_is_quarantined": True,
             "legacy_answer_directly_without_exx_binding_is_quarantined": True,
             "train_val_question_isolation": True,
+            "positive_requires_at_least_one_proven_negative": True,
+            "max_negatives_per_task": args.max_negatives_per_task,
         },
         "inputs": {
             "tasks": {"path": str(tasks_path), "rows": len(tasks), "sha256": sha256_file(tasks_path)},
