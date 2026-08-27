@@ -23,7 +23,18 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = PROJECT_ROOT / "src"
+SOURCE_ROOT_CANDIDATES = (
+    PROJECT_ROOT / "src",
+    PROJECT_ROOT / "release" / "ASA-ArknightStoryAgent" / "src",
+)
+SOURCE_ROOT = next(
+    (
+        candidate
+        for candidate in SOURCE_ROOT_CANDIDATES
+        if (candidate / "asa_arknight_story_agent").is_dir()
+    ),
+    SOURCE_ROOT_CANDIDATES[0],
+)
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
