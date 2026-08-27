@@ -128,7 +128,11 @@ def test_exx_retrieve_more_accepts_follow_up_query_alias() -> None:
     )
     assert conclusion.next_action == "retrieve_more"
     assert conclusion.follow_up_hypothesis is not None
-    assert conclusion.follow_up_hypothesis.question == "需要继续查什么？"
+    # The runtime intentionally keeps the original user question as the
+    # hypothesis question while importing the model's follow-up entities and
+    # keywords as retrieval guidance.
+    assert conclusion.follow_up_hypothesis.question == "测试问题？"
+    assert "阿米娅" in conclusion.follow_up_hypothesis.entities
 
 
 def test_evidence_id_mode_keeps_evidence_text_in_input_but_not_output_schema() -> None:
