@@ -97,7 +97,7 @@ def main() -> int:
     counts = Counter()
     issues: list[dict[str, Any]] = []
     question_sets: dict[str, set[str]] = {}
-    all_ids: set[str] = set()
+    id_locations: dict[str, set[str]] = {}
     for split in ("train", "val", "test"):
         path = args.dataset_dir / f"{split}.json"
         rows = read_rows(path) if path.exists() else []
@@ -105,9 +105,16 @@ def main() -> int:
         questions: set[str] = set()
         for index, row in enumerate(rows):
             row_id = str(row.get("id") or "")
-            if not row_id or row_id in all_ids:
+            if not row_id:
                 issues.append({"split": split, "index": index, "id": row_id, "problems": ["duplicate_or_missing_id"]})
-            all_ids.add(row_id)
+            else:
+                locations = id_locations.setdefault(row_id, set())
+                # Different task types can intentionally share a base id, but
+                # the same id must never repeat inside one task/split stream.
+                location = f"{split}:{row.get('task_type')}"
+                if location in locations:
+                    issues.append({"split": split, "index": index, "id": row_id, "problems": ["duplicate_id_in_task"]})
+                locations.add(location)
             if not isinstance(row.get("tools"), str) or not isinstance(row.get("meta"), str):
                 issues.append({"split": split, "index": index, "id": row_id, "problems": ["non_string_tools_or_meta"]})
             task = str(row.get("task_type") or "")
