@@ -106,6 +106,31 @@ def test_exx_abstain_reason_is_user_visible_answer() -> None:
     assert conclusion.answer == "现有证据不足以确认。"
 
 
+def test_exx_retrieve_more_accepts_follow_up_query_alias() -> None:
+    from asa_arknight_story_agent.inference.payload.normalization import normalize_conclusion_payload
+
+    conclusion = normalize_conclusion_payload(
+        {
+            "next_action": "retrieve_more",
+            "follow_up_query": {
+                "question": "需要继续查什么？",
+                "query_type": "fact",
+                "entities": ["阿米娅"],
+                "keywords": ["报告"],
+                "expected_answer_type": "事实",
+                "dialogue_context": "",
+            },
+        },
+        question="测试问题？",
+        dialogue_context="",
+        current_intent="plot_fact",
+        current_hypothesis=_hypothesis(),
+    )
+    assert conclusion.next_action == "retrieve_more"
+    assert conclusion.follow_up_hypothesis is not None
+    assert conclusion.follow_up_hypothesis.question == "需要继续查什么？"
+
+
 def test_evidence_id_mode_keeps_evidence_text_in_input_but_not_output_schema() -> None:
     prompt, evidence_brief = build_minimal_conclusion_prompt(
         question="阿米娅如何处理调岗申请？",

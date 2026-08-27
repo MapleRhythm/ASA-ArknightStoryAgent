@@ -78,6 +78,7 @@ CONCLUSION_IGNORED_EXTRA_FIELDS = {
     "decision",
     "dialogue_context",
     "follow_up_question",
+    "follow_up_query",
     "new_entities",
     "new_keywords",
     "slot_values",

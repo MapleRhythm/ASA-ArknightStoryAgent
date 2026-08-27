@@ -19,6 +19,12 @@ def preprocess_conclusion_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not str(payload.get("answer") or "").strip() and str(payload.get("final_answer") or "").strip():
         payload["answer"] = payload.get("final_answer")
     if (
+        str(payload.get("next_action") or "").strip() == "retrieve_more"
+        and not isinstance(payload.get("follow_up_hypothesis"), dict)
+        and isinstance(payload.get("follow_up_query"), dict)
+    ):
+        payload["follow_up_hypothesis"] = payload.get("follow_up_query")
+    if (
         str(payload.get("next_action") or "").strip() == "abstain"
         and not str(payload.get("answer") or "").strip()
     ):
