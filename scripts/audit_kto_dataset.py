@@ -114,7 +114,10 @@ def main() -> int:
                 payload = json.loads(assistant_text)
             except json.JSONDecodeError:
                 payload = None
-                problems["assistant_invalid_json"] += 1
+                if tag is True:
+                    problems["desirable_assistant_invalid_json"] += 1
+                else:
+                    counts[f"expected_failure:{split}:invalid_json_negative"] += 1
             action = str(payload.get("next_action") or "") if isinstance(payload, dict) else ""
             if action:
                 counts[f"action:{split}:{str(tag).lower()}:{action}"] += 1
@@ -186,7 +189,23 @@ def main() -> int:
             if isinstance(tag, bool):
                 signature_labels[signature].add(tag)
                 prompt_labels[str(row.get("system") or "") + "\n" + prompt].add(tag)
-            if question in held_out_questions:
+            if tag is False:
+                # Protocol failures in undesirable model rollouts are valid
+                # KTO targets. Prompt and split integrity checks still apply.
+                row_problems = [
+                    problem
+                    for problem in row_problems
+                    if problem
+                    in {
+                        "non_string_tools_or_meta",
+                        "invalid_meta_json",
+                        "invalid_story_families",
+                        "non_canonical_exx_system",
+                        "non_canonical_exx_protocol",
+                        "no_visible_evidence",
+                    }
+                ]
+            if split == "train" and question in held_out_questions:
                 row_problems.append("sft_eval_question_leakage")
             for problem in sorted(set(row_problems)):
                 problems[problem] += 1
