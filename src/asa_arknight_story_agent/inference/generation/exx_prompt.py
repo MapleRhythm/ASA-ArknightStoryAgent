@@ -19,7 +19,13 @@ EXX_RULES = (
 def compact_hypothesis(value: Any) -> str:
     if isinstance(value, str):
         stripped = value.strip()
-        return stripped or "{}"
+        if not stripped:
+            return "{}"
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return stripped
+        return json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
     return json.dumps(value or {}, ensure_ascii=False, separators=(",", ":"))
 
 

@@ -251,6 +251,16 @@ def test_runtime_exx_prompt_body_is_the_canonical_training_prompt() -> None:
     assert f"rules: {EXX_RULES}" in prompt
 
 
+def test_canonical_exx_prompt_compacts_serialized_hypothesis() -> None:
+    prompt = render_exx_user_prompt(
+        question="测试？",
+        hypothesis='{"entities": ["阿米娅"], "keywords": ["报告"]}',
+        round_value="1/2",
+        evidence_text="[E1]\n正文",
+    )
+    assert 'hypothesis: {"entities":["阿米娅"],"keywords":["报告"]}' in prompt
+
+
 def test_offline_evidence_map_can_match_prompt_truncation_limits() -> None:
     mapping = evidence_id_text_map(_evidence(), max_chars_per_doc=8, max_total_chars=100)
     assert set(mapping) == {"E1", "E2"}
