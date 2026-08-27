@@ -99,3 +99,24 @@ def test_does_not_infer_negative_without_explicit_verifier_rejection() -> None:
     assert MODULE.semantic_verifier_negative(
         {"first_pass_label": {"next_action": "abstain"}}, object(), {"next_action": "abstain"}
     ) is None
+
+
+def test_remove_unpaired_prompts_drops_orphan_after_split_isolation() -> None:
+    stats = MODULE.Counter()
+    base = {
+        "system": "s",
+        "conversations": [{"from": "human", "value": "p"}, {"from": "gpt", "value": "x"}],
+    }
+    paired = [{**base, "id": "p", "kto_tag": True}, {**base, "id": "n", "kto_tag": False}]
+    orphan = {
+        "system": "s",
+        "conversations": [{"from": "human", "value": "orphan"}, {"from": "gpt", "value": "x"}],
+        "id": "o",
+        "kto_tag": True,
+    }
+
+    assert [row["id"] for row in MODULE.remove_unpaired_prompts(paired + [orphan], stats, "train")] == [
+        "p",
+        "n",
+    ]
+    assert stats["quarantine:train:unpaired_after_isolation"] == 1

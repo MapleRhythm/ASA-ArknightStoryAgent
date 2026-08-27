@@ -205,6 +205,24 @@ def normalize_question(prompt: str) -> str:
     return re.sub(r"\s+", "", match.group(1)).strip() if match else ""
 
 
+def remove_unpaired_prompts(rows: list[dict[str, Any]], stats: Counter[str], split: str) -> list[dict[str, Any]]:
+    labels_by_prompt: dict[str, set[bool]] = defaultdict(set)
+    for row in rows:
+        prompt_key = str(row.get("system") or "") + "\n" + row["conversations"][0]["value"]
+        labels_by_prompt[prompt_key].add(bool(row["kto_tag"]))
+    paired_prompts = {
+        prompt for prompt, labels in labels_by_prompt.items() if labels == {False, True}
+    }
+    retained: list[dict[str, Any]] = []
+    for row in rows:
+        prompt_key = str(row.get("system") or "") + "\n" + row["conversations"][0]["value"]
+        if prompt_key not in paired_prompts:
+            stats[f"quarantine:{split}:unpaired_after_isolation"] += 1
+            continue
+        retained.append(row)
+    return retained
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks-json", type=Path, required=True)
@@ -368,6 +386,8 @@ def main() -> int:
             continue
         isolated_train.append(row)
     rows_by_split["train"] = isolated_train
+    for split in ("train", "val"):
+        rows_by_split[split] = remove_unpaired_prompts(rows_by_split[split], stats, split)
 
     output_dir.mkdir(parents=True)
     for split in ("train", "val"):
