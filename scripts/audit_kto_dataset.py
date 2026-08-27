@@ -75,6 +75,7 @@ def main() -> int:
     signature_labels: dict[str, set[bool]] = defaultdict(set)
     prompt_labels: dict[str, set[bool]] = defaultdict(set)
     id_locations: dict[str, list[str]] = defaultdict(list)
+    story_families: dict[str, set[str]] = defaultdict(set)
     row_records: list[dict[str, Any]] = []
 
     held_out_questions: set[str] = set()
@@ -121,6 +122,20 @@ def main() -> int:
             row_problems: list[str] = []
             if not isinstance(row.get("tools"), str) or not isinstance(row.get("meta"), str):
                 row_problems.append("non_string_tools_or_meta")
+            meta = row.get("meta")
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except json.JSONDecodeError:
+                    row_problems.append("invalid_meta_json")
+                    meta = None
+            if isinstance(meta, dict):
+                families = meta.get("story_families")
+                if families is not None:
+                    if not isinstance(families, list) or any(not str(item).strip() for item in families):
+                        row_problems.append("invalid_story_families")
+                    else:
+                        story_families[split].update(str(item) for item in families)
             if row.get("task_type") == EXX_TASK:
                 if row.get("system") != EXX_SYSTEM:
                     row_problems.append("non_canonical_exx_system")
@@ -205,6 +220,11 @@ def main() -> int:
         "train_test": len(question_sets["train"] & question_sets["test"]),
         "val_test": len(question_sets["val"] & question_sets["test"]),
     }
+    family_overlap = {
+        "train_val": len(story_families["train"] & story_families["val"]),
+        "train_test": len(story_families["train"] & story_families["test"]),
+        "val_test": len(story_families["val"] & story_families["test"]),
+    }
     for split in existing_splits:
         positive = counts[f"tag:{split}:true"]
         negative = counts[f"tag:{split}:false"]
@@ -218,6 +238,8 @@ def main() -> int:
         "problems": dict(sorted(problems.items())),
         "problem_samples": dict(sorted(samples.items())),
         "question_overlap_counts": overlap,
+        "story_family_counts": {split: len(values) for split, values in sorted(story_families.items())},
+        "story_family_overlap_counts": family_overlap,
         "held_out_sft_questions": len(held_out_questions),
         "rows": row_records,
     }
@@ -230,7 +252,7 @@ def main() -> int:
             indent=2,
         )
     )
-    return 1 if problems or any(overlap.values()) else 0
+    return 1 if problems or any(overlap.values()) or any(family_overlap.values()) else 0
 
 
 if __name__ == "__main__":

@@ -133,6 +133,7 @@ def make_row(
             {
                 "schema": PROTOCOL,
                 "task_id": task["task_id"],
+                "story_families": sorted(task_story_families(task)),
                 "preference_polarity": "desirable" if desirable else "undesirable",
                 **metadata,
             }
@@ -203,6 +204,29 @@ def semantic_verifier_negative(
 def normalize_question(prompt: str) -> str:
     match = QUESTION_RE.search(prompt)
     return re.sub(r"\s+", "", match.group(1)).strip() if match else ""
+
+
+def normalize_story_family(value: str) -> str:
+    """Return a coarse story family from a corpus document id."""
+    normalized = str(value or "").strip().replace("\\", "/").split("#", 1)[0]
+    if not normalized:
+        return ""
+    parts = [part for part in normalized.split("/") if part]
+    if not parts:
+        return ""
+    if parts[0] == "activities" and len(parts) > 1:
+        return "/".join(parts[:2])
+    if parts[0] == "obt" and len(parts) > 2:
+        return "/".join(parts[:3])
+    return "/".join(parts[:2])
+
+
+def task_story_families(task: dict[str, Any]) -> set[str]:
+    return {
+        family
+        for item in task.get("evidence") or []
+        if (family := normalize_story_family(str(item.get("doc_id") or "")))
+    }
 
 
 def remove_unpaired_prompts(rows: list[dict[str, Any]], stats: Counter[str], split: str) -> list[dict[str, Any]]:
@@ -375,19 +399,44 @@ def main() -> int:
             )
             stats[f"output:{split}:negative:{negative['next_action']}"] += 1
 
-    # Keep every normalized question on only one side. Validation ownership wins.
+    # Keep every normalized question and story family on only one side.
+    # Validation ownership wins.  Family isolation prevents the preference
+    # validation split from measuring memorization of the same narrative arc.
     val_questions = {
         normalize_question(row["conversations"][0]["value"]) for row in rows_by_split["val"]
+    }
+    val_task_ids = {
+        str(json.loads(str(row["meta"]))["task_id"]) for row in rows_by_split["val"]
+    }
+    val_families = {
+        family for task_id in val_task_ids for family in task_story_families(tasks[task_id])
     }
     isolated_train: list[dict[str, Any]] = []
     for row in rows_by_split["train"]:
         if normalize_question(row["conversations"][0]["value"]) in val_questions:
             stats["quarantine:train_val_question_overlap"] += 1
             continue
+        task_id = str(json.loads(str(row["meta"]))["task_id"])
+        if task_story_families(tasks[task_id]) & val_families:
+            stats["quarantine:train_val_story_family_overlap"] += 1
+            continue
         isolated_train.append(row)
     rows_by_split["train"] = isolated_train
     for split in ("train", "val"):
         rows_by_split[split] = remove_unpaired_prompts(rows_by_split[split], stats, split)
+
+    # Output counters collected above describe the pre-isolation candidates.
+    # Recompute them from the rows that will actually be frozen.
+    stats = Counter({key: value for key, value in stats.items() if not key.startswith("output:")})
+    prompt_counts: dict[str, int] = {}
+    for split in ("train", "val"):
+        prompts: set[str] = set()
+        for row in rows_by_split[split]:
+            payload = json.loads(str(row["conversations"][-1]["value"]))
+            polarity = "positive" if row["kto_tag"] else "negative"
+            stats[f"output:{split}:{polarity}:{payload.get('next_action')}"] += 1
+            prompts.add(str(row["system"]) + "\n" + str(row["conversations"][0]["value"]))
+        prompt_counts[split] = len(prompts)
 
     output_dir.mkdir(parents=True)
     for split in ("train", "val"):
@@ -408,6 +457,7 @@ def main() -> int:
             "unprovable_polarity_is_quarantined": True,
             "legacy_answer_directly_without_exx_binding_is_quarantined": True,
             "train_val_question_isolation": True,
+            "train_val_story_family_isolation": True,
             "positive_requires_at_least_one_proven_negative": True,
             "max_negatives_per_task": args.max_negatives_per_task,
         },
@@ -418,6 +468,7 @@ def main() -> int:
         },
         "stats": dict(sorted(stats.items())),
         "output_counts": {split: len(rows_by_split[split]) for split in ("train", "val")},
+        "paired_prompt_counts": prompt_counts,
         "quarantine_rows": len(quarantine),
     }
     write_json(output_dir / "audit.json", report)

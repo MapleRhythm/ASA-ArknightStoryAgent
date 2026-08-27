@@ -120,3 +120,32 @@ def test_remove_unpaired_prompts_drops_orphan_after_split_isolation() -> None:
         "n",
     ]
     assert stats["quarantine:train:unpaired_after_isolation"] == 1
+
+
+def test_story_family_normalization() -> None:
+    assert MODULE.normalize_story_family("activities/act38side/level_a#chunk-1") == "activities/act38side"
+    assert MODULE.normalize_story_family("obt/memory/story_bldsk_2_1#chunk-1") == "obt/memory/story_bldsk_2_1"
+    assert MODULE.task_story_families(
+        {
+            "evidence": [
+                {"doc_id": "activities/act38side/a"},
+                {"doc_id": "activities/act38side/b"},
+                {"doc_id": "activities/act49side/c"},
+            ]
+        }
+    ) == {"activities/act38side", "activities/act49side"}
+
+
+def test_make_row_serializes_story_families() -> None:
+    value = task()
+    value["evidence"] = [
+        {"label": "E1", "doc_id": "activities/act38side/level_a#chunk-1", "text": "证据"}
+    ]
+    row = MODULE.make_row(
+        task=value,
+        payload={"next_action": "abstain", "reason": "证据不足"},
+        desirable=True,
+        suffix="positive",
+        metadata={"source": "test"},
+    )
+    assert json.loads(row["meta"])["story_families"] == ["activities/act38side"]
