@@ -327,7 +327,7 @@ def teacher_prompt(task: Task) -> str:
             "严格规则：",
             "1. answer_directly时，supported_facts合起来必须完整回答问题的全部核心信息需求；若关键部分缺证据，不得只回答其中一半，未到最大轮次就retrieve_more，已到最大轮次就abstain。",
             "特别注意：当问题询问“为什么某种超常现象会发生”时，仅证明该现象确实发生不等于解释了原因；证据未说明机制或原因时，不得把现象本身当作原因。",
-            "2. 只保留回答问题必需的可核验事实；每条fact只表达一个可独立判断真假的断言，不能用“且、并、因此”把多个独立断言塞进一条。",
+            "2. supported_facts必须是1至8条，只保留回答问题必需的可核验事实；每条fact只表达一个可独立判断真假的断言，不能用“且、并、因此”把多个独立断言塞进一条。若细节很多，应合并不影响可核验性的同一事件细节，不能输出第9条。",
             "3. 每条fact绑定1至2个证据编号，编号只能来自上方当前可见的E编号。",
             "4. evidence_ids表示对应证据的正文在语义上直接支持该fact，不是只要主题相关即可。",
             "5. 不输出quote，不复制引文，不输出final_answer、answer、inferred_facts、confidence或missing_slots。",
@@ -367,8 +367,12 @@ def validate_label(payload: dict[str, Any], task: Task) -> dict[str, Any]:
     visible_ids = {item.label for item in task.evidence}
     if action == "answer_directly":
         facts = payload.get("supported_facts")
-        if not isinstance(facts, list) or not facts or len(facts) > 8:
-            raise LabelError("invalid_supported_facts")
+        if not isinstance(facts, list):
+            raise LabelError(f"supported_facts_not_list:{type(facts).__name__}")
+        if not facts:
+            raise LabelError("supported_facts_empty")
+        if len(facts) > 8:
+            raise LabelError(f"supported_facts_too_many:{len(facts)}")
         clean_facts: list[dict[str, Any]] = []
         for fact in facts:
             if not isinstance(fact, dict):
@@ -415,7 +419,7 @@ def semantic_verifier_prompt(task: Task, proposed: dict[str, Any]) -> str:
             "2. answer_directly的facts合起来必须覆盖问题全部核心信息需求；只支持部分答案时应改为retrieve_more或最大轮次abstain。",
             "特别注意：仅证明某现象发生，不能回答该现象为什么发生；若证据没有给出机制/原因，必须按轮次retrieve_more或abstain。",
             "3. 证据已足够时必须纠正过度retrieve_more/abstain；不得因“真实、究竟、真正”等措辞臆测存在隐藏信息。",
-            "4. 每个fact只含一个可独立判断真假的断言，绑定1至2个当前存在的E编号。",
+            "4. 最终answer_directly必须包含1至8条supported_facts；每个fact只含一个可独立判断真假的断言，绑定1至2个当前存在的E编号，不能输出第9条。",
             "5. 最终label不含quote、answer、final_answer、inferred_facts、confidence或missing_slots。",
             "6. 不得参考游戏常识或候选之外的信息。issues只写简短错误标签，不写思维过程。",
         )
@@ -539,6 +543,42 @@ def load_completed(path: Path) -> dict[str, dict[str, Any]]:
     return completed
 
 
+def load_task_ids(path: Path) -> set[str]:
+    """Load task ids from a JSONL checkpoint without importing its labels."""
+    task_ids: set[str] = set()
+    if not path.exists():
+        raise FileNotFoundError(path)
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise LabelError(f"invalid_exclusion_jsonl:{path}:{line_number}") from exc
+            task_id = str(row.get("task_id", "")).strip() if isinstance(row, dict) else ""
+            if task_id:
+                task_ids.add(task_id)
+    return task_ids
+
+
+def select_pending_tasks(
+    tasks: list[Task],
+    *,
+    completed_ids: set[str],
+    excluded_ids: set[str],
+    include_splits: set[str],
+    requested_ids: set[str],
+) -> list[Task]:
+    """Apply all filters without letting an explicit task id bypass a checkpoint."""
+    return [
+        task
+        for task in tasks
+        if task.task_id not in completed_ids
+        and task.task_id not in excluded_ids
+        and (not include_splits or task.split in include_splits)
+        and (not requested_ids or task.task_id in requested_ids)
+    ]
+
+
 def build_sft(output_dir: Path, tasks: list[Task], labels: dict[str, dict[str, Any]]) -> dict[str, Any]:
     rows_by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
     task_map = {task.task_id: task for task in tasks}
@@ -611,6 +651,13 @@ def main() -> int:
     parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--task-id", action="append", default=[])
+    parser.add_argument(
+        "--exclude-labels-jsonl",
+        action="append",
+        type=Path,
+        default=[],
+        help="skip task_ids found in an earlier provider checkpoint without copying its labels",
+    )
     parser.add_argument("--include-split", action="append", choices=("train", "val", "test"), default=[])
     parser.add_argument("--no-semantic-verify", dest="semantic_verify", action="store_false")
     parser.set_defaults(semantic_verify=True)
@@ -638,13 +685,17 @@ def main() -> int:
     labels_path = output_dir / "labels.jsonl"
     failures_path = output_dir / "failures.jsonl"
     completed = load_completed(labels_path)
-    pending = [task for task in tasks if task.task_id not in completed]
-    if args.include_split:
-        selected_splits = set(args.include_split)
-        pending = [task for task in pending if task.split in selected_splits]
-    if args.task_id:
-        requested_ids = set(args.task_id)
-        pending = [task for task in tasks if task.task_id in requested_ids]
+    excluded_ids: set[str] = set()
+    exclusion_files = [path.resolve() for path in args.exclude_labels_jsonl]
+    for exclusion_file in exclusion_files:
+        excluded_ids.update(load_task_ids(exclusion_file))
+    pending = select_pending_tasks(
+        tasks,
+        completed_ids=set(completed),
+        excluded_ids=excluded_ids,
+        include_splits=set(args.include_split),
+        requested_ids=set(args.task_id),
+    )
     if args.limit > 0:
         pending = pending[: args.limit]
     lock = threading.Lock()
@@ -689,6 +740,10 @@ def main() -> int:
         "endpoint": args.endpoint,
         "workers": args.workers,
         "semantic_verify": args.semantic_verify,
+        "exclusions": {
+            "files": [str(path) for path in exclusion_files],
+            "unique_task_ids": len(excluded_ids),
+        },
         "prepare": prepare_report,
         "completed_labels": len(completed),
         "pending_labels": len(tasks) - len(completed),
