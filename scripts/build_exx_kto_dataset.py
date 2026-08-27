@@ -401,6 +401,33 @@ def main() -> int:
         "quarantine_rows": len(quarantine),
     }
     write_json(output_dir / "audit.json", report)
+    manifest_files = sorted(
+        path
+        for path in output_dir.iterdir()
+        if path.is_file() and path.name not in {"manifest.json", "final_checksums.sha256"}
+    )
+    write_json(
+        output_dir / "manifest.json",
+        {
+            "protocol": PROTOCOL,
+            "created_at_utc": report["created_at_utc"],
+            "hash_policy": {
+                "algorithm": "sha256",
+                "manifest_excludes": ["manifest.json", "final_checksums.sha256"],
+                "checksums_excludes": ["final_checksums.sha256"],
+            },
+            "files": [
+                {"path": path.name, "bytes": path.stat().st_size, "sha256": sha256_file(path)}
+                for path in manifest_files
+            ],
+        },
+    )
+    checksum_files = sorted(
+        path for path in output_dir.iterdir() if path.is_file() and path.name != "final_checksums.sha256"
+    )
+    with (output_dir / "final_checksums.sha256").open("w", encoding="utf-8") as handle:
+        for path in checksum_files:
+            handle.write(f"{sha256_file(path)}  {path.name}\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

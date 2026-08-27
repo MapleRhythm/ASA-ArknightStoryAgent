@@ -74,6 +74,7 @@ def main() -> int:
     question_sets: dict[str, set[str]] = defaultdict(set)
     signature_labels: dict[str, set[bool]] = defaultdict(set)
     prompt_labels: dict[str, set[bool]] = defaultdict(set)
+    id_locations: dict[str, list[str]] = defaultdict(list)
     row_records: list[dict[str, Any]] = []
 
     held_out_questions: set[str] = set()
@@ -91,6 +92,11 @@ def main() -> int:
         existing_splits.add(split)
         for index, row in enumerate(load(path)):
             counts[f"rows:{split}"] += 1
+            row_id = str(row.get("id") or "")
+            if not row_id:
+                problems["missing_id"] += 1
+            else:
+                id_locations[row_id].append(f"{split}:{index}")
             prompt = conversation_text(row, assistant=False)
             assistant_text = conversation_text(row, assistant=True)
             question = extract_question(prompt)
@@ -113,6 +119,8 @@ def main() -> int:
                 counts[f"action:{split}:{str(tag).lower()}:{action}"] += 1
             visible = set(EVIDENCE_RE.findall(prompt))
             row_problems: list[str] = []
+            if not isinstance(row.get("tools"), str) or not isinstance(row.get("meta"), str):
+                row_problems.append("non_string_tools_or_meta")
             if row.get("task_type") == EXX_TASK:
                 if row.get("system") != EXX_SYSTEM:
                     row_problems.append("non_canonical_exx_system")
@@ -189,6 +197,9 @@ def main() -> int:
             problems["preference_prompt_without_positive"] += 1
         if False not in labels:
             problems["preference_prompt_without_negative"] += 1
+    for locations in id_locations.values():
+        if len(locations) > 1:
+            problems["duplicate_id"] += 1
     overlap = {
         "train_val": len(question_sets["train"] & question_sets["val"]),
         "train_test": len(question_sets["train"] & question_sets["test"]),
