@@ -4,6 +4,8 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "glm_exx_semantic_reward.py"
 SPEC = importlib.util.spec_from_file_location("glm_exx_semantic_reward", SCRIPT)
@@ -211,3 +213,15 @@ def test_incomplete_retrieve_schema_is_not_judge_eligible() -> None:
     }
 
     assert not MODULE.payload_is_judge_eligible(payload, context["evidence"])
+
+
+def test_build_ssl_context_rejects_missing_explicit_bundle(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="CA bundle does not exist"):
+        MODULE.build_ssl_context(tmp_path / "missing.pem")
+
+
+def test_build_ssl_context_accepts_system_bundle() -> None:
+    context = MODULE.build_ssl_context("/etc/ssl/certs/ca-certificates.crt")
+
+    assert context.verify_mode != 0
+    assert context.check_hostname

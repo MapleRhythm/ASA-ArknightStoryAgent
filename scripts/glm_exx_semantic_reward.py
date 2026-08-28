@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -40,6 +42,25 @@ class SemanticJudgeError(RuntimeError):
 
 class TerminalSemanticJudgeError(SemanticJudgeError):
     pass
+
+
+def build_ssl_context(ca_bundle: str | Path | None = None) -> ssl.SSLContext:
+    """Build a reproducible HTTPS context even in relocated Python envs.
+
+    Some training environments retain an OpenSSL default path from the
+    interpreter's original Conda prefix.  Prefer an explicit bundle, then the
+    environment override, and finally the standard Linux system bundle before
+    falling back to Python's compiled defaults.
+    """
+    candidates = [
+        str(ca_bundle or "").strip(),
+        os.environ.get("SSL_CERT_FILE", "").strip(),
+        "/etc/ssl/certs/ca-certificates.crt",
+    ]
+    selected = next((path for path in candidates if path and Path(path).is_file()), None)
+    if ca_bundle and selected != str(ca_bundle):
+        raise ValueError(f"GLM CA bundle does not exist: {ca_bundle}")
+    return ssl.create_default_context(cafile=selected) if selected else ssl.create_default_context()
 
 
 def compact_json(value: Any) -> str:
@@ -343,6 +364,7 @@ class GlmEvidenceJudge:
         reasoning_effort: str = "high",
         workers: int = 1,
         max_consecutive_failures: int = 3,
+        ca_bundle: str | Path | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("missing GLM API key")
@@ -357,6 +379,8 @@ class GlmEvidenceJudge:
         self.reasoning_effort = reasoning_effort
         self.workers = max(1, workers)
         self.max_consecutive_failures = max(1, max_consecutive_failures)
+        self.ca_bundle = str(ca_bundle or "").strip() or None
+        self.ssl_context = build_ssl_context(self.ca_bundle)
         self._lock = threading.Lock()
         self._cache = self._load_cache()
         self._consecutive_failures = 0
@@ -407,7 +431,10 @@ class GlmEvidenceJudge:
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},
             method="POST",
         )
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=self.ssl_context),
+        )
         try:
             with opener.open(request, timeout=self.timeout) as response:
                 response_body = json.loads(response.read().decode("utf-8"))
