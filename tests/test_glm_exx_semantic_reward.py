@@ -38,6 +38,16 @@ def test_extract_judge_context_excludes_hypothesis_and_rules() -> None:
     }
 
 
+def test_judge_prompt_encodes_round_action_state_machine() -> None:
+    messages = MODULE.build_messages(
+        MODULE.extract_judge_context(PROMPT),
+        [(0, {"next_action": "abstain", "reason": "证据不足。"})],
+    )
+
+    assert "证据不足且仍有后续轮次" in messages[1]["content"]
+    assert "不得因当前证据不足就在非末轮提前abstain" in messages[1]["content"]
+
+
 def test_validate_and_score_answer_judgement() -> None:
     payload = {
         "next_action": "answer_directly",

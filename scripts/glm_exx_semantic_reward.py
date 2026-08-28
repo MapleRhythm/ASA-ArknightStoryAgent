@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 
-PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v1"
+PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v2"
 SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contradicted": -1.0}
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
 COVERAGE_VALUES = {"complete": 1.0, "partial": 0.25, "none": 0.0, "not_applicable": 0.0}
@@ -211,7 +211,7 @@ def build_messages(
             "2. checked_evidence_ids必须与候选fact给出的evidence_ids完全相同；不得补充别的E编号。",
             "3. citation_complete表示所列证据是否足以支持该fact的完整断言；缺少关键因果、身份、动机或时间条件时为false。",
             "4. coverage检查全部受支持facts合起来是否完整回答问题核心信息需求；只回答一部分为partial。",
-            "5. action_appropriateness根据当前全部证据和轮次判断动作是否合适。证据足够却retrieve/abstain，或证据不足却answer，均为inappropriate。",
+            "5. action_appropriateness必须遵守轮次状态机：证据足够时仅answer_directly合适；证据不足且仍有后续轮次（例如1/2）时仅retrieve_more合适；证据不足且已到最后一轮（例如2/2）时abstain合适。不得因当前证据不足就在非末轮提前abstain。",
             "6. retrieve_more或abstain的facts必须为空且coverage为not_applicable，只判断动作是否合适。",
             "7. 无法从当前证据可靠判定时使用uncertain，不得凭常识强行判正。",
             "8. 每个输入rollout恰好返回一项，索引及fact_index不得遗漏、重复或新增。不要输出解释、引文或思维过程。",

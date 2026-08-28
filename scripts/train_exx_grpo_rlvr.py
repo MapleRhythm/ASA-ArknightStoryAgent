@@ -589,7 +589,7 @@ def main() -> int:
         "adapter_key_coverage": {"loaded": loaded, "total": total},
         "glm_semantic_judge": {
             "enabled": args.glm_semantic_reward,
-            "protocol": "asa_glm_exx_evidence_judge_v1" if args.glm_semantic_reward else None,
+            "protocol": "asa_glm_exx_evidence_judge_v2" if args.glm_semantic_reward else None,
             "gold_or_reference_visible": False,
         },
     }
