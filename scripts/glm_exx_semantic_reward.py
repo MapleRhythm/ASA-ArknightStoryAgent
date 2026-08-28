@@ -468,6 +468,10 @@ class GlmEvidenceJudge:
                     "model": self.model,
                     "reasoning_effort": self.reasoning_effort,
                     "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "context": context,
+                    "rollouts": [
+                        {"rollout_index": index, "output": payload} for index, payload in indexed
+                    ],
                     "rollout_indices": [index for index, _ in indexed],
                     "scores": semantic_scores,
                     "counts": judgement_counts(judgement),

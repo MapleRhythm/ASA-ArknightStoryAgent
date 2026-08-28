@@ -609,8 +609,15 @@ def main() -> int:
     if args.glm_semantic_reward:
         from glm_exx_semantic_reward import GlmEvidenceJudge, make_glm_semantic_reward
 
-        cache_path = args.glm_cache or args.output_dir / "glm_semantic_cache.jsonl"
-        failures_path = args.glm_failures or args.output_dir / "glm_semantic_failures.jsonl"
+        # Keep API checkpoints next to, rather than inside, the model output.
+        # A partial cache must remain reusable even when a failed model run is
+        # intentionally restarted into a fresh versioned directory.
+        cache_path = args.glm_cache or args.output_dir.with_name(
+            f"{args.output_dir.name}.glm_semantic_cache.jsonl"
+        )
+        failures_path = args.glm_failures or args.output_dir.with_name(
+            f"{args.output_dir.name}.glm_semantic_failures.jsonl"
+        )
         judge = GlmEvidenceJudge(
             endpoint=args.glm_endpoint,
             api_key=os.environ[args.glm_api_key_env].strip(),

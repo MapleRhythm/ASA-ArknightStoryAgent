@@ -168,6 +168,9 @@ def test_cache_reuses_identical_group_without_api(tmp_path: Path) -> None:
     assert judge.score_group(PROMPT, completion) == [1.0]
     assert judge.score_group(PROMPT, completion) == [1.0]
     assert calls == 1
+    cached = json.loads((tmp_path / "cache.jsonl").read_text(encoding="utf-8"))
+    assert cached["context"]["question"] == "谁批准了申请？"
+    assert cached["rollouts"][0]["output"] == payload
 
 
 def test_invalid_rollout_skips_teacher_call(tmp_path: Path) -> None:
