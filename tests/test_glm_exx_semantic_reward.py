@@ -198,3 +198,13 @@ def test_unknown_evidence_id_is_not_sent_to_judge(tmp_path: Path) -> None:
 
     assert judge.score_group(PROMPT, [json.dumps(payload, ensure_ascii=False)]) == [0.0]
     assert not (tmp_path / "cache.jsonl").exists()
+
+
+def test_incomplete_retrieve_schema_is_not_judge_eligible() -> None:
+    context = MODULE.extract_judge_context(PROMPT)
+    payload = {
+        "next_action": "retrieve_more",
+        "follow_up_hypothesis": {"question": "还缺什么？"},
+    }
+
+    assert not MODULE.payload_is_judge_eligible(payload, context["evidence"])

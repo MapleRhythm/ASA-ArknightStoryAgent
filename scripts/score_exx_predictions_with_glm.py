@@ -11,7 +11,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from glm_exx_semantic_reward import GlmEvidenceJudge
+from glm_exx_semantic_reward import (
+    GlmEvidenceJudge,
+    extract_judge_context,
+    parse_json_object,
+    payload_is_judge_eligible,
+)
 
 
 def read_rows(path: Path) -> list[dict[str, Any]]:
@@ -70,8 +75,19 @@ def main() -> int:
     )
 
     def score(index: int, row: dict[str, Any]) -> dict[str, Any]:
-        values = judge.score_group(prompt_value(row), [completion_value(row)])
-        return {"index": index, "id": row.get("id"), "score": values[0]}
+        prompt = prompt_value(row)
+        completion = completion_value(row)
+        values = judge.score_group(prompt, [completion])
+        result = {"index": index, "id": row.get("id"), "score": values[0]}
+        context = extract_judge_context(prompt)
+        payload = parse_json_object(completion)
+        if payload is not None and payload_is_judge_eligible(payload, context["evidence"]):
+            cache_key = judge._cache_key(context, [(0, payload)])
+            cached = judge._cache.get(cache_key)
+            if cached:
+                result["judgement"] = cached["judgement"]["rollouts"][0]
+                result["counts"] = cached.get("counts") or {}
+        return result
 
     completed: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
@@ -96,12 +112,14 @@ def main() -> int:
         "zero": sum(value == 0 for value in scores),
         "negative": sum(value < 0 for value in scores),
         "judge_counts": dict(sorted(aggregate.items())),
-        "scores": completed,
     }
+    (args.output_dir / "scored.json").write_text(
+        json.dumps(completed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(json.dumps({key: value for key, value in summary.items() if key != "scores"}, ensure_ascii=False, indent=2))
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
 

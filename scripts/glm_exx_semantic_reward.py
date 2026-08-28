@@ -30,6 +30,8 @@ SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contrad
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
 COVERAGE_VALUES = {"complete": 1.0, "partial": 0.25, "none": 0.0, "not_applicable": 0.0}
 EVIDENCE_HEADER_RE = re.compile(r"^\[(E\d+)\]\s*$", re.MULTILINE)
+FOLLOW_UP_REQUIRED = {"question", "query_type", "entities", "keywords", "expected_answer_type"}
+FOLLOW_UP_OPTIONAL = {"dialogue_context"}
 
 
 class SemanticJudgeError(RuntimeError):
@@ -121,8 +123,24 @@ def payload_is_judge_eligible(payload: dict[str, Any], evidence_text: str) -> bo
         if set(payload) != {"next_action", "follow_up_hypothesis"}:
             return False
         follow_up = payload.get("follow_up_hypothesis")
-        return isinstance(follow_up, dict) and isinstance(follow_up.get("question"), str) and bool(
-            follow_up.get("question", "").strip()
+        if not isinstance(follow_up, dict):
+            return False
+        keys = set(follow_up)
+        return (
+            FOLLOW_UP_REQUIRED.issubset(keys)
+            and not keys - FOLLOW_UP_REQUIRED - FOLLOW_UP_OPTIONAL
+            and isinstance(follow_up.get("question"), str)
+            and bool(follow_up.get("question", "").strip())
+            and all(isinstance(follow_up.get(key), str) for key in ("query_type", "expected_answer_type"))
+            and all(
+                isinstance(follow_up.get(key), list)
+                and all(isinstance(item, str) for item in follow_up[key])
+                for key in ("entities", "keywords")
+            )
+            and (
+                "dialogue_context" not in follow_up
+                or isinstance(follow_up["dialogue_context"], str)
+            )
         )
     return (
         action == "abstain"
