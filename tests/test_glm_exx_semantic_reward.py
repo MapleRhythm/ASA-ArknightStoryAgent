@@ -225,3 +225,25 @@ def test_build_ssl_context_accepts_system_bundle() -> None:
 
     assert context.verify_mode != 0
     assert context.check_hostname
+
+
+def test_invalid_judge_response_is_auditable(tmp_path: Path) -> None:
+    payload = {"next_action": "abstain", "reason": "证据不足。"}
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=1,
+        max_consecutive_failures=2,
+    )
+    judge._request = lambda messages: (
+        "not-json",
+        {"finish_reason": "length", "usage": {"completion_tokens": 8192}},
+    )
+
+    assert judge.score_group(PROMPT, [json.dumps(payload, ensure_ascii=False)]) == [0.0]
+    failure = json.loads((tmp_path / "failures.jsonl").read_text(encoding="utf-8"))
+    assert failure["last_response"]["content_excerpt"] == "not-json"
+    assert failure["last_response"]["api"]["finish_reason"] == "length"

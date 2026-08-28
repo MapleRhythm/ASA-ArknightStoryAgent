@@ -478,9 +478,19 @@ class GlmEvidenceJudge:
 
         messages = build_messages(context, indexed)
         last_error = ""
+        last_response: dict[str, Any] | None = None
         for attempt in range(1, self.max_attempts + 1):
             try:
                 raw, api_meta = self._request(messages)
+                last_response = {
+                    "api": api_meta,
+                    # The assistant content should contain only the requested
+                    # judgement JSON.  Persist a bounded excerpt so malformed
+                    # or length-truncated responses remain diagnosable without
+                    # storing provider reasoning content.
+                    "content_chars": len(raw),
+                    "content_excerpt": raw[:4000],
+                }
                 parsed = parse_json_object(raw)
                 if parsed is None:
                     raise SemanticJudgeError("judge_response_invalid_json")
@@ -530,6 +540,7 @@ class GlmEvidenceJudge:
                 "created_at_utc": datetime.now(timezone.utc).isoformat(),
                 "rollout_indices": [index for index, _ in indexed],
                 "error": last_error[:2000],
+                "last_response": last_response,
             },
         )
         if self._consecutive_failures >= self.max_consecutive_failures:
