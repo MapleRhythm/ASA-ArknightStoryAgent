@@ -34,7 +34,7 @@ def test_strict_schema_and_rewards_distinguish_unknown_evidence() -> None:
     ]
 
 
-def test_evidence_selection_uses_hidden_teacher_ids() -> None:
+def test_claim_citation_reward_binds_each_fact_to_its_hidden_teacher_ids() -> None:
     exact = {
         "next_action": "answer_directly",
         "supported_facts": [{"fact": "事实", "evidence_ids": ["E1", "E2"]}],
@@ -44,13 +44,21 @@ def test_evidence_selection_uses_hidden_teacher_ids() -> None:
         "supported_facts": [{"fact": "事实", "evidence_ids": ["E1", "E3"]}],
     }
 
-    rewards = MODULE.evidence_selection_reward(
+    rewards = MODULE.claim_citation_reward(
         [completion(exact), completion(partial)],
         ["answer_directly", "answer_directly"],
-        [["E1", "E2"], ["E1", "E2"]],
+        [
+            [{"fact": "事实", "evidence_ids": ["E1", "E2"]}],
+            [{"fact": "事实", "evidence_ids": ["E1", "E2"]}],
+        ],
     )
 
     assert rewards == [1.0, 1 / 3]
+
+
+def test_claim_matching_uses_exact_maximum_not_greedy_pairs() -> None:
+    # Greedy takes 9 at (0, 1), leaving 6, while the optimum is 9 + 8.
+    assert MODULE.maximum_bipartite_score([[9, 9], [6, 8]]) == 17
 
 
 def test_reference_fact_reward_is_continuous_and_reference_based() -> None:
@@ -69,11 +77,33 @@ def test_reference_fact_reward_is_continuous_and_reference_based() -> None:
     rewards = MODULE.reference_fact_reward(
         [completion(exact), completion(partial), completion(unrelated)],
         ["answer_directly"] * 3,
-        [["阿米娅带领罗德岛撤离。"]] * 3,
+        [[{"fact": "阿米娅带领罗德岛撤离。", "evidence_ids": ["E1"]}]] * 3,
     )
 
     assert rewards[0] == 1.0
     assert rewards[0] > rewards[1] > rewards[2]
+
+
+def test_duplicate_fact_penalty_rejects_reward_padding() -> None:
+    unique = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "事实甲", "evidence_ids": ["E1"]},
+            {"fact": "事实乙", "evidence_ids": ["E2"]},
+        ],
+    }
+    padded = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "事实甲", "evidence_ids": ["E1"]},
+            {"fact": "事实甲。", "evidence_ids": ["E1"]},
+        ],
+    }
+
+    assert MODULE.duplicate_fact_penalty(
+        [completion(unique), completion(padded)], ["answer_directly", "answer_directly"]
+    ) == [0.0, -0.5]
+    assert "fact_2_duplicate" in MODULE.validate_payload(padded, {"E1"})
 
 
 def test_premature_answer_is_penalized_but_correct_retrieve_is_not() -> None:
@@ -143,8 +173,7 @@ def test_stratified_shortest_smoke_covers_all_actions() -> None:
                     prompt_tokens=length,
                     visible_ids=["E1"],
                     gold_action=action,
-                    gold_evidence_ids=[],
-                    gold_facts=[],
+                    gold_fact_bindings=[],
                 )
             )
 
@@ -171,8 +200,7 @@ def test_stratified_longest_smoke_selects_boundary_rows() -> None:
                     prompt_tokens=length,
                     visible_ids=["E1"],
                     gold_action=action,
-                    gold_evidence_ids=[],
-                    gold_facts=[],
+                    gold_fact_bindings=[],
                 )
             )
 

@@ -11,7 +11,10 @@ from asa_arknight_story_agent.inference.generation.exx_prompt import (
     EXX_SYSTEM_PROMPT,
     render_exx_user_prompt,
 )
-from asa_arknight_story_agent.inference.evidence.rendering import evidence_id_text_map
+from asa_arknight_story_agent.inference.evidence.rendering import (
+    evidence_id_text_map,
+    render_short_evidence_brief,
+)
 from asa_arknight_story_agent.inference.grounding.evidence_id_validation import (
     validate_evidence_id_grounding,
 )
@@ -89,6 +92,26 @@ def test_exx_payload_normalizes_compact_evidence_ids_for_runtime_validator() -> 
             "evidence_refs": [{"evidence_id": "E1"}],
         }
     ]
+
+
+def test_exx_payload_deduplicates_repeated_supported_facts() -> None:
+    from asa_arknight_story_agent.inference.payload.normalization import normalize_conclusion_payload
+
+    conclusion = normalize_conclusion_payload(
+        {
+            "next_action": "answer_directly",
+            "supported_facts": [
+                {"fact": "阿米娅同意了申请。", "evidence_ids": ["E1"]},
+                {"fact": "阿米娅同意了申请。", "evidence_ids": ["E1"]},
+            ],
+        },
+        question="阿米娅如何处理申请？",
+        dialogue_context="",
+        current_intent="plot_fact",
+        current_hypothesis=_hypothesis(),
+    )
+
+    assert len(conclusion.supported_facts) == 1
 
 
 def test_exx_abstain_reason_is_user_visible_answer() -> None:
@@ -206,6 +229,15 @@ def test_evidence_id_validator_rejects_unknown_id() -> None:
     assert any("evidence_id_not_found:E99" in issue for issue in issues)
 
 
+def test_evidence_id_validator_rejects_duplicate_supported_facts() -> None:
+    conclusion = _conclusion("E1")
+    conclusion.supported_facts.append(dict(conclusion.supported_facts[0]))
+    issues, _ = validate_evidence_id_grounding(
+        conclusion=conclusion, evidence=_evidence(), question="阿米娅如何处理调岗申请？"
+    )
+    assert any("duplicate" in issue for issue in issues)
+
+
 def test_evidence_id_validator_rejects_claim_terms_outside_cited_evidence() -> None:
     conclusion = _conclusion("E1")
     conclusion.supported_facts[0]["fact"] = "阿米娅任命娜塔莉娅为整合运动领袖。"
@@ -294,6 +326,21 @@ def test_offline_evidence_map_can_match_prompt_truncation_limits() -> None:
     mapping = evidence_id_text_map(_evidence(), max_chars_per_doc=8, max_total_chars=100)
     assert set(mapping) == {"E1", "E2"}
     assert len(mapping["E1"]) <= 8
+
+
+def test_chain_member_markers_do_not_create_nested_public_citations() -> None:
+    evidence = _evidence()
+    evidence[0]["evidence_chain_text"] = (
+        "[CHAIN_MEMBER_1] 活动 / 第一幕\n证据甲\n"
+        "[CHAIN_MEMBER_2] 活动 / 第二幕\n证据乙"
+    )
+
+    brief = render_short_evidence_brief(
+        evidence[:1], preserve_complete_evidence=True, label_on_own_line=True
+    )
+
+    assert brief.count("[E1]") == 1
+    assert "[E2]" not in brief
 
 
 def test_grounding_disabled_does_not_run_legacy_fallbacks() -> None:

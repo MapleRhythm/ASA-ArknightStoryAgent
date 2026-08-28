@@ -12,6 +12,7 @@ EXX_RULES = (
     "evidence_ids绑定1至2个当前存在的E编号；retrieve_more时输出follow_up_hypothesis；"
     "abstain时输出reason；"
     "不要复制引文，不要输出evidence_refs、quote、final_answer、answer或inferred_facts；"
+    "只保留完整回答问题所必需的最少事实，通常1至4条，禁止重复或近义改写同一事实；"
     "当前证据足够时不要补检索；证据不足且未到最后一轮时才retrieve_more，最后一轮则abstain。"
 )
 

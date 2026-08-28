@@ -31,7 +31,7 @@ def generate_direct_answer_from_model(
         round_value=f"{pipeline.max_retrieval_rounds}/{pipeline.max_retrieval_rounds}",
     )
     generation_max_tokens = (
-        min(pipeline.generator.max_tokens, 768)
+        min(pipeline.generator.max_tokens, 512)
         if pipeline.answer_grounding_mode.strip().lower() == "evidence_id"
         else min(max(pipeline.generator.max_tokens, 1536), 2048)
     )
@@ -40,7 +40,7 @@ def generate_direct_answer_from_model(
         max_tokens=generation_max_tokens,
         temperature=0.1,
         top_p=0.8,
-        repeat_penalty=1.0,
+        repeat_penalty=pipeline.generator.repeat_penalty,
     )
     original_raw_output = raw_output
     try:

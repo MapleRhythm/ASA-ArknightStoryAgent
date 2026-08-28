@@ -16,6 +16,7 @@ from asa_arknight_story_agent.inference.grounding.grounded_fact_answers import (
 )
 from asa_arknight_story_agent.inference.planning.query_understanding import extract_content_tokens
 from asa_arknight_story_agent.inference.pipeline.types import ConclusionResult
+from asa_arknight_story_agent.inference.payload.utils import normalize_fact_text
 
 
 def validate_evidence_id_grounding(
@@ -44,6 +45,7 @@ def validate_evidence_id_grounding(
     if conclusion.inferred_facts:
         issues.append("inferred_facts_not_allowed_in_evidence_id_mode")
 
+    seen_facts: set[str] = set()
     for fact_index, fact in enumerate(conclusion.supported_facts, start=1):
         if not isinstance(fact, dict):
             issues.append(f"supported_fact_{fact_index}_not_object")
@@ -53,6 +55,11 @@ def validate_evidence_id_grounding(
         if not claim:
             issues.append(f"supported_fact_{fact_index}_missing_fact")
             continue
+        claim_key = normalize_fact_text(claim)
+        if claim_key in seen_facts:
+            issues.append(f"supported_fact_{fact_index}_duplicate")
+        else:
+            seen_facts.add(claim_key)
         if len(claim) > 180:
             issues.append(f"supported_fact_{fact_index}_fact_over_180")
         if not isinstance(refs, list) or not refs:

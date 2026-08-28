@@ -116,6 +116,37 @@ def assistant_payload(record: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def renumber_evidence_and_payload(
+    evidence_text: str, payload: dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
+    """Make visible citation IDs contiguous and remap answer bindings.
+
+    Candidate selection can drop middle-ranked passages while retaining their
+    old labels (for example E1/E3/E5).  Models then tend to fill the numeric
+    holes even though those IDs are not visible.  Citation IDs are prompt-
+    local positions, so every finalized prompt must expose E1..En without
+    gaps.  The source record and teacher result remain read-only.
+    """
+    labels = EVIDENCE_RE.findall(evidence_text)
+    if not labels:
+        raise ValueError("evidence text contains no visible ids")
+    if len(labels) != len(set(labels)):
+        raise ValueError("evidence text contains duplicate visible ids")
+    mapping = {f"E{old}": f"E{index}" for index, old in enumerate(labels, start=1)}
+
+    def replace_label(match: re.Match[str]) -> str:
+        return f"[{mapping[f'E{match.group(1)}']}]"
+
+    renumbered_text = EVIDENCE_RE.sub(replace_label, evidence_text)
+    renumbered_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+    if renumbered_payload.get("next_action") == "answer_directly":
+        for fact in renumbered_payload.get("supported_facts") or []:
+            if not isinstance(fact, dict) or not isinstance(fact.get("evidence_ids"), list):
+                continue
+            fact["evidence_ids"] = [mapping.get(str(item), str(item)) for item in fact["evidence_ids"]]
+    return renumbered_text, renumbered_payload
+
+
 def question_key(record: dict[str, Any]) -> str:
     conversations = record.get("conversations")
     if not isinstance(conversations, list) or not conversations:
@@ -136,8 +167,8 @@ def canonicalize_grounded_record(record: dict[str, Any]) -> dict[str, Any]:
     remove.
     """
     conversations = record.get("conversations")
-    if not isinstance(conversations, list) or len(conversations) < 2:
-        raise ValueError("invalid conversations")
+    if not isinstance(conversations, list) or len(conversations) != 2:
+        raise ValueError("grounded rows must contain exactly one user and one assistant message")
     prompt = str(conversations[0].get("value", ""))
     question_match = re.search(r"^question:\s*(.+)$", prompt, re.MULTILINE)
     hypothesis_match = re.search(r"^hypothesis:\s*(.*)$", prompt, re.MULTILINE)
@@ -149,17 +180,20 @@ def canonicalize_grounded_record(record: dict[str, Any]) -> dict[str, Any]:
     )
     if not all((question_match, hypothesis_match, round_match, evidence_match)):
         raise ValueError(f"cannot parse grounded prompt for canonicalization: {record.get('id')}")
+    evidence_text, payload = renumber_evidence_and_payload(
+        evidence_match.group(1).strip(), assistant_payload(record)
+    )
     canonical_prompt = render_exx_user_prompt(
         question=question_match.group(1).strip(),
         hypothesis=hypothesis_match.group(1).strip() or "{}",
         round_value=round_match.group(1).strip(),
-        evidence_text=evidence_match.group(1).strip(),
+        evidence_text=evidence_text,
     )
     canonical = dict(record)
     canonical["system"] = EXX_SYSTEM_PROMPT
     canonical["conversations"] = [
-        {**conversation, "value": canonical_prompt} if index == 0 else dict(conversation)
-        for index, conversation in enumerate(conversations)
+        {**conversations[0], "value": canonical_prompt},
+        {**conversations[-1], "value": compact_json(payload)},
     ]
     return canonical
 
@@ -255,6 +289,7 @@ def teacher_record(task: dict[str, Any], result: dict[str, Any], provider: str) 
     evidence_text = "\n".join(
         f"[{item['label']}]\n{item['text']}" for item in task["evidence"]
     )
+    evidence_text, label = renumber_evidence_and_payload(evidence_text, result["label"])
     prompt = render_exx_user_prompt(
         question=str(task["question"]),
         hypothesis=task.get("hypothesis"),
@@ -270,7 +305,7 @@ def teacher_record(task: dict[str, Any], result: dict[str, Any], provider: str) 
         "tools": "[]",
         "conversations": [
             {"from": "human", "value": prompt},
-            {"from": "gpt", "value": compact_json(result["label"])},
+            {"from": "gpt", "value": compact_json(label)},
         ],
         "meta": {
             "schema": PROTOCOL,

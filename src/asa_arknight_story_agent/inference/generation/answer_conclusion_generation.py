@@ -101,7 +101,7 @@ def sample_grounded_conclusions(
         normalized_output = ""
         try:
             generation_max_tokens = (
-                min(pipeline.generator.max_tokens, 768)
+                min(pipeline.generator.max_tokens, 512)
                 if pipeline.answer_grounding_mode.strip().lower() == "evidence_id"
                 else min(max(pipeline.generator.max_tokens, 1536), 2048)
             )
@@ -110,7 +110,7 @@ def sample_grounded_conclusions(
                 max_tokens=generation_max_tokens,
                 temperature=pipeline.self_consistency_temperature if sample_count > 1 else 0.1,
                 top_p=0.9 if sample_count > 1 else 0.8,
-                repeat_penalty=1.0,
+                repeat_penalty=pipeline.generator.repeat_penalty,
             )
             normalized_output = normalize_minimal_conclusion_output(raw_output, pipeline.conclusion_prompt_mode)
             try:

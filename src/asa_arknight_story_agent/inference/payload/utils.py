@@ -6,6 +6,11 @@ from typing import Any
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
 
 
+def normalize_fact_text(value: Any) -> str:
+    """Normalize a fact for conservative exact-duplicate removal."""
+    return re.sub(r"[^\w\u3400-\u9fff]+", "", str(value or "").lower())
+
+
 def normalize_string_list(value: Any, *, limit: int) -> list[str]:
     if value is None:
         return []
@@ -22,12 +27,17 @@ def compact_supported_facts_payload(value: Any, *, max_facts: int = 8, max_refs:
     if not isinstance(value, list):
         return []
     compact: list[dict[str, Any]] = []
+    seen_facts: set[str] = set()
     for item in value:
         if not isinstance(item, dict):
             continue
         fact = str(item.get("fact") or "").strip()
         if not fact:
             continue
+        fact_key = normalize_fact_text(fact)
+        if not fact_key or fact_key in seen_facts:
+            continue
+        seen_facts.add(fact_key)
         refs: list[dict[str, str]] = []
         # grounded_action_exx_v1 emits compact E identifiers directly. Keep
         # the existing internal evidence_refs representation so legacy

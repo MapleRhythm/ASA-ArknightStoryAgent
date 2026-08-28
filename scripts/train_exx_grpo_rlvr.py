@@ -35,8 +35,7 @@ class TrainingExample:
     prompt_tokens: int
     visible_ids: list[str]
     gold_action: str
-    gold_evidence_ids: list[str]
-    gold_facts: list[str]
+    gold_fact_bindings: list[dict[str, Any]]
 
 
 def parse_json_object(text: Any) -> dict[str, Any] | None:
@@ -57,6 +56,10 @@ def completion_text(completion: Any) -> str:
     return str(completion or "")
 
 
+def normalized_fact_text(text: Any) -> str:
+    return re.sub(r"[^\w\u3400-\u9fff]+", "", str(text or "").lower())
+
+
 def validate_payload(payload: dict[str, Any] | None, visible_ids: set[str]) -> list[str]:
     """Return strict grounded_action_exx_v1 structural problems."""
     if payload is None:
@@ -75,6 +78,7 @@ def validate_payload(payload: dict[str, Any] | None, visible_ids: set[str]) -> l
         facts = payload.get("supported_facts")
         if not isinstance(facts, list) or not 1 <= len(facts) <= 8:
             return [*problems, "invalid_fact_count"]
+        seen_facts: set[str] = set()
         for index, fact in enumerate(facts, start=1):
             if not isinstance(fact, dict) or set(fact) != {"fact", "evidence_ids"}:
                 problems.append(f"fact_{index}_schema")
@@ -83,6 +87,11 @@ def validate_payload(payload: dict[str, Any] | None, visible_ids: set[str]) -> l
             evidence_ids = fact.get("evidence_ids")
             if not isinstance(text, str) or not text.strip():
                 problems.append(f"fact_{index}_empty")
+            fact_key = normalized_fact_text(text)
+            if fact_key and fact_key in seen_facts:
+                problems.append(f"fact_{index}_duplicate")
+            elif fact_key:
+                seen_facts.add(fact_key)
             if (
                 not isinstance(evidence_ids, list)
                 or not 1 <= len(evidence_ids) <= 2
@@ -147,6 +156,26 @@ def supported_fact_texts(payload: dict[str, Any] | None) -> list[str]:
     ]
 
 
+def supported_fact_bindings(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Return hidden teacher claims with their claim-local citation IDs."""
+    if not payload or payload.get("next_action") != "answer_directly":
+        return []
+    facts = payload.get("supported_facts")
+    if not isinstance(facts, list):
+        return []
+    bindings: list[dict[str, Any]] = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            continue
+        text = str(fact.get("fact") or "").strip()
+        evidence_ids = fact.get("evidence_ids")
+        if text and isinstance(evidence_ids, list):
+            bindings.append(
+                {"fact": text, "evidence_ids": sorted({str(item) for item in evidence_ids})}
+            )
+    return bindings
+
+
 def normalized_char_ngrams(texts: Sequence[str], n: int) -> Counter[str]:
     normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", "。".join(texts).lower())
     if not normalized:
@@ -174,6 +203,31 @@ def reference_fact_similarity(predicted: Sequence[str], expected: Sequence[str])
     return sum(scores) / len(scores)
 
 
+def maximum_bipartite_score(scores: Sequence[Sequence[float]]) -> float:
+    """Return the exact maximum one-to-one matching score for a small matrix."""
+    if not scores or not scores[0]:
+        return 0.0
+    width = len(scores[0])
+    if any(len(row) != width for row in scores):
+        raise ValueError("ragged score matrix")
+    # supported_facts is capped at eight, so exact bitmask DP is both cheaper
+    # and less error-prone than a greedy approximation or another dependency.
+    best_by_used_columns = {0: 0.0}
+    for row in scores:
+        updated = dict(best_by_used_columns)
+        for used_columns, current in best_by_used_columns.items():
+            for column, value in enumerate(row):
+                column_bit = 1 << column
+                if used_columns & column_bit:
+                    continue
+                next_columns = used_columns | column_bit
+                updated[next_columns] = max(
+                    updated.get(next_columns, float("-inf")), current + float(value)
+                )
+        best_by_used_columns = updated
+    return max(best_by_used_columns.values(), default=0.0)
+
+
 def json_reward(completions: Sequence[Any], **_: Any) -> list[float]:
     return [1.0 if parse_json_object(completion_text(item)) is not None else 0.0 for item in completions]
 
@@ -199,43 +253,80 @@ def action_reward(
     return result
 
 
-def evidence_selection_reward(
+def claim_citation_reward(
     completions: Sequence[Any],
     gold_action: Sequence[str],
-    gold_evidence_ids: Sequence[Sequence[str]],
+    gold_fact_bindings: Sequence[Sequence[dict[str, Any]]],
     **_: Any,
 ) -> list[float]:
-    """Jaccard reward for hidden teacher E-IDs on answer_directly rows."""
+    """Match each predicted claim jointly on text and its local citations.
+
+    Flattening every E-ID in the answer lets a policy attach the right global
+    set to the wrong claims.  This maximum bipartite-style score rewards a
+    predicted claim only when both its content and its own citation IDs agree
+    with one hidden teacher claim.
+    """
     rewards: list[float] = []
-    for item, gold, expected_values in zip(
-        completions, gold_action, gold_evidence_ids, strict=True
+    for item, gold, expected_bindings in zip(
+        completions, gold_action, gold_fact_bindings, strict=True
     ):
         payload = parse_json_object(completion_text(item))
         if gold != "answer_directly":
             rewards.append(0.0)
             continue
-        expected = set(expected_values)
-        predicted = cited_evidence_ids(payload)
-        union = expected | predicted
-        rewards.append(len(expected & predicted) / len(union) if union else 0.0)
+        predicted_bindings = supported_fact_bindings(payload)
+        if not predicted_bindings or not expected_bindings:
+            rewards.append(0.0)
+            continue
+        scores: list[list[float]] = []
+        for predicted in predicted_bindings:
+            row_scores: list[float] = []
+            for expected in expected_bindings:
+                fact_score = reference_fact_similarity(
+                    [str(predicted["fact"])], [str(expected["fact"])]
+                )
+                predicted_ids = set(predicted["evidence_ids"])
+                expected_ids = set(expected["evidence_ids"])
+                union = predicted_ids | expected_ids
+                citation_score = len(predicted_ids & expected_ids) / len(union) if union else 0.0
+                row_scores.append(fact_score * citation_score)
+            scores.append(row_scores)
+        matched_score = maximum_bipartite_score(scores)
+        rewards.append(matched_score / max(len(predicted_bindings), len(expected_bindings)))
     return rewards
 
 
 def reference_fact_reward(
     completions: Sequence[Any],
     gold_action: Sequence[str],
-    gold_facts: Sequence[Sequence[str]],
+    gold_fact_bindings: Sequence[Sequence[dict[str, Any]]],
     **_: Any,
 ) -> list[float]:
     """Reference-based factual-content reward, hidden from the policy prompt."""
     rewards: list[float] = []
-    for item, gold, expected in zip(completions, gold_action, gold_facts, strict=True):
+    for item, gold, expected in zip(completions, gold_action, gold_fact_bindings, strict=True):
         if gold != "answer_directly":
             rewards.append(0.0)
             continue
         payload = parse_json_object(completion_text(item))
-        rewards.append(reference_fact_similarity(supported_fact_texts(payload), expected))
+        expected_texts = [str(binding.get("fact") or "") for binding in expected]
+        rewards.append(reference_fact_similarity(supported_fact_texts(payload), expected_texts))
     return rewards
+
+
+def duplicate_fact_penalty(
+    completions: Sequence[Any], gold_action: Sequence[str], **_: Any
+) -> list[float]:
+    penalties: list[float] = []
+    for item, gold in zip(completions, gold_action, strict=True):
+        if gold != "answer_directly":
+            penalties.append(0.0)
+            continue
+        facts = supported_fact_texts(parse_json_object(completion_text(item)))
+        normalized = [normalized_fact_text(fact) for fact in facts]
+        duplicate_count = len(normalized) - len(set(normalized))
+        penalties.append(-min(1.0, duplicate_count / max(1, len(normalized))))
+    return penalties
 
 
 def premature_answer_penalty(
@@ -307,8 +398,7 @@ def read_training_examples(
                 prompt_tokens=n_tokens,
                 visible_ids=visible,
                 gold_action=action,
-                gold_evidence_ids=sorted(cited_evidence_ids(gold)),
-                gold_facts=supported_fact_texts(gold),
+                gold_fact_bindings=supported_fact_bindings(gold),
             )
         )
         counts[f"keep:{action}"] += 1
@@ -441,8 +531,7 @@ def main() -> int:
                 "prompt": item.prompt,
                 "visible_ids": item.visible_ids,
                 "gold_action": item.gold_action,
-                "gold_evidence_ids": item.gold_evidence_ids,
-                "gold_facts": item.gold_facts,
+                "gold_fact_bindings": item.gold_fact_bindings,
             }
             for item in selected
         ]
@@ -512,7 +601,7 @@ def main() -> int:
         seed=args.seed,
         data_seed=args.seed,
         mask_truncated_completions=True,
-        reward_weights=[1.0, 1.0, 1.5, 1.0, 1.5, 0.5],
+        reward_weights=[1.0, 1.0, 1.5, 1.5, 1.0, 1.0, 0.5],
     )
     trainer = GRPOTrainer(
         model=model,
@@ -522,8 +611,9 @@ def main() -> int:
             json_reward,
             schema_reward,
             action_reward,
-            evidence_selection_reward,
+            claim_citation_reward,
             reference_fact_reward,
+            duplicate_fact_penalty,
             premature_answer_penalty,
         ],
         processing_class=tokenizer,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,8 @@ from typing import Any
 EVIDENCE_RE = re.compile(r"^\[(E\d+)\]\s*$", re.MULTILINE)
 FORBIDDEN = {"quote", "final_answer", "inferred_facts", "evidence_refs", "answer"}
 ACTIONS = ("answer_directly", "retrieve_more", "abstain")
+FOLLOW_UP_REQUIRED = {"question", "query_type", "entities", "keywords", "expected_answer_type"}
+FOLLOW_UP_OPTIONAL = {"dialogue_context"}
 
 
 def cited_evidence_ids(payload: dict[str, Any] | None) -> set[str]:
@@ -44,6 +46,26 @@ def supported_fact_texts(payload: dict[str, Any] | None) -> list[str]:
     ]
 
 
+def normalized_fact_text(text: str) -> str:
+    return re.sub(r"[^\w\u3400-\u9fff]+", "", str(text or "").lower())
+
+
+def supported_fact_bindings(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not payload or payload.get("next_action") != "answer_directly":
+        return []
+    facts = payload.get("supported_facts")
+    if not isinstance(facts, list):
+        return []
+    return [
+        {
+            "fact": str(fact.get("fact") or "").strip(),
+            "evidence_ids": {str(item) for item in fact.get("evidence_ids") or []},
+        }
+        for fact in facts
+        if isinstance(fact, dict) and str(fact.get("fact") or "").strip()
+    ]
+
+
 def normalized_char_ngrams(texts: Sequence[str], n: int) -> Counter[str]:
     normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", "。".join(texts).lower())
     if not normalized:
@@ -68,6 +90,61 @@ def reference_fact_similarity(predicted: Sequence[str], expected: Sequence[str])
         recall = overlap / expected_total
         scores.append(2 * precision * recall / (precision + recall) if overlap else 0.0)
     return sum(scores) / len(scores)
+
+
+def maximum_bipartite_score(scores: Sequence[Sequence[float]]) -> float:
+    if not scores or not scores[0]:
+        return 0.0
+    width = len(scores[0])
+    if any(len(row) != width for row in scores):
+        raise ValueError("ragged score matrix")
+    best_by_used_columns = {0: 0.0}
+    for row in scores:
+        updated = dict(best_by_used_columns)
+        for used_columns, current in best_by_used_columns.items():
+            for column, value in enumerate(row):
+                column_bit = 1 << column
+                if used_columns & column_bit:
+                    continue
+                next_columns = used_columns | column_bit
+                updated[next_columns] = max(
+                    updated.get(next_columns, float("-inf")), current + float(value)
+                )
+        best_by_used_columns = updated
+    return max(best_by_used_columns.values(), default=0.0)
+
+
+def claim_citation_alignment(
+    predicted: dict[str, Any] | None, expected: dict[str, Any] | None
+) -> float:
+    predicted_bindings = supported_fact_bindings(predicted)
+    expected_bindings = supported_fact_bindings(expected)
+    if not predicted_bindings or not expected_bindings:
+        return 0.0
+    scores: list[list[float]] = []
+    for predicted_binding in predicted_bindings:
+        row_scores: list[float] = []
+        for expected_binding in expected_bindings:
+            fact_score = reference_fact_similarity(
+                [predicted_binding["fact"]], [expected_binding["fact"]]
+            )
+            predicted_ids = predicted_binding["evidence_ids"]
+            expected_ids = expected_binding["evidence_ids"]
+            union = predicted_ids | expected_ids
+            citation_score = len(predicted_ids & expected_ids) / len(union) if union else 0.0
+            row_scores.append(fact_score * citation_score)
+        scores.append(row_scores)
+    score = maximum_bipartite_score(scores)
+    return score / max(len(predicted_bindings), len(expected_bindings))
+
+
+def question_from_prompt(prompt: str) -> str:
+    match = re.search(r"^(?:question|问题)[:：]\s*(.+)$", prompt, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def normalized_question(question: str) -> str:
+    return re.sub(r"\s+", "", question).strip("？?。！!，,；;：:\"'")
 
 
 def read_rows(path: Path) -> list[dict[str, Any]]:
@@ -116,30 +193,58 @@ def validate_payload(payload: dict[str, Any] | None, visible: set[str]) -> list[
     if action not in ACTIONS:
         problems.append("invalid_action")
         return problems
-    allowed_top = {"next_action", "supported_facts"} if action == "answer_directly" else (
+    expected_top = {"next_action", "supported_facts"} if action == "answer_directly" else (
         {"next_action", "follow_up_hypothesis"} if action == "retrieve_more" else {"next_action", "reason"}
     )
-    extra = set(payload) - allowed_top
-    if extra:
-        problems.append("unexpected_fields:" + ",".join(sorted(extra)))
+    if set(payload) != expected_top:
+        problems.append("top_schema")
     if action == "answer_directly":
         facts = payload.get("supported_facts")
         if not isinstance(facts, list) or not 1 <= len(facts) <= 8:
             problems.append("invalid_fact_count")
             return problems
+        seen_facts: set[str] = set()
         for index, fact in enumerate(facts, start=1):
             if not isinstance(fact, dict) or set(fact) != {"fact", "evidence_ids"}:
                 problems.append(f"fact_{index}_schema")
                 continue
             ids = fact.get("evidence_ids")
-            if not str(fact.get("fact") or "").strip():
+            if not isinstance(fact.get("fact"), str) or not fact.get("fact", "").strip():
                 problems.append(f"fact_{index}_empty")
-            if not isinstance(ids, list) or not 1 <= len(ids) <= 2:
+            fact_key = normalized_fact_text(str(fact.get("fact") or ""))
+            if fact_key and fact_key in seen_facts:
+                problems.append(f"fact_{index}_duplicate")
+            elif fact_key:
+                seen_facts.add(fact_key)
+            if (
+                not isinstance(ids, list)
+                or not 1 <= len(ids) <= 2
+                or len({str(item) for item in ids}) != len(ids)
+            ):
                 problems.append(f"fact_{index}_id_count")
             elif any(str(item) not in visible for item in ids):
                 problems.append(f"fact_{index}_unknown_id")
-    elif action == "retrieve_more" and not isinstance(payload.get("follow_up_hypothesis"), dict):
-        problems.append("missing_follow_up")
+    elif action == "retrieve_more":
+        follow_up = payload.get("follow_up_hypothesis")
+        if not isinstance(follow_up, dict):
+            problems.append("missing_follow_up")
+        else:
+            keys = set(follow_up)
+            if not FOLLOW_UP_REQUIRED.issubset(keys) or keys - FOLLOW_UP_REQUIRED - FOLLOW_UP_OPTIONAL:
+                problems.append("follow_up_schema")
+            if not isinstance(follow_up.get("question"), str) or not follow_up.get("question", "").strip():
+                problems.append("follow_up_question")
+            for key in ("query_type", "expected_answer_type"):
+                if not isinstance(follow_up.get(key), str):
+                    problems.append(f"follow_up_{key}")
+            for key in ("entities", "keywords"):
+                value = follow_up.get(key)
+                if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                    problems.append(f"follow_up_{key}")
+            if "dialogue_context" in follow_up and not isinstance(follow_up["dialogue_context"], str):
+                problems.append("follow_up_dialogue_context")
+    elif not isinstance(payload.get("reason"), str) or not payload.get("reason", "").strip():
+        problems.append("abstain_reason")
     return problems
 
 
@@ -160,6 +265,7 @@ def main() -> int:
     for index, row in enumerate(predictions):
         key = str(row.get("id") or row.get("task_id") or index)
         prompt = prompt_value(row)
+        question = question_from_prompt(prompt)
         visible = set(EVIDENCE_RE.findall(prompt))
         payload, strict = payload_from_row(row)
         problems = validate_payload(payload, visible)
@@ -170,6 +276,7 @@ def main() -> int:
         counts[f"action:{action}"] += 1
         counts["legacy_field_rows"] += int(any(item.startswith("legacy_fields:") for item in problems))
         counts["invalid_e_id_rows"] += int(any("unknown_id" in item for item in problems))
+        counts["duplicate_fact_rows"] += int(any("duplicate" in item for item in problems))
         gold = gold_by_id.get(key)
         gold_payload, _ = payload_from_row(gold) if gold else (None, False)
         gold_action = str((gold_payload or {}).get("next_action") or "")
@@ -184,6 +291,7 @@ def main() -> int:
         fact_similarity = None
         evidence_jaccard = None
         exact_evidence_set = None
+        claim_citation_score = None
         if gold_action == "answer_directly":
             counts["gold_answer_rows"] += 1
             predicted_ids = cited_evidence_ids(payload)
@@ -194,24 +302,45 @@ def main() -> int:
             fact_similarity = reference_fact_similarity(
                 supported_fact_texts(payload), supported_fact_texts(gold_payload)
             )
+            claim_citation_score = claim_citation_alignment(payload, gold_payload)
             scalar_sums["evidence_jaccard"] += evidence_jaccard
             scalar_sums["reference_fact_similarity"] += fact_similarity
+            scalar_sums["claim_citation_alignment"] += claim_citation_score
             counts["exact_evidence_set"] += int(exact_evidence_set)
         records.append(
             {
                 "id": key,
+                "question": question,
+                "question_key": normalized_question(question),
                 "action": action,
                 "gold_action": gold_action,
                 "problems": problems,
                 "evidence_jaccard": evidence_jaccard,
                 "exact_evidence_set": exact_evidence_set,
                 "reference_fact_similarity": fact_similarity,
+                "claim_citation_alignment": claim_citation_score,
             }
         )
 
     total = counts["total"] or 1
     labelled = counts["action_labelled"] or 1
     gold_answer_rows = counts["gold_answer_rows"] or 1
+    records_by_question: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        records_by_question[record["question_key"] or record["id"]].append(record)
+    conflicting_action_families = sum(
+        len({record["gold_action"] for record in family if record["gold_action"]}) > 1
+        for family in records_by_question.values()
+    )
+    family_action_accuracy = sum(
+        sum(record["action"] == record["gold_action"] for record in family) / len(family)
+        for family in records_by_question.values()
+    ) / (len(records_by_question) or 1)
+    family_schema_action_accuracy = sum(
+        sum(not record["problems"] and record["action"] == record["gold_action"] for record in family)
+        / len(family)
+        for family in records_by_question.values()
+    ) / (len(records_by_question) or 1)
     summary = {
         "counts": dict(sorted(counts.items())),
         "rates": {
@@ -219,6 +348,7 @@ def main() -> int:
             "schema_valid_rate": round(counts["schema_valid"] / total, 6),
             "legacy_field_rate": round(counts["legacy_field_rows"] / total, 6),
             "invalid_e_id_rate": round(counts["invalid_e_id_rows"] / total, 6),
+            "duplicate_fact_rate": round(counts["duplicate_fact_rows"] / total, 6),
             "action_accuracy": round(counts["action_correct"] / labelled, 6),
             "schema_and_action_accuracy": round(counts["schema_and_action_correct"] / labelled, 6),
             "over_abstain_rate": round(counts["over_abstain"] / labelled, 6),
@@ -233,6 +363,18 @@ def main() -> int:
             "mean_reference_fact_similarity_on_gold_answers": round(
                 scalar_sums["reference_fact_similarity"] / gold_answer_rows, 6
             ),
+            "mean_claim_citation_alignment_on_gold_answers": round(
+                scalar_sums["claim_citation_alignment"] / gold_answer_rows, 6
+            ),
+            "question_family_macro_action_accuracy": round(family_action_accuracy, 6),
+            "question_family_macro_schema_and_action_accuracy": round(
+                family_schema_action_accuracy, 6
+            ),
+        },
+        "question_families": {
+            "unique": len(records_by_question),
+            "duplicate": sum(len(family) > 1 for family in records_by_question.values()),
+            "conflicting_gold_action": conflicting_action_families,
         },
         "action_matrix": dict(sorted(action_matrix.items())),
         "records": records,

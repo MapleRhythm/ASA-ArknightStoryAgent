@@ -267,8 +267,12 @@ class HybridEvidenceChainBuildingMixin:
             ]
             prefix = " / ".join(part for part in prefix_parts if part)
             text = str(document.get("clean_text") or document.get("search_text") or "").strip()
+            # These are internal chain-member markers consumed by the chain
+            # reranker.  Reusing the public [E#] citation syntax here causes a
+            # single prompt block to expose nested, duplicate evidence IDs.
+            # The outer prompt renderer owns the only user-visible [E#] IDs.
             if prefix:
-                lines.append(f"[E{index}] {prefix}\n{text}")
+                lines.append(f"[CHAIN_MEMBER_{index}] {prefix}\n{text}")
             else:
-                lines.append(f"[E{index}] {text}")
+                lines.append(f"[CHAIN_MEMBER_{index}] {text}")
         return "\n".join(lines)
