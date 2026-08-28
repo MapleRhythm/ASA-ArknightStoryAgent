@@ -228,5 +228,8 @@ def test_glm_semantic_reward_defaults_to_evidence_only_coding_plan() -> None:
 
     assert args.glm_endpoint == "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
     assert args.glm_model == "glm-5.3"
-    assert args.glm_reasoning_effort == "high"
+    assert args.glm_reasoning_effort == "medium"
+    assert args.glm_timeout == 180.0
+    assert args.glm_max_tokens == 4096
+    assert args.glm_max_attempts == 1
     assert args.glm_reward_weight == 1.0
