@@ -58,6 +58,16 @@
 
 决策原则：模型输出正确但运行时拒绝，归因于 parser/validator；模型原始输出本身错误才归因于 adapter。
 
+### 重复问题族、引用绑定与冻结集报告
+
+- 行级指标之外，必须按规范化问题文本分组并报告 question-family macro action accuracy 与 schema+action accuracy，避免同一问题的多个 evidence state 被重复加权。
+- 必须报告唯一问题族数、重复问题族数和 gold action 冲突的问题族数；冲突族不能被当作无噪声标签解释。
+- 引用指标不能只比较整条回答的 E-ID 并集。应对每条预测 fact 与 teacher fact 做一对一最优匹配，并联合计算 fact 文本相似度与该 fact 自身 E-ID 的 Jaccard，报告 claim-local citation alignment。
+- claim-local citation alignment 仍是对 teacher 标签的一致性指标，不等价于“引文语义蕴含该主张”；后者必须由候选正文盲审、NLI/verifier 或人工复核完成。
+- 报告完全或规范化后重复 fact 的行级比例；重复 fact 导致生成到 token 上限或 JSON 未闭合时，必须单独列为生成退化。
+
+当前用于 RLVR 开发的 `val79` 只有 58 个唯一问题族、20 个重复问题族，并存在 1 个 gold action 冲突族。它是冻结开发集，不可单独作为泛化或发布结论；模型晋级仍需去重、无冲突、与训练 question-family 隔离的主评测集。
+
 ## 第二层：检索与 prompt 可见证据评测
 
 对去泄漏问题跑相同检索配置，生成一次 retrieval snapshot，随后 baseline 和新 adapter 共用该 snapshot，避免模型续检索差异污染第一轮比较。
