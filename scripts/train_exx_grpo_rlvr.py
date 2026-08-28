@@ -36,6 +36,7 @@ class TrainingExample:
     visible_ids: list[str]
     gold_action: str
     gold_evidence_ids: list[str]
+    gold_facts: list[str]
 
 
 def parse_json_object(text: Any) -> dict[str, Any] | None:
@@ -133,6 +134,46 @@ def cited_evidence_ids(payload: dict[str, Any] | None) -> set[str]:
     return result
 
 
+def supported_fact_texts(payload: dict[str, Any] | None) -> list[str]:
+    if not payload or payload.get("next_action") != "answer_directly":
+        return []
+    facts = payload.get("supported_facts")
+    if not isinstance(facts, list):
+        return []
+    return [
+        str(fact.get("fact") or "").strip()
+        for fact in facts
+        if isinstance(fact, dict) and str(fact.get("fact") or "").strip()
+    ]
+
+
+def normalized_char_ngrams(texts: Sequence[str], n: int) -> Counter[str]:
+    normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", "。".join(texts).lower())
+    if not normalized:
+        return Counter()
+    if len(normalized) < n:
+        return Counter({normalized: 1})
+    return Counter(normalized[index : index + n] for index in range(len(normalized) - n + 1))
+
+
+def reference_fact_similarity(predicted: Sequence[str], expected: Sequence[str]) -> float:
+    """Deterministic character 1-3 gram F1 against hidden teacher facts."""
+    scores: list[float] = []
+    for n in (1, 2, 3):
+        predicted_ngrams = normalized_char_ngrams(predicted, n)
+        expected_ngrams = normalized_char_ngrams(expected, n)
+        predicted_total = sum(predicted_ngrams.values())
+        expected_total = sum(expected_ngrams.values())
+        if not predicted_total or not expected_total:
+            scores.append(0.0)
+            continue
+        overlap = sum((predicted_ngrams & expected_ngrams).values())
+        precision = overlap / predicted_total
+        recall = overlap / expected_total
+        scores.append(2 * precision * recall / (precision + recall) if overlap else 0.0)
+    return sum(scores) / len(scores)
+
+
 def json_reward(completions: Sequence[Any], **_: Any) -> list[float]:
     return [1.0 if parse_json_object(completion_text(item)) is not None else 0.0 for item in completions]
 
@@ -164,25 +205,36 @@ def evidence_selection_reward(
     gold_evidence_ids: Sequence[Sequence[str]],
     **_: Any,
 ) -> list[float]:
-    """Jaccard reward for hidden teacher E-IDs on answer_directly rows.
-
-    Non-answer rows receive 1 only when their action is correct.  This keeps
-    the reward defined for every action while avoiding a free reward merely
-    for emitting no citations.
-    """
+    """Jaccard reward for hidden teacher E-IDs on answer_directly rows."""
     rewards: list[float] = []
     for item, gold, expected_values in zip(
         completions, gold_action, gold_evidence_ids, strict=True
     ):
         payload = parse_json_object(completion_text(item))
-        predicted_action = str((payload or {}).get("next_action") or "")
         if gold != "answer_directly":
-            rewards.append(1.0 if predicted_action == gold else 0.0)
+            rewards.append(0.0)
             continue
         expected = set(expected_values)
         predicted = cited_evidence_ids(payload)
         union = expected | predicted
         rewards.append(len(expected & predicted) / len(union) if union else 0.0)
+    return rewards
+
+
+def reference_fact_reward(
+    completions: Sequence[Any],
+    gold_action: Sequence[str],
+    gold_facts: Sequence[Sequence[str]],
+    **_: Any,
+) -> list[float]:
+    """Reference-based factual-content reward, hidden from the policy prompt."""
+    rewards: list[float] = []
+    for item, gold, expected in zip(completions, gold_action, gold_facts, strict=True):
+        if gold != "answer_directly":
+            rewards.append(0.0)
+            continue
+        payload = parse_json_object(completion_text(item))
+        rewards.append(reference_fact_similarity(supported_fact_texts(payload), expected))
     return rewards
 
 
@@ -256,6 +308,7 @@ def read_training_examples(
                 visible_ids=visible,
                 gold_action=action,
                 gold_evidence_ids=sorted(cited_evidence_ids(gold)),
+                gold_facts=supported_fact_texts(gold),
             )
         )
         counts[f"keep:{action}"] += 1
@@ -329,6 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=20260828)
     parser.add_argument("--temperature", type=float, default=0.9)
     parser.add_argument("--logging-steps", type=int, default=10)
+    parser.add_argument("--save-steps", type=int, default=100)
     parser.add_argument("--log-completions", action="store_true")
     parser.add_argument("--num-completions-to-print", type=int, default=4)
     return parser
@@ -388,6 +442,7 @@ def main() -> int:
                 "visible_ids": item.visible_ids,
                 "gold_action": item.gold_action,
                 "gold_evidence_ids": item.gold_evidence_ids,
+                "gold_facts": item.gold_facts,
             }
             for item in selected
         ]
@@ -415,7 +470,7 @@ def main() -> int:
         "protocol": "grounded_action_exx_v1",
         "method": "GRPO with verifiable rewards (fixed evidence)",
         "limitations": [
-            "does not verify semantic entailment between arbitrary fact text and evidence",
+            "reference fact overlap is not semantic entailment verification",
             "does not execute interactive retrieval actions",
         ],
         "arguments": {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()},
@@ -450,12 +505,14 @@ def main() -> int:
         logging_first_step=True,
         log_completions=args.log_completions,
         num_completions_to_print=args.num_completions_to_print,
-        save_strategy="no",
+        save_strategy="steps" if args.save_steps > 0 else "no",
+        save_steps=args.save_steps,
+        save_total_limit=1,
         report_to=[],
         seed=args.seed,
         data_seed=args.seed,
         mask_truncated_completions=True,
-        reward_weights=[1.0, 1.0, 1.5, 1.0, 0.5],
+        reward_weights=[1.0, 1.0, 1.5, 1.0, 1.5, 0.5],
     )
     trainer = GRPOTrainer(
         model=model,
@@ -466,6 +523,7 @@ def main() -> int:
             schema_reward,
             action_reward,
             evidence_selection_reward,
+            reference_fact_reward,
             premature_answer_penalty,
         ],
         processing_class=tokenizer,

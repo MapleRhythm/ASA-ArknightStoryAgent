@@ -53,6 +53,29 @@ def test_evidence_selection_uses_hidden_teacher_ids() -> None:
     assert rewards == [1.0, 1 / 3]
 
 
+def test_reference_fact_reward_is_continuous_and_reference_based() -> None:
+    exact = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "阿米娅带领罗德岛撤离。", "evidence_ids": ["E1"]}],
+    }
+    partial = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "阿米娅带领队伍前进。", "evidence_ids": ["E1"]}],
+    }
+    unrelated = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "天气晴朗。", "evidence_ids": ["E1"]}],
+    }
+    rewards = MODULE.reference_fact_reward(
+        [completion(exact), completion(partial), completion(unrelated)],
+        ["answer_directly"] * 3,
+        [["阿米娅带领罗德岛撤离。"]] * 3,
+    )
+
+    assert rewards[0] == 1.0
+    assert rewards[0] > rewards[1] > rewards[2]
+
+
 def test_premature_answer_is_penalized_but_correct_retrieve_is_not() -> None:
     answer = {
         "next_action": "answer_directly",
@@ -121,6 +144,7 @@ def test_stratified_shortest_smoke_covers_all_actions() -> None:
                     visible_ids=["E1"],
                     gold_action=action,
                     gold_evidence_ids=[],
+                    gold_facts=[],
                 )
             )
 
@@ -148,6 +172,7 @@ def test_stratified_longest_smoke_selects_boundary_rows() -> None:
                     visible_ids=["E1"],
                     gold_action=action,
                     gold_evidence_ids=[],
+                    gold_facts=[],
                 )
             )
 
