@@ -181,3 +181,20 @@ def test_invalid_rollout_skips_teacher_call(tmp_path: Path) -> None:
 
     assert judge.score_group(PROMPT, ["not-json"]) == [0.0]
     assert not (tmp_path / "failures.jsonl").exists()
+
+
+def test_unknown_evidence_id_is_not_sent_to_judge(tmp_path: Path) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+    )
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E99"]}],
+    }
+
+    assert judge.score_group(PROMPT, [json.dumps(payload, ensure_ascii=False)]) == [0.0]
+    assert not (tmp_path / "cache.jsonl").exists()

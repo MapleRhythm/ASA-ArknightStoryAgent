@@ -36,6 +36,10 @@ class SemanticJudgeError(RuntimeError):
     pass
 
 
+class TerminalSemanticJudgeError(SemanticJudgeError):
+    pass
+
+
 def compact_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -83,6 +87,49 @@ def extract_judge_context(user_prompt: str) -> dict[str, str]:
         "round": round_match.group(1).strip(),
         "evidence": evidence_text,
     }
+
+
+def payload_is_judge_eligible(payload: dict[str, Any], evidence_text: str) -> bool:
+    """Gate semantic credit behind the deterministic Exx protocol."""
+    visible_ids = set(EVIDENCE_HEADER_RE.findall(evidence_text))
+    action = payload.get("next_action")
+    if action == "answer_directly":
+        if set(payload) != {"next_action", "supported_facts"}:
+            return False
+        facts = payload.get("supported_facts")
+        if not isinstance(facts, list) or not 1 <= len(facts) <= 8:
+            return False
+        seen: set[str] = set()
+        for fact in facts:
+            if not isinstance(fact, dict) or set(fact) != {"fact", "evidence_ids"}:
+                return False
+            text = fact.get("fact")
+            ids = fact.get("evidence_ids")
+            normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", str(text or "").lower())
+            if not isinstance(text, str) or not text.strip() or not normalized or normalized in seen:
+                return False
+            seen.add(normalized)
+            if (
+                not isinstance(ids, list)
+                or not 1 <= len(ids) <= 2
+                or len({str(item) for item in ids}) != len(ids)
+                or any(str(item) not in visible_ids for item in ids)
+            ):
+                return False
+        return True
+    if action == "retrieve_more":
+        if set(payload) != {"next_action", "follow_up_hypothesis"}:
+            return False
+        follow_up = payload.get("follow_up_hypothesis")
+        return isinstance(follow_up, dict) and isinstance(follow_up.get("question"), str) and bool(
+            follow_up.get("question", "").strip()
+        )
+    return (
+        action == "abstain"
+        and set(payload) == {"next_action", "reason"}
+        and isinstance(payload.get("reason"), str)
+        and bool(payload.get("reason", "").strip())
+    )
 
 
 def build_messages(
@@ -277,6 +324,7 @@ class GlmEvidenceJudge:
         max_attempts: int = 3,
         reasoning_effort: str = "high",
         workers: int = 1,
+        max_consecutive_failures: int = 3,
     ) -> None:
         if not api_key:
             raise ValueError("missing GLM API key")
@@ -290,8 +338,10 @@ class GlmEvidenceJudge:
         self.max_attempts = max_attempts
         self.reasoning_effort = reasoning_effort
         self.workers = max(1, workers)
+        self.max_consecutive_failures = max(1, max_consecutive_failures)
         self._lock = threading.Lock()
         self._cache = self._load_cache()
+        self._consecutive_failures = 0
         self.stats: Counter[str] = Counter()
 
     def _load_cache(self) -> dict[str, dict[str, Any]]:
@@ -345,8 +395,9 @@ class GlmEvidenceJudge:
                 response_body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1000]
-            terminal = exc.code in {400, 401, 402, 403}
-            raise SemanticJudgeError(f"http_{exc.code}:{'terminal:' if terminal else ''}{detail}") from exc
+            if exc.code in {400, 401, 402, 403}:
+                raise TerminalSemanticJudgeError(f"http_{exc.code}:{detail}") from exc
+            raise SemanticJudgeError(f"http_{exc.code}:{detail}") from exc
         except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
             raise SemanticJudgeError(f"network_error:{exc}") from exc
         try:
@@ -362,19 +413,15 @@ class GlmEvidenceJudge:
 
     def score_group(self, user_prompt: str, completion_values: Sequence[Any]) -> list[float]:
         scores = [0.0] * len(completion_values)
+        context = extract_judge_context(user_prompt)
         indexed: list[tuple[int, dict[str, Any]]] = []
         for index, completion in enumerate(completion_values):
             payload = parse_json_object(completion_text(completion))
-            if payload is not None and payload.get("next_action") in {
-                "answer_directly",
-                "retrieve_more",
-                "abstain",
-            }:
+            if payload is not None and payload_is_judge_eligible(payload, context["evidence"]):
                 indexed.append((index, payload))
         if not indexed:
             self.stats["skip:no_parseable_rollout"] += 1
             return scores
-        context = extract_judge_context(user_prompt)
         cache_key = self._cache_key(context, indexed)
         cached = self._cache.get(cache_key)
         if cached is not None:
@@ -413,16 +460,18 @@ class GlmEvidenceJudge:
                 self._append(self.cache_path, record)
                 self._cache[cache_key] = record
                 self.stats["api_success"] += 1
+                self._consecutive_failures = 0
                 for (index, _), value in zip(indexed, semantic_scores, strict=True):
                     scores[index] = value
                 return scores
+            except TerminalSemanticJudgeError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_error = f"{type(exc).__name__}:{exc}"
-                if "terminal:" in last_error:
-                    break
                 if attempt < self.max_attempts:
                     time.sleep(min(2**attempt, 8))
         self.stats["api_failure"] += 1
+        self._consecutive_failures += 1
         self._append(
             self.failures_path,
             {
@@ -434,8 +483,12 @@ class GlmEvidenceJudge:
                 "error": last_error[:2000],
             },
         )
-        # Fail closed: an unavailable judge supplies no semantic advantage. It
-        # must never turn an API outage into a negative reward for the policy.
+        if self._consecutive_failures >= self.max_consecutive_failures:
+            raise SemanticJudgeError(
+                f"GLM judge failed {self._consecutive_failures} consecutive groups; last={last_error}"
+            )
+        # A single transient failure supplies no semantic advantage. It must
+        # never turn an API outage into a negative reward for the policy.
         return scores
 
     def score_batch(

@@ -487,6 +487,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--glm-max-tokens", type=int, default=8192)
     parser.add_argument("--glm-max-attempts", type=int, default=3)
     parser.add_argument("--glm-workers", type=int, default=1)
+    parser.add_argument("--glm-max-consecutive-failures", type=int, default=3)
     parser.add_argument("--glm-reward-weight", type=float, default=1.0)
     parser.add_argument("--glm-cache", type=Path)
     parser.add_argument("--glm-failures", type=Path)
@@ -621,6 +622,7 @@ def main() -> int:
             max_attempts=args.glm_max_attempts,
             reasoning_effort=args.glm_reasoning_effort,
             workers=args.glm_workers,
+            max_consecutive_failures=args.glm_max_consecutive_failures,
         )
         reward_funcs.append(make_glm_semantic_reward(judge))
         reward_weights.append(args.glm_reward_weight)
