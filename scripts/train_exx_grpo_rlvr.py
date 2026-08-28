@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 from collections import Counter, defaultdict
@@ -475,6 +476,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-steps", type=int, default=100)
     parser.add_argument("--log-completions", action="store_true")
     parser.add_argument("--num-completions-to-print", type=int, default=4)
+    parser.add_argument("--glm-semantic-reward", action="store_true")
+    parser.add_argument("--glm-api-key-env", default="BIGMODEL_API_KEY")
+    parser.add_argument(
+        "--glm-endpoint", default="https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+    )
+    parser.add_argument("--glm-model", default="glm-5.3")
+    parser.add_argument("--glm-reasoning-effort", default="high")
+    parser.add_argument("--glm-timeout", type=float, default=240.0)
+    parser.add_argument("--glm-max-tokens", type=int, default=8192)
+    parser.add_argument("--glm-max-attempts", type=int, default=3)
+    parser.add_argument("--glm-workers", type=int, default=1)
+    parser.add_argument("--glm-reward-weight", type=float, default=1.0)
+    parser.add_argument("--glm-cache", type=Path)
+    parser.add_argument("--glm-failures", type=Path)
     return parser
 
 
@@ -484,6 +499,8 @@ def main() -> int:
         raise FileExistsError(f"refusing to overwrite non-empty output: {args.output_dir}")
     if args.num_generations < 2:
         raise ValueError("GRPO requires at least two generations")
+    if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
+        raise ValueError(f"missing GLM API key environment variable: {args.glm_api_key_env}")
     generation_batch_size = args.batch_size * args.gradient_accumulation_steps
     if generation_batch_size % args.num_generations:
         raise ValueError(
@@ -532,6 +549,7 @@ def main() -> int:
                 "visible_ids": item.visible_ids,
                 "gold_action": item.gold_action,
                 "gold_fact_bindings": item.gold_fact_bindings,
+                "judge_context": item.prompt[-1]["content"],
             }
             for item in selected
         ]
@@ -567,10 +585,45 @@ def main() -> int:
         "selected_actions": dict(selected_counts),
         "selected_ids": [item.row_id for item in selected],
         "adapter_key_coverage": {"loaded": loaded, "total": total},
+        "glm_semantic_judge": {
+            "enabled": args.glm_semantic_reward,
+            "protocol": "asa_glm_exx_evidence_judge_v1" if args.glm_semantic_reward else None,
+            "gold_or_reference_visible": False,
+        },
     }
     (args.output_dir / "run_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+    reward_funcs = [
+        json_reward,
+        schema_reward,
+        action_reward,
+        claim_citation_reward,
+        reference_fact_reward,
+        duplicate_fact_penalty,
+        premature_answer_penalty,
+    ]
+    reward_weights = [1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5]
+    if args.glm_semantic_reward:
+        from glm_exx_semantic_reward import GlmEvidenceJudge, make_glm_semantic_reward
+
+        cache_path = args.glm_cache or args.output_dir / "glm_semantic_cache.jsonl"
+        failures_path = args.glm_failures or args.output_dir / "glm_semantic_failures.jsonl"
+        judge = GlmEvidenceJudge(
+            endpoint=args.glm_endpoint,
+            api_key=os.environ[args.glm_api_key_env].strip(),
+            model=args.glm_model,
+            cache_path=cache_path,
+            failures_path=failures_path,
+            timeout=args.glm_timeout,
+            max_tokens=args.glm_max_tokens,
+            max_attempts=args.glm_max_attempts,
+            reasoning_effort=args.glm_reasoning_effort,
+            workers=args.glm_workers,
+        )
+        reward_funcs.append(make_glm_semantic_reward(judge))
+        reward_weights.append(args.glm_reward_weight)
 
     config = GRPOConfig(
         output_dir=str(args.output_dir),
@@ -601,21 +654,13 @@ def main() -> int:
         seed=args.seed,
         data_seed=args.seed,
         mask_truncated_completions=True,
-        reward_weights=[1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5],
+        reward_weights=reward_weights,
     )
     trainer = GRPOTrainer(
         model=model,
         args=config,
         train_dataset=dataset,
-        reward_funcs=[
-            json_reward,
-            schema_reward,
-            action_reward,
-            claim_citation_reward,
-            reference_fact_reward,
-            duplicate_fact_penalty,
-            premature_answer_penalty,
-        ],
+        reward_funcs=reward_funcs,
         processing_class=tokenizer,
     )
     trainer.train()

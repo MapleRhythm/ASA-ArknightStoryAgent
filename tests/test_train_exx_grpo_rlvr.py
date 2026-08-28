@@ -209,3 +209,24 @@ def test_stratified_longest_smoke_selects_boundary_rows() -> None:
     )
 
     assert [item.prompt_tokens for item in selected] == [30, 31, 32]
+
+
+def test_glm_semantic_reward_defaults_to_evidence_only_coding_plan() -> None:
+    args = MODULE.build_parser().parse_args(
+        [
+            "--train-file",
+            "train.json",
+            "--base-model",
+            "base",
+            "--sft-adapter",
+            "adapter",
+            "--output-dir",
+            "out",
+            "--glm-semantic-reward",
+        ]
+    )
+
+    assert args.glm_endpoint == "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
+    assert args.glm_model == "glm-5.3"
+    assert args.glm_reasoning_effort == "high"
+    assert args.glm_reward_weight == 1.0
