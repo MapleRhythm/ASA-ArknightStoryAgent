@@ -601,7 +601,7 @@ def main() -> int:
         seed=args.seed,
         data_seed=args.seed,
         mask_truncated_completions=True,
-        reward_weights=[1.0, 1.0, 1.5, 1.5, 1.0, 1.0, 0.5],
+        reward_weights=[1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5],
     )
     trainer = GRPOTrainer(
         model=model,
