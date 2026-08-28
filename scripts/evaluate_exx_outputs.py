@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,59 @@ from typing import Any
 EVIDENCE_RE = re.compile(r"^\[(E\d+)\]\s*$", re.MULTILINE)
 FORBIDDEN = {"quote", "final_answer", "inferred_facts", "evidence_refs", "answer"}
 ACTIONS = ("answer_directly", "retrieve_more", "abstain")
+
+
+def cited_evidence_ids(payload: dict[str, Any] | None) -> set[str]:
+    if not payload or payload.get("next_action") != "answer_directly":
+        return set()
+    facts = payload.get("supported_facts")
+    if not isinstance(facts, list):
+        return set()
+    return {
+        str(evidence_id)
+        for fact in facts
+        if isinstance(fact, dict) and isinstance(fact.get("evidence_ids"), list)
+        for evidence_id in fact["evidence_ids"]
+    }
+
+
+def supported_fact_texts(payload: dict[str, Any] | None) -> list[str]:
+    if not payload or payload.get("next_action") != "answer_directly":
+        return []
+    facts = payload.get("supported_facts")
+    if not isinstance(facts, list):
+        return []
+    return [
+        str(fact.get("fact") or "").strip()
+        for fact in facts
+        if isinstance(fact, dict) and str(fact.get("fact") or "").strip()
+    ]
+
+
+def normalized_char_ngrams(texts: Sequence[str], n: int) -> Counter[str]:
+    normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", "。".join(texts).lower())
+    if not normalized:
+        return Counter()
+    if len(normalized) < n:
+        return Counter({normalized: 1})
+    return Counter(normalized[index : index + n] for index in range(len(normalized) - n + 1))
+
+
+def reference_fact_similarity(predicted: Sequence[str], expected: Sequence[str]) -> float:
+    scores: list[float] = []
+    for n in (1, 2, 3):
+        predicted_ngrams = normalized_char_ngrams(predicted, n)
+        expected_ngrams = normalized_char_ngrams(expected, n)
+        predicted_total = sum(predicted_ngrams.values())
+        expected_total = sum(expected_ngrams.values())
+        if not predicted_total or not expected_total:
+            scores.append(0.0)
+            continue
+        overlap = sum((predicted_ngrams & expected_ngrams).values())
+        precision = overlap / predicted_total
+        recall = overlap / expected_total
+        scores.append(2 * precision * recall / (precision + recall) if overlap else 0.0)
+    return sum(scores) / len(scores)
 
 
 def read_rows(path: Path) -> list[dict[str, Any]]:
@@ -101,6 +155,7 @@ def main() -> int:
     gold_by_id = {str(row.get("id") or row.get("task_id") or i): row for i, row in enumerate(gold_rows)}
     counts = Counter()
     action_matrix = Counter()
+    scalar_sums: Counter[str] = Counter()
     records = []
     for index, row in enumerate(predictions):
         key = str(row.get("id") or row.get("task_id") or index)
@@ -125,10 +180,38 @@ def main() -> int:
             counts["over_abstain"] += int(gold_action == "answer_directly" and action == "abstain")
             counts["over_retrieve"] += int(gold_action == "answer_directly" and action == "retrieve_more")
             counts["premature_answer"] += int(gold_action != "answer_directly" and action == "answer_directly")
-        records.append({"id": key, "action": action, "gold_action": gold_action, "problems": problems})
+            counts["schema_and_action_correct"] += int(not problems and gold_action == action)
+        fact_similarity = None
+        evidence_jaccard = None
+        exact_evidence_set = None
+        if gold_action == "answer_directly":
+            counts["gold_answer_rows"] += 1
+            predicted_ids = cited_evidence_ids(payload)
+            gold_ids = cited_evidence_ids(gold_payload)
+            union = predicted_ids | gold_ids
+            evidence_jaccard = len(predicted_ids & gold_ids) / len(union) if union else 0.0
+            exact_evidence_set = predicted_ids == gold_ids
+            fact_similarity = reference_fact_similarity(
+                supported_fact_texts(payload), supported_fact_texts(gold_payload)
+            )
+            scalar_sums["evidence_jaccard"] += evidence_jaccard
+            scalar_sums["reference_fact_similarity"] += fact_similarity
+            counts["exact_evidence_set"] += int(exact_evidence_set)
+        records.append(
+            {
+                "id": key,
+                "action": action,
+                "gold_action": gold_action,
+                "problems": problems,
+                "evidence_jaccard": evidence_jaccard,
+                "exact_evidence_set": exact_evidence_set,
+                "reference_fact_similarity": fact_similarity,
+            }
+        )
 
     total = counts["total"] or 1
     labelled = counts["action_labelled"] or 1
+    gold_answer_rows = counts["gold_answer_rows"] or 1
     summary = {
         "counts": dict(sorted(counts.items())),
         "rates": {
@@ -137,9 +220,19 @@ def main() -> int:
             "legacy_field_rate": round(counts["legacy_field_rows"] / total, 6),
             "invalid_e_id_rate": round(counts["invalid_e_id_rows"] / total, 6),
             "action_accuracy": round(counts["action_correct"] / labelled, 6),
+            "schema_and_action_accuracy": round(counts["schema_and_action_correct"] / labelled, 6),
             "over_abstain_rate": round(counts["over_abstain"] / labelled, 6),
             "over_retrieve_rate": round(counts["over_retrieve"] / labelled, 6),
             "premature_answer_rate": round(counts["premature_answer"] / labelled, 6),
+            "exact_evidence_set_rate_on_gold_answers": round(
+                counts["exact_evidence_set"] / gold_answer_rows, 6
+            ),
+            "mean_evidence_jaccard_on_gold_answers": round(
+                scalar_sums["evidence_jaccard"] / gold_answer_rows, 6
+            ),
+            "mean_reference_fact_similarity_on_gold_answers": round(
+                scalar_sums["reference_fact_similarity"] / gold_answer_rows, 6
+            ),
         },
         "action_matrix": dict(sorted(action_matrix.items())),
         "records": records,
