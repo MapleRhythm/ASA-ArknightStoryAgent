@@ -584,6 +584,39 @@ class GlmEvidenceJudge:
                 executor.shutdown(wait=True)
         return result
 
+    def prescore_rollouts(
+        self,
+        user_prompts: Sequence[str],
+        completion_groups: Sequence[Sequence[Any]],
+    ) -> list[list[float]]:
+        """Score frozen rollout groups before an offline GRPO training run."""
+        if len(user_prompts) != len(completion_groups):
+            raise ValueError("prompt/completion group length mismatch")
+
+        def score_one(item: tuple[int, str, Sequence[Any]]) -> tuple[int, list[float]]:
+            index, prompt, completions = item
+            return index, self.score_group(prompt, completions)
+
+        items = [
+            (index, str(prompt), completions)
+            for index, (prompt, completions) in enumerate(
+                zip(user_prompts, completion_groups, strict=True)
+            )
+        ]
+        result: list[list[float] | None] = [None] * len(items)
+        if self.workers == 1 or len(items) <= 1:
+            scored = map(score_one, items)
+        else:
+            executor = ThreadPoolExecutor(max_workers=min(self.workers, len(items)))
+            scored = executor.map(score_one, items)
+        try:
+            for index, scores in scored:
+                result[index] = scores
+        finally:
+            if "executor" in locals():
+                executor.shutdown(wait=True)
+        return [scores if scores is not None else [] for scores in result]
+
 
 def make_glm_semantic_reward(judge: GlmEvidenceJudge):
     def glm_semantic_reward(

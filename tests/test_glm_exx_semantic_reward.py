@@ -257,3 +257,17 @@ def test_invalid_judge_response_is_auditable(tmp_path: Path) -> None:
     failure = json.loads((tmp_path / "failures.jsonl").read_text(encoding="utf-8"))
     assert failure["last_response"]["content_excerpt"] == "not-json"
     assert failure["last_response"]["api"]["finish_reason"] == "length"
+
+
+def test_prescore_rollouts_preserves_group_order(tmp_path: Path) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        workers=2,
+    )
+    judge.score_group = lambda prompt, values: [float(len(prompt))] * len(values)
+
+    assert judge.prescore_rollouts(["a", "abcd"], [[1, 2], [3]]) == [[1.0, 1.0], [4.0]]
