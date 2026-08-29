@@ -135,9 +135,12 @@ def main() -> int:
             models[name] = {
                 "blind_index": rollout_index,
                 "eligible": eligible,
+                "judged": judgement_by_index.get(rollout_index) is not None,
                 "score": float(scores[rollout_index]),
                 "protocol_adjusted_score": (
-                    float(scores[rollout_index]) if eligible else -1.0
+                    float(scores[rollout_index])
+                    if judgement_by_index.get(rollout_index) is not None
+                    else (-1.0 if not eligible else None)
                 ),
                 "judgement": judgement_by_index.get(rollout_index),
             }
@@ -162,11 +165,12 @@ def main() -> int:
         eligible_values = [
             float(row["models"][name]["score"])
             for row in completed
-            if row["models"][name]["eligible"]
+            if row["models"][name]["judged"]
         ]
         protocol_values = [
             float(row["models"][name]["protocol_adjusted_score"])
             for row in completed
+            if row["models"][name]["protocol_adjusted_score"] is not None
         ]
         counts: Counter[str] = Counter()
         for row in completed:
@@ -182,6 +186,12 @@ def main() -> int:
                 sum(protocol_values) / len(protocol_values) if protocol_values else 0.0
             ),
             "eligible": sum(bool(row["models"][name]["eligible"]) for row in completed),
+            "judged": sum(bool(row["models"][name]["judged"]) for row in completed),
+            "judge_failed": sum(
+                bool(row["models"][name]["eligible"])
+                and not bool(row["models"][name]["judged"])
+                for row in completed
+            ),
             "positive": sum(value > 0 for value in values),
             "zero": sum(value == 0 for value in values),
             "negative": sum(value < 0 for value in values),
@@ -195,7 +205,7 @@ def main() -> int:
             eligible_pairs = [
                 (a, b)
                 for row, a, b in zip(completed, left_scores, right_scores, strict=True)
-                if row["models"][left]["eligible"] and row["models"][right]["eligible"]
+                if row["models"][left]["judged"] and row["models"][right]["judged"]
             ]
             protocol_pairs = [
                 (
@@ -203,6 +213,8 @@ def main() -> int:
                     float(row["models"][right]["protocol_adjusted_score"]),
                 )
                 for row in completed
+                if row["models"][left]["protocol_adjusted_score"] is not None
+                and row["models"][right]["protocol_adjusted_score"] is not None
             ]
             pairwise[f"{left}_vs_{right}"] = {
                 "both_semantically_eligible": len(eligible_pairs),
