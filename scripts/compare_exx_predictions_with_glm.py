@@ -95,6 +95,7 @@ def main() -> int:
         workers=1,
         max_consecutive_failures=max(3, args.workers),
         ca_bundle=args.ca_bundle,
+        allow_duplicate_facts=True,
     )
 
     by_name = {name: rows for name, rows in loaded}
@@ -113,7 +114,9 @@ def main() -> int:
         indexed: list[tuple[int, dict[str, Any]]] = []
         for rollout_index, completion in enumerate(completions):
             payload = parse_json_object(completion)
-            if payload is not None and payload_is_judge_eligible(payload, context["evidence"]):
+            if payload is not None and payload_is_judge_eligible(
+                payload, context["evidence"], allow_duplicate_facts=True
+            ):
                 indexed.append((rollout_index, payload))
         cache = None
         if indexed:
@@ -126,12 +129,15 @@ def main() -> int:
         for rollout_index, name in enumerate(order):
             payload = parse_json_object(completions[rollout_index])
             eligible = payload is not None and payload_is_judge_eligible(
-                payload, context["evidence"]
+                payload, context["evidence"], allow_duplicate_facts=True
             )
             models[name] = {
                 "blind_index": rollout_index,
                 "eligible": eligible,
                 "score": float(scores[rollout_index]),
+                "protocol_adjusted_score": (
+                    float(scores[rollout_index]) if eligible else -1.0
+                ),
                 "judgement": judgement_by_index.get(rollout_index),
             }
         return {
@@ -152,6 +158,15 @@ def main() -> int:
     summary: dict[str, Any] = {"rows": row_count, "models": {}}
     for name in names:
         values = [float(row["models"][name]["score"]) for row in completed]
+        eligible_values = [
+            float(row["models"][name]["score"])
+            for row in completed
+            if row["models"][name]["eligible"]
+        ]
+        protocol_values = [
+            float(row["models"][name]["protocol_adjusted_score"])
+            for row in completed
+        ]
         counts: Counter[str] = Counter()
         for row in completed:
             judgement = row["models"][name].get("judgement")
@@ -159,6 +174,12 @@ def main() -> int:
                 counts.update(judgement_counts({"rollouts": [judgement]}))
         summary["models"][name] = {
             "mean_score": sum(values) / len(values) if values else 0.0,
+            "mean_score_on_eligible": (
+                sum(eligible_values) / len(eligible_values) if eligible_values else 0.0
+            ),
+            "protocol_adjusted_mean_score": (
+                sum(protocol_values) / len(protocol_values) if protocol_values else 0.0
+            ),
             "eligible": sum(bool(row["models"][name]["eligible"]) for row in completed),
             "positive": sum(value > 0 for value in values),
             "zero": sum(value == 0 for value in values),
@@ -170,16 +191,31 @@ def main() -> int:
         for right in names[left_index + 1 :]:
             left_scores = [float(row["models"][left]["score"]) for row in completed]
             right_scores = [float(row["models"][right]["score"]) for row in completed]
+            eligible_pairs = [
+                (a, b)
+                for row, a, b in zip(completed, left_scores, right_scores, strict=True)
+                if row["models"][left]["eligible"] and row["models"][right]["eligible"]
+            ]
+            protocol_pairs = [
+                (
+                    float(row["models"][left]["protocol_adjusted_score"]),
+                    float(row["models"][right]["protocol_adjusted_score"]),
+                )
+                for row in completed
+            ]
             pairwise[f"{left}_vs_{right}"] = {
-                "left_wins": sum(a > b for a, b in zip(left_scores, right_scores, strict=True)),
-                "ties": sum(a == b for a, b in zip(left_scores, right_scores, strict=True)),
-                "right_wins": sum(a < b for a, b in zip(left_scores, right_scores, strict=True)),
-                "mean_delta_left_minus_right": (
-                    sum(a - b for a, b in zip(left_scores, right_scores, strict=True))
-                    / len(left_scores)
-                    if left_scores
+                "both_semantically_eligible": len(eligible_pairs),
+                "semantic_left_wins": sum(a > b for a, b in eligible_pairs),
+                "semantic_ties": sum(a == b for a, b in eligible_pairs),
+                "semantic_right_wins": sum(a < b for a, b in eligible_pairs),
+                "semantic_mean_delta_left_minus_right": (
+                    sum(a - b for a, b in eligible_pairs) / len(eligible_pairs)
+                    if eligible_pairs
                     else 0.0
                 ),
+                "protocol_adjusted_left_wins": sum(a > b for a, b in protocol_pairs),
+                "protocol_adjusted_ties": sum(a == b for a, b in protocol_pairs),
+                "protocol_adjusted_right_wins": sum(a < b for a, b in protocol_pairs),
             }
     summary["pairwise"] = pairwise
     (args.output_dir / "scored.json").write_text(

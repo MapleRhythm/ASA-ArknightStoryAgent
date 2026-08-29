@@ -225,6 +225,22 @@ def test_incomplete_retrieve_schema_is_not_judge_eligible() -> None:
     assert not MODULE.payload_is_judge_eligible(payload, context["evidence"])
 
 
+def test_duplicate_facts_can_be_enabled_for_semantic_audit() -> None:
+    context = MODULE.extract_judge_context(PROMPT)
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "阿米娅批准申请。", "evidence_ids": ["E1"]},
+            {"fact": "阿米娅批准申请。", "evidence_ids": ["E1"]},
+        ],
+    }
+
+    assert not MODULE.payload_is_judge_eligible(payload, context["evidence"])
+    assert MODULE.payload_is_judge_eligible(
+        payload, context["evidence"], allow_duplicate_facts=True
+    )
+
+
 def test_build_ssl_context_rejects_missing_explicit_bundle(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="CA bundle does not exist"):
         MODULE.build_ssl_context(tmp_path / "missing.pem")

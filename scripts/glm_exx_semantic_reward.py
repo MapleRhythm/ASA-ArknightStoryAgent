@@ -112,7 +112,12 @@ def extract_judge_context(user_prompt: str) -> dict[str, str]:
     }
 
 
-def payload_is_judge_eligible(payload: dict[str, Any], evidence_text: str) -> bool:
+def payload_is_judge_eligible(
+    payload: dict[str, Any],
+    evidence_text: str,
+    *,
+    allow_duplicate_facts: bool = False,
+) -> bool:
     """Gate semantic credit behind the deterministic Exx protocol."""
     visible_ids = set(EVIDENCE_HEADER_RE.findall(evidence_text))
     action = payload.get("next_action")
@@ -129,7 +134,12 @@ def payload_is_judge_eligible(payload: dict[str, Any], evidence_text: str) -> bo
             text = fact.get("fact")
             ids = fact.get("evidence_ids")
             normalized = re.sub(r"[^\w\u3400-\u9fff]+", "", str(text or "").lower())
-            if not isinstance(text, str) or not text.strip() or not normalized or normalized in seen:
+            if (
+                not isinstance(text, str)
+                or not text.strip()
+                or not normalized
+                or (normalized in seen and not allow_duplicate_facts)
+            ):
                 return False
             seen.add(normalized)
             if (
@@ -365,6 +375,7 @@ class GlmEvidenceJudge:
         workers: int = 1,
         max_consecutive_failures: int = 3,
         ca_bundle: str | Path | None = None,
+        allow_duplicate_facts: bool = False,
     ) -> None:
         if not api_key:
             raise ValueError("missing GLM API key")
@@ -381,6 +392,7 @@ class GlmEvidenceJudge:
         self.max_consecutive_failures = max(1, max_consecutive_failures)
         self.ca_bundle = str(ca_bundle or "").strip() or None
         self.ssl_context = build_ssl_context(self.ca_bundle)
+        self.allow_duplicate_facts = allow_duplicate_facts
         self._lock = threading.Lock()
         self._cache = self._load_cache()
         self._consecutive_failures = 0
@@ -413,6 +425,7 @@ class GlmEvidenceJudge:
             "endpoint": self.endpoint,
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
+            "allow_duplicate_facts": self.allow_duplicate_facts,
             "context": context,
             "rollouts": [{"index": index, "payload": payload} for index, payload in indexed],
         }
@@ -462,7 +475,11 @@ class GlmEvidenceJudge:
         indexed: list[tuple[int, dict[str, Any]]] = []
         for index, completion in enumerate(completion_values):
             payload = parse_json_object(completion_text(completion))
-            if payload is not None and payload_is_judge_eligible(payload, context["evidence"]):
+            if payload is not None and payload_is_judge_eligible(
+                payload,
+                context["evidence"],
+                allow_duplicate_facts=self.allow_duplicate_facts,
+            ):
                 indexed.append((index, payload))
         if not indexed:
             self.stats["skip:no_parseable_rollout"] += 1
@@ -504,6 +521,7 @@ class GlmEvidenceJudge:
                     "protocol": PROTOCOL_VERSION,
                     "model": self.model,
                     "reasoning_effort": self.reasoning_effort,
+                    "allow_duplicate_facts": self.allow_duplicate_facts,
                     "created_at_utc": datetime.now(timezone.utc).isoformat(),
                     "context": context,
                     "rollouts": [
