@@ -68,6 +68,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--max-tokens", type=int, default=4096)
     parser.add_argument("--max-attempts", type=int, default=1)
+    parser.add_argument("--max-consecutive-failures", type=int, default=10)
     parser.add_argument("--ca-bundle", type=Path)
     args = parser.parse_args()
 
@@ -93,7 +94,7 @@ def main() -> int:
         max_attempts=args.max_attempts,
         reasoning_effort=args.reasoning_effort,
         workers=1,
-        max_consecutive_failures=max(3, args.workers),
+        max_consecutive_failures=max(args.max_consecutive_failures, args.workers),
         ca_bundle=args.ca_bundle,
         allow_duplicate_facts=True,
     )
