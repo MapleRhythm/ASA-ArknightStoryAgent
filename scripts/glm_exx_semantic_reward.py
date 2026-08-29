@@ -301,9 +301,13 @@ def validate_judgement(
                 raise SemanticJudgeError("invalid_fact_support")
             checked = fact_row.get("checked_evidence_ids")
             expected_ids = predicted_facts[fact_index].get("evidence_ids")
-            if not isinstance(checked, list) or [str(item) for item in checked] != [
-                str(item) for item in expected_ids or []
-            ]:
+            checked_ids = [str(item) for item in checked] if isinstance(checked, list) else []
+            expected_ids = [str(item) for item in expected_ids or []]
+            if (
+                not isinstance(checked, list)
+                or len(checked_ids) != len(expected_ids)
+                or Counter(checked_ids) != Counter(expected_ids)
+            ):
                 raise SemanticJudgeError("checked_evidence_ids_mismatch")
             if not isinstance(fact_row.get("citation_complete"), bool):
                 raise SemanticJudgeError("invalid_citation_complete")

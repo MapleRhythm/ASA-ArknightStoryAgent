@@ -174,6 +174,34 @@ def test_checked_ids_must_equal_rollout_claim_ids() -> None:
         raise AssertionError("judge was allowed to inspect an uncited passage")
 
 
+def test_checked_ids_may_return_same_set_in_different_order() -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E2", "E1"]}],
+    }
+    value = {
+        "protocol": MODULE.PROTOCOL_VERSION,
+        "rollouts": [
+            {
+                "rollout_index": 0,
+                "action_appropriateness": "appropriate",
+                "facts": [
+                    {
+                        "fact_index": 0,
+                        "support": "entailed",
+                        "checked_evidence_ids": ["E1", "E2"],
+                        "citation_complete": True,
+                    }
+                ],
+                "coverage": "complete",
+                "critical_unsupported_claims": 0,
+            }
+        ],
+    }
+
+    assert MODULE.validate_judgement(value, [(0, payload)]) == value
+
+
 def test_cache_reuses_identical_group_without_api(tmp_path: Path) -> None:
     payload = {
         "next_action": "abstain",
