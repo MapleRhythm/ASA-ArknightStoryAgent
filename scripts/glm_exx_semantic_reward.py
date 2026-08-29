@@ -82,6 +82,15 @@ def parse_json_object(text: Any) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def parse_strict_json_object(text: Any) -> dict[str, Any] | None:
+    """Parse only a complete JSON object, without fences or surrounding text."""
+    try:
+        value = json.loads(str(text or "").strip())
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def completion_text(completion: Any) -> str:
     if isinstance(completion, list) and completion:
         last = completion[-1]
@@ -336,6 +345,20 @@ def semantic_score(row: dict[str, Any], payload: dict[str, Any]) -> float:
     return max(-1.0, min(1.0, score))
 
 
+def semantic_reward_gate(scores: Sequence[float], eligible: Sequence[bool]) -> list[float]:
+    """Make invalid protocol strictly worse than any judged semantic output.
+
+    ``GlmEvidenceJudge.score_group`` historically returned zero both when a
+    valid rollout received an actual zero and when a rollout was not sent to
+    the judge.  That ambiguity lets malformed JSON beat a valid but
+    contradicted answer in GRPO.  The semantic-gated profile uses this helper
+    to map ineligible rollouts to the judge's minimum score instead.
+    """
+    if len(scores) != len(eligible):
+        raise ValueError("semantic score/eligibility length mismatch")
+    return [float(score) if is_eligible else -1.0 for score, is_eligible in zip(scores, eligible)]
+
+
 def judgement_counts(judgement: dict[str, Any]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for row in judgement["rollouts"]:
@@ -389,6 +412,7 @@ class GlmEvidenceJudge:
         max_consecutive_failures: int = 3,
         ca_bundle: str | Path | None = None,
         allow_duplicate_facts: bool = False,
+        strict_json: bool = False,
     ) -> None:
         if not api_key:
             raise ValueError("missing GLM API key")
@@ -406,9 +430,11 @@ class GlmEvidenceJudge:
         self.ca_bundle = str(ca_bundle or "").strip() or None
         self.ssl_context = build_ssl_context(self.ca_bundle)
         self.allow_duplicate_facts = allow_duplicate_facts
+        self.strict_json = strict_json
         self._lock = threading.Lock()
         self._cache = self._load_cache()
         self._consecutive_failures = 0
+        self._failed_cache_keys: set[str] = set()
         self.stats: Counter[str] = Counter()
 
     def _load_cache(self) -> dict[str, dict[str, Any]]:
@@ -439,6 +465,7 @@ class GlmEvidenceJudge:
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
             "allow_duplicate_facts": self.allow_duplicate_facts,
+            "strict_json": self.strict_json,
             "context": context,
             "rollouts": [{"index": index, "payload": payload} for index, payload in indexed],
         }
@@ -487,7 +514,8 @@ class GlmEvidenceJudge:
         context = extract_judge_context(user_prompt)
         indexed: list[tuple[int, dict[str, Any]]] = []
         for index, completion in enumerate(completion_values):
-            payload = parse_json_object(completion_text(completion))
+            parser = parse_strict_json_object if self.strict_json else parse_json_object
+            payload = parser(completion_text(completion))
             if payload is not None and payload_is_judge_eligible(
                 payload,
                 context["evidence"],
@@ -551,6 +579,7 @@ class GlmEvidenceJudge:
                 self._cache[cache_key] = record
                 self.stats["api_success"] += 1
                 self._consecutive_failures = 0
+                self._failed_cache_keys.discard(cache_key)
                 for (index, _), value in zip(indexed, semantic_scores, strict=True):
                     scores[index] = value
                 return scores
@@ -562,6 +591,7 @@ class GlmEvidenceJudge:
                     time.sleep(min(2**attempt, 8))
         self.stats["api_failure"] += 1
         self._consecutive_failures += 1
+        self._failed_cache_keys.add(cache_key)
         self._append(
             self.failures_path,
             {
@@ -581,6 +611,30 @@ class GlmEvidenceJudge:
         # A single transient failure supplies no semantic advantage. It must
         # never turn an API outage into a negative reward for the policy.
         return scores
+
+    def group_status(
+        self, user_prompt: str, completion_values: Sequence[Any]
+    ) -> tuple[list[bool], bool]:
+        """Return rollout eligibility and whether the semantic group failed."""
+        context = extract_judge_context(user_prompt)
+        parser = parse_strict_json_object if self.strict_json else parse_json_object
+        indexed: list[tuple[int, dict[str, Any]]] = []
+        eligible: list[bool] = []
+        for index, completion in enumerate(completion_values):
+            payload = parser(completion_text(completion))
+            is_eligible = payload is not None and payload_is_judge_eligible(
+                payload,
+                context["evidence"],
+                allow_duplicate_facts=self.allow_duplicate_facts,
+            )
+            eligible.append(is_eligible)
+            if is_eligible:
+                indexed.append((index, payload))
+        failed = bool(indexed) and self._cache_key(context, indexed) in self._failed_cache_keys
+        return eligible, failed
+
+    def eligibility(self, user_prompt: str, completion_values: Sequence[Any]) -> list[bool]:
+        return self.group_status(user_prompt, completion_values)[0]
 
     def score_batch(
         self,
@@ -649,11 +703,32 @@ class GlmEvidenceJudge:
         return [scores if scores is not None else [] for scores in result]
 
 
-def make_glm_semantic_reward(judge: GlmEvidenceJudge):
+def make_glm_semantic_reward(judge: GlmEvidenceJudge, *, gate_invalid: bool = False):
     def glm_semantic_reward(
         completions: Sequence[Any], judge_context: Sequence[str], **_: Any
     ) -> list[float]:
-        return judge.score_batch(completions, judge_context)
+        scores = judge.score_batch(completions, judge_context)
+        if not gate_invalid:
+            return scores
+        grouped: dict[str, list[int]] = defaultdict(list)
+        for index, context in enumerate(judge_context):
+            grouped[str(context)].append(index)
+        eligible = [False] * len(completions)
+        failed = [False] * len(completions)
+        for context, indices in grouped.items():
+            values = [completions[index] for index in indices]
+            group_eligible, group_failed = judge.group_status(context, values)
+            for index, value in zip(indices, group_eligible, strict=True):
+                eligible[index] = value
+                failed[index] = group_failed
+        # A provider outage gives every rollout a neutral semantic component;
+        # deterministic protocol penalties still apply independently.
+        return [
+            0.0 if did_fail else value
+            for value, did_fail in zip(
+                semantic_reward_gate(scores, eligible), failed, strict=True
+            )
+        ]
 
     glm_semantic_reward.__name__ = "glm_semantic_reward"
     return glm_semantic_reward

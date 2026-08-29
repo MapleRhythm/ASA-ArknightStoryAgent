@@ -230,6 +230,72 @@ def test_invalid_rollout_skips_teacher_call(tmp_path: Path) -> None:
     assert not (tmp_path / "failures.jsonl").exists()
 
 
+def test_semantic_gate_makes_invalid_rollout_worse_than_contradiction() -> None:
+    assert MODULE.semantic_reward_gate([0.0, -0.5], [False, True]) == [-1.0, -0.5]
+
+
+def test_gated_reward_marks_invalid_after_batch_scoring(tmp_path: Path) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+    )
+    calls = 0
+
+    def fake_score_batch(completions, contexts):
+        nonlocal calls
+        calls += 1
+        return [0.0]
+
+    judge.score_batch = fake_score_batch
+    reward = MODULE.make_glm_semantic_reward(judge, gate_invalid=True)
+
+    assert reward(["not-json"], [PROMPT]) == [-1.0]
+    assert calls == 1
+
+
+def test_strict_judge_rejects_fenced_json_before_api(tmp_path: Path) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        strict_json=True,
+    )
+    payload = {"next_action": "abstain", "reason": "证据不足。"}
+    fenced = f"```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
+
+    assert judge.score_group(PROMPT, [fenced]) == [0.0]
+    assert judge.eligibility(PROMPT, [fenced]) == [False]
+    assert not (tmp_path / "cache.jsonl").exists()
+
+
+def test_gated_reward_keeps_provider_failure_neutral(tmp_path: Path) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=1,
+        max_consecutive_failures=2,
+        strict_json=True,
+    )
+    judge._request = lambda messages: (_ for _ in ()).throw(
+        MODULE.SemanticJudgeError("temporary")
+    )
+    payload = json.dumps(
+        {"next_action": "abstain", "reason": "证据不足。"}, ensure_ascii=False
+    )
+    reward = MODULE.make_glm_semantic_reward(judge, gate_invalid=True)
+
+    assert reward([payload], [PROMPT]) == [0.0]
+    assert (tmp_path / "failures.jsonl").exists()
+
+
 def test_unknown_evidence_id_is_not_sent_to_judge(tmp_path: Path) -> None:
     judge = MODULE.GlmEvidenceJudge(
         endpoint="https://example.invalid",

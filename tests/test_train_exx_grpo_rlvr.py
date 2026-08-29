@@ -106,6 +106,30 @@ def test_duplicate_fact_penalty_rejects_reward_padding() -> None:
     assert "fact_2_duplicate" in MODULE.validate_payload(padded, {"E1"})
 
 
+def test_near_duplicate_penalty_catches_reworded_reward_padding() -> None:
+    unique = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "阿米娅批准了申请。", "evidence_ids": ["E1"]},
+            {"fact": "杜宾安排了训练。", "evidence_ids": ["E2"]},
+        ],
+    }
+    padded = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "拜松在货船上发现糖果，并质疑为何用船运糖果。", "evidence_ids": ["E1"]},
+            {"fact": "拜松在货船上发现糖果，并质疑为什么用船运糖果。", "evidence_ids": ["E1"]},
+        ],
+    }
+
+    penalties = MODULE.near_duplicate_fact_penalty(
+        [completion(unique), completion(padded)]
+    )
+
+    assert penalties[0] == 0.0
+    assert penalties[1] < 0.0
+
+
 def test_premature_answer_is_penalized_but_correct_retrieve_is_not() -> None:
     answer = {
         "next_action": "answer_directly",
@@ -154,6 +178,8 @@ def test_semantic_gated_profile_masks_positive_credit_for_invalid_payloads() -> 
 def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
     legacy_funcs, legacy_weights = MODULE.build_rule_reward_stack("legacy")
     gated_funcs, gated_weights = MODULE.build_rule_reward_stack("semantic-gated")
+    renamed_funcs, renamed_weights = MODULE.build_rule_reward_stack("protocol-gated-rules")
+    glm_funcs, glm_weights = MODULE.build_rule_reward_stack("glm-semantic-gated")
 
     assert [func.__name__ for func in legacy_funcs] == [
         "json_reward",
@@ -174,6 +200,17 @@ def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
         "premature_answer_penalty",
     ]
     assert gated_weights == [1.0, 0.75, 1.0, 1.0, 0.75, 1.0]
+    assert [func.__name__ for func in renamed_funcs] == [
+        func.__name__ for func in gated_funcs
+    ]
+    assert renamed_weights == gated_weights
+    assert [func.__name__ for func in glm_funcs] == [
+        "protocol_penalty",
+        "gated_near_duplicate_fact_penalty",
+    ]
+    assert glm_weights == [2.0, 1.5]
+    assert "action_reward" not in {func.__name__ for func in glm_funcs}
+    assert "reference_fact_reward" not in {func.__name__ for func in glm_funcs}
 
 
 def test_training_diagnostic_reports_pre_clip_bound_and_coefficient() -> None:
@@ -272,6 +309,30 @@ def test_stratified_longest_smoke_selects_boundary_rows() -> None:
     assert [item.prompt_tokens for item in selected] == [30, 31, 32]
 
 
+def test_action_length_stratification_covers_actions_and_context_boundaries() -> None:
+    examples = []
+    for action in MODULE.ACTIONS:
+        for index, length in enumerate([10, 20, 30, 40]):
+            examples.append(
+                MODULE.TrainingExample(
+                    row_id=f"{action}-{index}",
+                    prompt=[],
+                    prompt_tokens=length,
+                    visible_ids=["E1"],
+                    gold_action=action,
+                    gold_fact_bindings=[],
+                )
+            )
+
+    selected = MODULE.select_examples(
+        examples, max_rows=6, selection_order="stratified-action-length", seed=1
+    )
+
+    assert [item.gold_action for item in selected] == list(MODULE.ACTIONS) * 2
+    for action in MODULE.ACTIONS:
+        assert [item.prompt_tokens for item in selected if item.gold_action == action] == [10, 40]
+
+
 def test_glm_semantic_reward_defaults_to_evidence_only_coding_plan() -> None:
     args = MODULE.build_parser().parse_args(
         [
@@ -297,4 +358,42 @@ def test_glm_semantic_reward_defaults_to_evidence_only_coding_plan() -> None:
     assert args.glm_timeout == 180.0
     assert args.glm_max_tokens == 4096
     assert args.glm_max_attempts == 1
-    assert args.glm_reward_weight == 1.0
+    assert args.glm_reward_weight is None
+
+
+def test_glm_semantic_profile_requires_judge_and_dominant_weight(monkeypatch) -> None:
+    parser = MODULE.build_parser()
+    base = [
+        "--train-file",
+        "train.json",
+        "--base-model",
+        "base",
+        "--sft-adapter",
+        "adapter",
+        "--output-dir",
+        "out",
+        "--reward-profile",
+        "glm-semantic-gated",
+    ]
+    without_judge = parser.parse_args(base)
+    try:
+        MODULE.validate_runtime_args(without_judge)
+    except ValueError as exc:
+        assert "requires --glm-semantic-reward" in str(exc)
+    else:
+        raise AssertionError("semantic profile was allowed without GLM")
+
+    monkeypatch.setenv("BIGMODEL_API_KEY", "secret")
+    valid = parser.parse_args([*base, "--glm-semantic-reward"])
+    MODULE.validate_runtime_args(valid)
+    assert valid.glm_reward_weight == MODULE.GLM_SEMANTIC_DEFAULT_WEIGHT
+
+    weak = parser.parse_args(
+        [*base, "--glm-semantic-reward", "--glm-reward-weight", "1.5"]
+    )
+    try:
+        MODULE.validate_runtime_args(weak)
+    except ValueError as exc:
+        assert "requires --glm-reward-weight" in str(exc)
+    else:
+        raise AssertionError("semantic profile accepted a non-dominant GLM weight")

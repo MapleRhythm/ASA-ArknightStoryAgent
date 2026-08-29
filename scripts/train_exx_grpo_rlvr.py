@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Train grounded_action_exx_v1 with GRPO and verifiable rewards.
+"""Train grounded_action_exx_v1 with fixed-evidence GRPO/RLVR rewards.
 
-This is intentionally a fixed-evidence RLVR stage.  It optimizes protocol
-validity, action selection, and teacher evidence-ID selection; it does not
-claim to verify the semantic entailment between arbitrary fact text and an
-evidence passage.  The latter needs an additional verifier or an interactive
-retrieval environment.
+Historical profiles optimize deterministic protocol and hidden-teacher proxy
+targets.  ``glm-semantic-gated`` instead makes evidence-only GLM judgement the
+dominant signal: hidden gold actions and reference facts remain available for
+auditing, but do not contribute reward in that profile.
 """
 
 from __future__ import annotations
@@ -27,8 +26,16 @@ ACTIONS = ("answer_directly", "retrieve_more", "abstain")
 FORBIDDEN = {"quote", "final_answer", "inferred_facts", "evidence_refs", "answer"}
 FOLLOW_UP_REQUIRED = {"question", "query_type", "entities", "keywords", "expected_answer_type"}
 FOLLOW_UP_OPTIONAL = {"dialogue_context"}
-REWARD_PROFILES = ("legacy", "semantic-gated")
+REWARD_PROFILES = (
+    "legacy",
+    "semantic-gated",
+    "protocol-gated-rules",
+    "glm-semantic-gated",
+)
 SEMANTIC_JUDGE_PROTOCOL = "asa_glm_exx_evidence_judge_v3"
+GLM_SEMANTIC_DEFAULT_WEIGHT = 3.0
+GLM_SEMANTIC_MIN_WEIGHT = 2.0
+NEAR_DUPLICATE_THRESHOLD = 0.78
 
 
 @dataclass(frozen=True)
@@ -206,6 +213,27 @@ def reference_fact_similarity(predicted: Sequence[str], expected: Sequence[str])
     return sum(scores) / len(scores)
 
 
+def fact_pair_similarity(left: str, right: str) -> float:
+    """Conservative lexical similarity for detecting near-duplicate claims.
+
+    This is deliberately not an entailment proxy.  It only detects highly
+    overlapping 1-3 character n-grams, which catches reward-padding variants
+    while leaving semantic correctness to the evidence judge.
+    """
+    scores: list[float] = []
+    for n in (1, 2, 3):
+        left_ngrams = normalized_char_ngrams([left], n)
+        right_ngrams = normalized_char_ngrams([right], n)
+        left_total = sum(left_ngrams.values())
+        right_total = sum(right_ngrams.values())
+        if not left_total or not right_total:
+            scores.append(0.0)
+            continue
+        overlap = sum((left_ngrams & right_ngrams).values())
+        scores.append(2 * overlap / (left_total + right_total))
+    return sum(scores) / len(scores)
+
+
 def maximum_bipartite_score(scores: Sequence[Sequence[float]]) -> float:
     """Return the exact maximum one-to-one matching score for a small matrix."""
     if not scores or not scores[0]:
@@ -371,6 +399,31 @@ def duplicate_fact_penalty(
     return penalties
 
 
+def near_duplicate_fact_penalty(completions: Sequence[Any], **_: Any) -> list[float]:
+    """Penalize semantically redundant-looking padding without using gold.
+
+    Each fact after the first is compared with earlier facts.  Similarity below
+    the conservative threshold is free; increasingly close paraphrases are
+    penalized continuously.  Exact duplicates are already protocol-invalid,
+    so this primarily handles small wording changes used to pad an answer.
+    """
+    penalties: list[float] = []
+    for item in completions:
+        facts = supported_fact_texts(parse_json_object(completion_text(item)))
+        if len(facts) < 2:
+            penalties.append(0.0)
+            continue
+        redundant_mass = 0.0
+        for index in range(1, len(facts)):
+            closest = max(fact_pair_similarity(facts[index], prior) for prior in facts[:index])
+            redundant_mass += max(
+                0.0,
+                (closest - NEAR_DUPLICATE_THRESHOLD) / (1.0 - NEAR_DUPLICATE_THRESHOLD),
+            )
+        penalties.append(-min(1.0, redundant_mass / (len(facts) - 1)))
+    return penalties
+
+
 def premature_answer_penalty(
     completions: Sequence[Any], gold_action: Sequence[str], **_: Any
 ) -> list[float]:
@@ -385,9 +438,11 @@ def premature_answer_penalty(
 def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
     """Build a named, reproducible rule-reward profile.
 
-    ``legacy`` exactly preserves the reward stack used by the completed v2
-    runs.  ``semantic-gated`` removes duplicated positive format credit and
-    gives factual rewards only to payloads that pass the full Exx schema.
+    ``legacy`` and ``semantic-gated`` exactly preserve completed experiments.
+    ``protocol-gated-rules`` is an explicit name for the latter.  The new
+    ``glm-semantic-gated`` profile contains no hidden-gold positive reward:
+    evidence-only GLM judgement is appended by :func:`main` and dominates the
+    strict protocol and near-duplicate safeguards returned here.
     """
     if profile == "legacy":
         return (
@@ -402,7 +457,7 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
             ],
             [1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5],
         )
-    if profile == "semantic-gated":
+    if profile in {"semantic-gated", "protocol-gated-rules"}:
         return (
             [
                 protocol_penalty,
@@ -413,6 +468,17 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
                 premature_answer_penalty,
             ],
             [1.0, 0.75, 1.0, 1.0, 0.75, 1.0],
+        )
+    if profile == "glm-semantic-gated":
+        return (
+            [
+                protocol_penalty,
+                protocol_gated(near_duplicate_fact_penalty),
+            ],
+            # Invalid protocol must be worse than the lowest possible GLM
+            # semantic reward.  Near-duplicate padding is a material but
+            # secondary penalty; evidence entailment remains the main signal.
+            [2.0, 1.5],
         )
     raise ValueError(f"unknown reward profile: {profile}")
 
@@ -494,6 +560,40 @@ def select_examples(
         random.Random(seed).shuffle(selected)
         return selected[:max_rows]
 
+    if selection_order == "stratified-action-length":
+        groups: dict[str, list[TrainingExample]] = defaultdict(list)
+        for example in examples:
+            groups[example.gold_action].append(example)
+        for values in groups.values():
+            values.sort(key=lambda item: (item.prompt_tokens, item.row_id))
+
+        # Allocate evenly across actions, then spread each allocation from the
+        # shortest through the longest context.  Smoke tests therefore cover
+        # both state-machine branches and the long-evidence failure mode.
+        allocation = Counter(ACTIONS[index % len(ACTIONS)] for index in range(max_rows))
+        sampled: dict[str, list[TrainingExample]] = {}
+        for action in ACTIONS:
+            values = groups[action]
+            count = min(allocation[action], len(values))
+            if count == 0:
+                sampled[action] = []
+            elif count == 1:
+                sampled[action] = [values[-1]]
+            else:
+                indices = [round(index * (len(values) - 1) / (count - 1)) for index in range(count)]
+                sampled[action] = [values[index] for index in indices]
+        selected: list[TrainingExample] = []
+        while len(selected) < max_rows and any(sampled.values()):
+            for action in ACTIONS:
+                if sampled[action] and len(selected) < max_rows:
+                    selected.append(sampled[action].pop(0))
+        if len(selected) < max_rows:
+            selected_ids = {item.row_id for item in selected}
+            remainder = [item for item in examples if item.row_id not in selected_ids]
+            random.Random(seed).shuffle(remainder)
+            selected.extend(remainder[: max_rows - len(selected)])
+        return selected
+
     groups: dict[str, list[TrainingExample]] = defaultdict(list)
     for example in examples:
         groups[example.gold_action].append(example)
@@ -553,7 +653,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-rows", type=int, default=0)
     parser.add_argument(
         "--selection-order",
-        choices=("random", "stratified-shortest", "stratified-longest"),
+        choices=(
+            "random",
+            "stratified-shortest",
+            "stratified-longest",
+            "stratified-action-length",
+        ),
         default="random",
     )
     parser.add_argument("--max-prompt-tokens", type=int, default=10000)
@@ -588,29 +693,51 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--glm-workers", type=int, default=1)
     parser.add_argument("--glm-max-consecutive-failures", type=int, default=3)
     parser.add_argument("--glm-ca-bundle", type=Path)
-    parser.add_argument("--glm-reward-weight", type=float, default=1.0)
+    parser.add_argument("--glm-reward-weight", type=float)
     parser.add_argument("--glm-cache", type=Path)
     parser.add_argument("--glm-failures", type=Path)
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    if args.output_dir.exists() and any(args.output_dir.iterdir()):
-        raise FileExistsError(f"refusing to overwrite non-empty output: {args.output_dir}")
+def validate_runtime_args(args: argparse.Namespace) -> None:
     if args.num_generations < 2:
         raise ValueError("GRPO requires at least two generations")
     if args.max_grad_norm <= 0:
         raise ValueError("max-grad-norm must be positive")
     if not 0.0 <= args.warmup_ratio < 1.0:
         raise ValueError("warmup-ratio must be in [0, 1)")
+    if args.reward_profile == "glm-semantic-gated" and not args.glm_semantic_reward:
+        raise ValueError("glm-semantic-gated requires --glm-semantic-reward")
     if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
         raise ValueError(f"missing GLM API key environment variable: {args.glm_api_key_env}")
+    if args.glm_reward_weight is None:
+        args.glm_reward_weight = (
+            GLM_SEMANTIC_DEFAULT_WEIGHT
+            if args.reward_profile == "glm-semantic-gated"
+            else 1.0
+        )
+    if args.glm_reward_weight <= 0:
+        raise ValueError("glm-reward-weight must be positive")
+    if (
+        args.reward_profile == "glm-semantic-gated"
+        and args.glm_reward_weight < GLM_SEMANTIC_MIN_WEIGHT
+    ):
+        raise ValueError(
+            f"glm-semantic-gated requires --glm-reward-weight >= {GLM_SEMANTIC_MIN_WEIGHT}"
+        )
     generation_batch_size = args.batch_size * args.gradient_accumulation_steps
     if generation_batch_size % args.num_generations:
         raise ValueError(
             "batch_size * gradient_accumulation_steps must be divisible by num_generations"
         )
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if args.output_dir.exists() and any(args.output_dir.iterdir()):
+        raise FileExistsError(f"refusing to overwrite non-empty output: {args.output_dir}")
+    validate_runtime_args(args)
+    generation_batch_size = args.batch_size * args.gradient_accumulation_steps
 
     import torch
     from datasets import Dataset
@@ -678,6 +805,17 @@ def main() -> int:
         raise RuntimeError(f"adapter/model mismatch; first missing keys: {missing[:5]}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    reward_funcs, reward_weights = build_rule_reward_stack(args.reward_profile)
+    if args.glm_semantic_reward:
+        # The callable itself is appended after the judge is constructed.
+        reward_component_names = [func.__name__ for func in reward_funcs] + [
+            "glm_semantic_reward"
+        ]
+        effective_reward_weights = [*reward_weights, args.glm_reward_weight]
+    else:
+        reward_component_names = [func.__name__ for func in reward_funcs]
+        effective_reward_weights = list(reward_weights)
+
     manifest = {
         "protocol": "grounded_action_exx_v1",
         "method": "GRPO with verifiable rewards (fixed evidence)",
@@ -691,6 +829,12 @@ def main() -> int:
         "selected_ids": [item.row_id for item in selected],
         "adapter_key_coverage": {"loaded": loaded, "total": total},
         "reward_profile": args.reward_profile,
+        "reward_stack": [
+            {"name": name, "weight": weight}
+            for name, weight in zip(
+                reward_component_names, effective_reward_weights, strict=True
+            )
+        ],
         "glm_semantic_judge": {
             "enabled": args.glm_semantic_reward,
             "protocol": SEMANTIC_JUDGE_PROTOCOL if args.glm_semantic_reward else None,
@@ -701,7 +845,6 @@ def main() -> int:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
-    reward_funcs, reward_weights = build_rule_reward_stack(args.reward_profile)
     if args.glm_semantic_reward:
         from glm_exx_semantic_reward import GlmEvidenceJudge, make_glm_semantic_reward
 
@@ -727,8 +870,14 @@ def main() -> int:
             workers=args.glm_workers,
             max_consecutive_failures=args.glm_max_consecutive_failures,
             ca_bundle=args.glm_ca_bundle,
+            strict_json=args.reward_profile == "glm-semantic-gated",
         )
-        reward_funcs.append(make_glm_semantic_reward(judge))
+        reward_funcs.append(
+            make_glm_semantic_reward(
+                judge,
+                gate_invalid=args.reward_profile == "glm-semantic-gated",
+            )
+        )
         reward_weights.append(args.glm_reward_weight)
 
     config = GRPOConfig(
