@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 
-PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v2"
+PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v3"
 SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contradicted": -1.0}
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
 COVERAGE_VALUES = {"complete": 1.0, "partial": 0.25, "none": 0.0, "not_applicable": 0.0}
@@ -313,13 +313,26 @@ def semantic_score(row: dict[str, Any], payload: dict[str, Any]) -> float:
     facts = row["facts"]
     if not facts:
         return -1.0
-    entailment = sum(SUPPORT_VALUES[item["support"]] for item in facts) / len(facts)
+    support_scores = [SUPPORT_VALUES[item["support"]] for item in facts]
+    mean_entailment = sum(support_scores) / len(support_scores)
+    worst_entailment = min(support_scores)
     citation = sum(bool(item["citation_complete"]) for item in facts) / len(facts)
     coverage = COVERAGE_VALUES[row["coverage"]]
-    score = 0.5 * entailment + 0.2 * citation + 0.2 * coverage + 0.1 * action_score
-    score -= min(0.5, 0.25 * row["critical_unsupported_claims"])
+    # Mean-only scoring lets several supported facts wash out one hallucinated
+    # fact.  Give the weakest claim material weight, reduce the incentive to
+    # pad an answer for coverage, and make unsupported claims a hard ceiling.
+    score = (
+        0.30 * mean_entailment
+        + 0.25 * worst_entailment
+        + 0.15 * citation
+        + 0.15 * coverage
+        + 0.15 * action_score
+    )
+    score -= min(0.75, 0.25 * row["critical_unsupported_claims"])
     if any(item["support"] == "contradicted" for item in facts):
         score = min(score, -0.5)
+    elif any(item["support"] == "unsupported" for item in facts):
+        score = min(score, 0.25)
     return max(-1.0, min(1.0, score))
 
 

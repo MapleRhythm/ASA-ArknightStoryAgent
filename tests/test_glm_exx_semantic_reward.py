@@ -109,6 +109,38 @@ def test_contradiction_caps_semantic_reward() -> None:
     assert MODULE.semantic_score(row, payload) <= -0.5
 
 
+def test_one_unsupported_fact_cannot_be_hidden_by_supported_facts() -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "事实甲", "evidence_ids": ["E1"]},
+            {"fact": "事实乙", "evidence_ids": ["E2"]},
+        ],
+    }
+    row = {
+        "rollout_index": 0,
+        "action_appropriateness": "appropriate",
+        "facts": [
+            {
+                "fact_index": 0,
+                "support": "entailed",
+                "checked_evidence_ids": ["E1"],
+                "citation_complete": True,
+            },
+            {
+                "fact_index": 1,
+                "support": "unsupported",
+                "checked_evidence_ids": ["E2"],
+                "citation_complete": False,
+            },
+        ],
+        "coverage": "complete",
+        "critical_unsupported_claims": 1,
+    }
+
+    assert MODULE.semantic_score(row, payload) <= 0.25
+
+
 def test_checked_ids_must_equal_rollout_claim_ids() -> None:
     payload = {
         "next_action": "answer_directly",

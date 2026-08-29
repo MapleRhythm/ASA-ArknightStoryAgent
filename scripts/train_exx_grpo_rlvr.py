@@ -27,6 +27,8 @@ ACTIONS = ("answer_directly", "retrieve_more", "abstain")
 FORBIDDEN = {"quote", "final_answer", "inferred_facts", "evidence_refs", "answer"}
 FOLLOW_UP_REQUIRED = {"question", "query_type", "entities", "keywords", "expected_answer_type"}
 FOLLOW_UP_OPTIONAL = {"dialogue_context"}
+REWARD_PROFILES = ("legacy", "semantic-gated")
+SEMANTIC_JUDGE_PROTOCOL = "asa_glm_exx_evidence_judge_v3"
 
 
 @dataclass(frozen=True)
@@ -244,6 +246,45 @@ def schema_reward(
     ]
 
 
+def protocol_penalty(
+    completions: Sequence[Any], visible_ids: Sequence[Sequence[str]], **_: Any
+) -> list[float]:
+    """Make strict protocol validity a gate instead of a saturating bonus.
+
+    JSON and schema rewards are highly correlated and quickly saturate.  In
+    the semantic-gated profile, a valid payload gets no positive reward merely
+    for formatting while an invalid payload is penalized.  Positive action or
+    factual rewards are independently masked by :func:`protocol_gated`.
+    """
+    return [
+        0.0
+        if not validate_payload(parse_json_object(completion_text(item)), set(visible))
+        else -1.0
+        for item, visible in zip(completions, visible_ids, strict=True)
+    ]
+
+
+def protocol_gated(reward_func: Any) -> Any:
+    """Return a reward function whose positive credit requires valid schema."""
+
+    def gated_reward(
+        completions: Sequence[Any], visible_ids: Sequence[Sequence[str]], **kwargs: Any
+    ) -> list[float]:
+        raw = reward_func(completions=completions, visible_ids=visible_ids, **kwargs)
+        if len(raw) != len(completions):
+            raise ValueError(f"{reward_func.__name__} returned the wrong reward count")
+        return [
+            float(value)
+            if not validate_payload(parse_json_object(completion_text(item)), set(visible))
+            else 0.0
+            for item, visible, value in zip(completions, visible_ids, raw, strict=True)
+        ]
+
+    gated_reward.__name__ = f"gated_{reward_func.__name__}"
+    gated_reward.__doc__ = f"Protocol-gated form of {reward_func.__name__}."
+    return gated_reward
+
+
 def action_reward(
     completions: Sequence[Any], gold_action: Sequence[str], **_: Any
 ) -> list[float]:
@@ -339,6 +380,41 @@ def premature_answer_penalty(
         action = str((payload or {}).get("next_action") or "")
         penalties.append(-1.0 if gold != "answer_directly" and action == "answer_directly" else 0.0)
     return penalties
+
+
+def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
+    """Build a named, reproducible rule-reward profile.
+
+    ``legacy`` exactly preserves the reward stack used by the completed v2
+    runs.  ``semantic-gated`` removes duplicated positive format credit and
+    gives factual rewards only to payloads that pass the full Exx schema.
+    """
+    if profile == "legacy":
+        return (
+            [
+                json_reward,
+                schema_reward,
+                action_reward,
+                claim_citation_reward,
+                reference_fact_reward,
+                duplicate_fact_penalty,
+                premature_answer_penalty,
+            ],
+            [1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5],
+        )
+    if profile == "semantic-gated":
+        return (
+            [
+                protocol_penalty,
+                protocol_gated(action_reward),
+                protocol_gated(claim_citation_reward),
+                protocol_gated(reference_fact_reward),
+                duplicate_fact_penalty,
+                premature_answer_penalty,
+            ],
+            [1.0, 0.75, 1.0, 1.0, 0.75, 1.0],
+        )
+    raise ValueError(f"unknown reward profile: {profile}")
 
 
 def tokenized_length(tokenizer: Any, prompt: list[dict[str, str]]) -> int:
@@ -449,6 +525,25 @@ def adapter_key_coverage(model: Any, adapter_path: Path) -> tuple[int, int, list
     return len(expected) - len(missing), len(expected), missing
 
 
+def build_training_diagnostic(logs: Mapping[str, Any], max_grad_norm: float) -> dict[str, Any]:
+    """Normalize one Trainer log event and expose clipping diagnostics."""
+    diagnostic = {str(key): value for key, value in logs.items()}
+    try:
+        pre_clip = float(logs["grad_norm"])
+    except (KeyError, TypeError, ValueError):
+        return diagnostic
+    post_clip = min(pre_clip, max_grad_norm)
+    diagnostic.update(
+        {
+            "grad_norm_pre_clip": pre_clip,
+            "grad_norm_post_clip_bound": post_clip,
+            "grad_clip_coefficient": min(1.0, max_grad_norm / max(pre_clip, 1e-12)),
+            "grad_was_clipped": pre_clip > max_grad_norm,
+        }
+    )
+    return diagnostic
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-file", type=Path, required=True)
@@ -466,6 +561,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-completion-length", type=int, default=384)
     parser.add_argument("--learning-rate", type=float, default=5e-7)
     parser.add_argument("--beta", type=float, default=0.04)
+    parser.add_argument("--max-grad-norm", type=float, default=1.0)
+    parser.add_argument("--warmup-ratio", type=float, default=0.0)
+    parser.add_argument("--lr-scheduler-type", default="linear")
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--max-steps", type=int, default=-1)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -476,6 +574,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-steps", type=int, default=100)
     parser.add_argument("--log-completions", action="store_true")
     parser.add_argument("--num-completions-to-print", type=int, default=4)
+    parser.add_argument("--reward-profile", choices=REWARD_PROFILES, default="legacy")
     parser.add_argument("--glm-semantic-reward", action="store_true")
     parser.add_argument("--glm-api-key-env", default="BIGMODEL_API_KEY")
     parser.add_argument(
@@ -501,6 +600,10 @@ def main() -> int:
         raise FileExistsError(f"refusing to overwrite non-empty output: {args.output_dir}")
     if args.num_generations < 2:
         raise ValueError("GRPO requires at least two generations")
+    if args.max_grad_norm <= 0:
+        raise ValueError("max-grad-norm must be positive")
+    if not 0.0 <= args.warmup_ratio < 1.0:
+        raise ValueError("warmup-ratio must be in [0, 1)")
     if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
         raise ValueError(f"missing GLM API key environment variable: {args.glm_api_key_env}")
     generation_batch_size = args.batch_size * args.gradient_accumulation_steps
@@ -512,7 +615,7 @@ def main() -> int:
     import torch
     from datasets import Dataset
     from peft import PeftModel
-    from transformers import AutoModelForImageTextToText, AutoTokenizer
+    from transformers import AutoModelForImageTextToText, AutoTokenizer, TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
 
     tokenizer = AutoTokenizer.from_pretrained(str(args.base_model), trust_remote_code=True)
@@ -587,9 +690,10 @@ def main() -> int:
         "selected_actions": dict(selected_counts),
         "selected_ids": [item.row_id for item in selected],
         "adapter_key_coverage": {"loaded": loaded, "total": total},
+        "reward_profile": args.reward_profile,
         "glm_semantic_judge": {
             "enabled": args.glm_semantic_reward,
-            "protocol": "asa_glm_exx_evidence_judge_v2" if args.glm_semantic_reward else None,
+            "protocol": SEMANTIC_JUDGE_PROTOCOL if args.glm_semantic_reward else None,
             "gold_or_reference_visible": False,
         },
     }
@@ -597,16 +701,7 @@ def main() -> int:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
-    reward_funcs = [
-        json_reward,
-        schema_reward,
-        action_reward,
-        claim_citation_reward,
-        reference_fact_reward,
-        duplicate_fact_penalty,
-        premature_answer_penalty,
-    ]
-    reward_weights = [1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5]
+    reward_funcs, reward_weights = build_rule_reward_stack(args.reward_profile)
     if args.glm_semantic_reward:
         from glm_exx_semantic_reward import GlmEvidenceJudge, make_glm_semantic_reward
 
@@ -642,6 +737,9 @@ def main() -> int:
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         generation_batch_size=generation_batch_size,
         learning_rate=args.learning_rate,
+        max_grad_norm=args.max_grad_norm,
+        warmup_ratio=args.warmup_ratio,
+        lr_scheduler_type=args.lr_scheduler_type,
         beta=args.beta,
         num_train_epochs=args.epochs,
         max_steps=args.max_steps,
@@ -667,12 +765,27 @@ def main() -> int:
         mask_truncated_completions=True,
         reward_weights=reward_weights,
     )
+
+    diagnostics_path = args.output_dir / "training_diagnostics.jsonl"
+
+    class TrainingDiagnosticsCallback(TrainerCallback):
+        def on_log(self, _args: Any, state: Any, control: Any, logs: Any = None, **_: Any) -> Any:
+            if not isinstance(logs, Mapping):
+                return control
+            row = build_training_diagnostic(logs, args.max_grad_norm)
+            row.setdefault("step", state.global_step)
+            with diagnostics_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+                handle.flush()
+            return control
+
     trainer = GRPOTrainer(
         model=model,
         args=config,
         train_dataset=dataset,
         reward_funcs=reward_funcs,
         processing_class=tokenizer,
+        callbacks=[TrainingDiagnosticsCallback()],
     )
     trainer.train()
     trainer.save_state()

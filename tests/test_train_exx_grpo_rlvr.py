@@ -130,6 +130,67 @@ def test_premature_answer_is_penalized_but_correct_retrieve_is_not() -> None:
     ) == [0.0, 1.0]
 
 
+def test_semantic_gated_profile_masks_positive_credit_for_invalid_payloads() -> None:
+    valid = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E1"]}],
+    }
+    invalid = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E99"]}],
+    }
+    gated_action = MODULE.protocol_gated(MODULE.action_reward)
+
+    assert MODULE.protocol_penalty(
+        [completion(valid), completion(invalid)], [["E1"], ["E1"]]
+    ) == [0.0, -1.0]
+    assert gated_action(
+        [completion(valid), completion(invalid)],
+        [["E1"], ["E1"]],
+        gold_action=["answer_directly", "answer_directly"],
+    ) == [1.0, 0.0]
+
+
+def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
+    legacy_funcs, legacy_weights = MODULE.build_rule_reward_stack("legacy")
+    gated_funcs, gated_weights = MODULE.build_rule_reward_stack("semantic-gated")
+
+    assert [func.__name__ for func in legacy_funcs] == [
+        "json_reward",
+        "schema_reward",
+        "action_reward",
+        "claim_citation_reward",
+        "reference_fact_reward",
+        "duplicate_fact_penalty",
+        "premature_answer_penalty",
+    ]
+    assert legacy_weights == [1.0, 1.0, 1.5, 1.5, 1.0, 0.5, 0.5]
+    assert [func.__name__ for func in gated_funcs] == [
+        "protocol_penalty",
+        "gated_action_reward",
+        "gated_claim_citation_reward",
+        "gated_reference_fact_reward",
+        "duplicate_fact_penalty",
+        "premature_answer_penalty",
+    ]
+    assert gated_weights == [1.0, 0.75, 1.0, 1.0, 0.75, 1.0]
+
+
+def test_training_diagnostic_reports_pre_clip_bound_and_coefficient() -> None:
+    clipped = MODULE.build_training_diagnostic(
+        {"grad_norm": 4.0, "reward": 2.5, "epoch": 0.1}, max_grad_norm=2.0
+    )
+    untouched = MODULE.build_training_diagnostic({"grad_norm": 0.5}, max_grad_norm=2.0)
+
+    assert clipped["grad_norm_pre_clip"] == 4.0
+    assert clipped["grad_norm_post_clip_bound"] == 2.0
+    assert clipped["grad_clip_coefficient"] == 0.5
+    assert clipped["grad_was_clipped"] is True
+    assert untouched["grad_norm_post_clip_bound"] == 0.5
+    assert untouched["grad_clip_coefficient"] == 1.0
+    assert untouched["grad_was_clipped"] is False
+
+
 class BatchEncodingLike:
     input_ids = [[1, 2, 3, 4]]
 
@@ -228,6 +289,10 @@ def test_glm_semantic_reward_defaults_to_evidence_only_coding_plan() -> None:
 
     assert args.glm_endpoint == "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions"
     assert args.glm_model == "glm-5.3"
+    assert args.reward_profile == "legacy"
+    assert args.max_grad_norm == 1.0
+    assert args.warmup_ratio == 0.0
+    assert args.lr_scheduler_type == "linear"
     assert args.glm_reasoning_effort == "medium"
     assert args.glm_timeout == 180.0
     assert args.glm_max_tokens == 4096
