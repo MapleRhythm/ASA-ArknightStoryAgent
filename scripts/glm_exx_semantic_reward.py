@@ -44,6 +44,31 @@ class TerminalSemanticJudgeError(SemanticJudgeError):
     pass
 
 
+class ContentFilteredSemanticJudgeError(SemanticJudgeError):
+    """The provider rejected this specific judge input on safety grounds."""
+
+
+def is_content_filter_error(detail: str) -> bool:
+    """Recognize BigModel's per-request safety rejection.
+
+    The coding-plan endpoint reports content filtering as HTTP 400 with error
+    code 1301.  That is a property of one evidence group, not a broken judge
+    configuration, so it must not terminate a long RLVR run.
+    """
+    try:
+        payload = json.loads(detail)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict) and str(error.get("code") or "") == "1301":
+            return True
+        if payload.get("contentFilter"):
+            return True
+    lowered = str(detail or "").lower()
+    return '"code":"1301"' in lowered or "contentfilter" in lowered
+
+
 def build_ssl_context(ca_bundle: str | Path | None = None) -> ssl.SSLContext:
     """Build a reproducible HTTPS context even in relocated Python envs.
 
@@ -430,7 +455,12 @@ class GlmEvidenceJudge:
         self.max_attempts = max_attempts
         self.reasoning_effort = reasoning_effort
         self.workers = max(1, workers)
-        self.max_consecutive_failures = max(1, max_consecutive_failures)
+        if max_consecutive_failures < 0:
+            raise ValueError("max_consecutive_failures must be non-negative")
+        # Zero disables the circuit breaker. This is useful for unattended
+        # runs where transient judge failures should stay neutral and
+        # auditable instead of stopping model training.
+        self.max_consecutive_failures = max_consecutive_failures
         self.ca_bundle = str(ca_bundle or "").strip() or None
         self.ssl_context = build_ssl_context(self.ca_bundle)
         self.allow_duplicate_facts = allow_duplicate_facts
@@ -497,6 +527,10 @@ class GlmEvidenceJudge:
                 response_body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            if exc.code == 400 and is_content_filter_error(detail):
+                raise ContentFilteredSemanticJudgeError(
+                    f"http_{exc.code}:content_filter:{detail}"
+                ) from exc
             if exc.code in {400, 401, 402, 403}:
                 raise TerminalSemanticJudgeError(f"http_{exc.code}:{detail}") from exc
             raise SemanticJudgeError(f"http_{exc.code}:{detail}") from exc
@@ -587,6 +621,29 @@ class GlmEvidenceJudge:
                 for (index, _), value in zip(indexed, semantic_scores, strict=True):
                     scores[index] = value
                 return scores
+            except ContentFilteredSemanticJudgeError as exc:
+                # Safety rejection is deterministic for this evidence group.
+                # Retrying wastes quota and aborting loses the entire run.
+                # Keep its semantic component neutral and make the skip fully
+                # observable without persisting the sensitive prompt itself.
+                last_error = f"{type(exc).__name__}:{exc}"
+                self.stats["content_filter"] += 1
+                self._consecutive_failures = 0
+                self._failed_cache_keys.add(cache_key)
+                self._append(
+                    self.failures_path,
+                    {
+                        "cache_key": cache_key,
+                        "protocol": PROTOCOL_VERSION,
+                        "model": self.model,
+                        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                        "rollout_indices": [index for index, _ in indexed],
+                        "failure_kind": "content_filter",
+                        "neutral_reward": True,
+                        "error": last_error[:2000],
+                    },
+                )
+                return scores
             except TerminalSemanticJudgeError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -608,7 +665,10 @@ class GlmEvidenceJudge:
                 "last_response": last_response,
             },
         )
-        if self._consecutive_failures >= self.max_consecutive_failures:
+        if (
+            self.max_consecutive_failures > 0
+            and self._consecutive_failures >= self.max_consecutive_failures
+        ):
             raise SemanticJudgeError(
                 f"GLM judge failed {self._consecutive_failures} consecutive groups; last={last_error}"
             )

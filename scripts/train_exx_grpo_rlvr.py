@@ -691,7 +691,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--glm-max-tokens", type=int, default=4096)
     parser.add_argument("--glm-max-attempts", type=int, default=1)
     parser.add_argument("--glm-workers", type=int, default=1)
-    parser.add_argument("--glm-max-consecutive-failures", type=int, default=3)
+    parser.add_argument(
+        "--glm-max-consecutive-failures",
+        type=int,
+        default=3,
+        help=(
+            "abort after this many consecutive transient judge failures; "
+            "set to 0 to keep failed groups neutral and never trip the circuit breaker"
+        ),
+    )
     parser.add_argument("--glm-ca-bundle", type=Path)
     parser.add_argument("--glm-reward-weight", type=float)
     parser.add_argument("--glm-cache", type=Path)
@@ -704,6 +712,8 @@ def validate_runtime_args(args: argparse.Namespace) -> None:
         raise ValueError("GRPO requires at least two generations")
     if args.max_grad_norm <= 0:
         raise ValueError("max-grad-norm must be positive")
+    if args.glm_max_consecutive_failures < 0:
+        raise ValueError("glm-max-consecutive-failures must be non-negative")
     if not 0.0 <= args.warmup_ratio < 1.0:
         raise ValueError("warmup-ratio must be in [0, 1)")
     if args.reward_profile == "glm-semantic-gated" and not args.glm_semantic_reward:

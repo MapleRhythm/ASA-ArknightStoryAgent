@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import json
 import math
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -322,6 +324,95 @@ def test_gated_reward_keeps_provider_failure_neutral(tmp_path: Path) -> None:
 
     assert reward([payload], [PROMPT]) == [0.0]
     assert (tmp_path / "failures.jsonl").exists()
+
+
+def test_content_filter_is_neutral_auditable_and_does_not_trip_breaker(
+    tmp_path: Path,
+) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=3,
+        max_consecutive_failures=1,
+        strict_json=True,
+    )
+    calls = 0
+
+    def filtered(messages):
+        nonlocal calls
+        calls += 1
+        raise MODULE.ContentFilteredSemanticJudgeError(
+            'http_400:content_filter:{"error":{"code":"1301"}}'
+        )
+
+    judge._request = filtered
+    payload = json.dumps(
+        {"next_action": "abstain", "reason": "证据不足。"}, ensure_ascii=False
+    )
+    reward = MODULE.make_glm_semantic_reward(judge, gate_invalid=True)
+
+    assert reward([payload], [PROMPT]) == [0.0]
+    assert calls == 1
+    assert judge.stats["content_filter"] == 1
+    assert judge._consecutive_failures == 0
+    failure = json.loads((tmp_path / "failures.jsonl").read_text(encoding="utf-8"))
+    assert failure["failure_kind"] == "content_filter"
+    assert failure["neutral_reward"] is True
+
+
+def test_bigmodel_1301_http_400_is_classified_as_content_filter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+    )
+    body = b'{"contentFilter":[{"level":1}],"error":{"code":"1301"}}'
+    error = urllib.error.HTTPError(
+        judge.endpoint, 400, "Bad Request", hdrs=None, fp=io.BytesIO(body)
+    )
+
+    class FailingOpener:
+        def open(self, request, timeout):
+            raise error
+
+    monkeypatch.setattr(MODULE.urllib.request, "build_opener", lambda *args: FailingOpener())
+
+    with pytest.raises(MODULE.ContentFilteredSemanticJudgeError):
+        judge._request([{"role": "user", "content": "test"}])
+
+
+def test_zero_consecutive_failure_limit_never_aborts_transient_failures(
+    tmp_path: Path,
+) -> None:
+    judge = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=1,
+        max_consecutive_failures=0,
+        strict_json=True,
+    )
+    judge._request = lambda messages: (_ for _ in ()).throw(
+        MODULE.SemanticJudgeError("temporary")
+    )
+    payload = json.dumps(
+        {"next_action": "abstain", "reason": "证据不足。"}, ensure_ascii=False
+    )
+
+    for _ in range(4):
+        assert judge.score_group(PROMPT, [payload]) == [0.0]
+
+    assert judge._consecutive_failures == 4
+    assert len((tmp_path / "failures.jsonl").read_text(encoding="utf-8").splitlines()) == 4
 
 
 def test_unknown_evidence_id_is_not_sent_to_judge(tmp_path: Path) -> None:
