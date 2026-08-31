@@ -48,3 +48,44 @@ def test_aligned_rows_rejects_id_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not ID-aligned"):
         MODULE.aligned_rows([("left", left), ("right", right)])
+
+
+def test_paired_bootstrap_ci_is_deterministic_and_contains_mean() -> None:
+    first = MODULE.paired_bootstrap_ci([0.5, -0.25, 0.75], samples=1000, seed=3)
+    second = MODULE.paired_bootstrap_ci([0.5, -0.25, 0.75], samples=1000, seed=3)
+
+    assert first == second
+    assert first["samples"] == 3
+    assert first["ci95_low"] <= first["mean"] <= first["ci95_high"]
+
+
+def test_build_summary_reports_pairwise_and_long_ready_fields() -> None:
+    completed = [
+        {
+            "models": {
+                "old": {
+                    "score": 0.0,
+                    "eligible": True,
+                    "judged": True,
+                    "protocol_adjusted_score": 0.0,
+                    "judgement": None,
+                },
+                "new": {
+                    "score": 0.5,
+                    "eligible": True,
+                    "judged": True,
+                    "protocol_adjusted_score": 0.5,
+                    "judgement": None,
+                },
+            }
+        }
+    ]
+
+    summary = MODULE.build_summary(
+        completed, ["new", "old"], bootstrap_samples=100, seed=7
+    )
+
+    pair = summary["pairwise"]["new_vs_old"]
+    assert pair["semantic_left_wins"] == 1
+    assert pair["semantic_delta"]["mean"] == 0.5
+    assert pair["protocol_adjusted_delta"]["ci95_low"] == 0.5
