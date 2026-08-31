@@ -140,6 +140,11 @@ def test_precision_score_only_credits_fully_entailed_answers() -> None:
     assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == -0.75
     row["facts"][0]["support"] = "contradicted"
     assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == -1.0
+    row["facts"][0]["support"] = "entailed"
+    row["action_appropriateness"] = "inappropriate"
+    assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == -0.75
+    row["action_appropriateness"] = "uncertain"
+    assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == 0.0
 
 
 def test_group_quality_gate_suppresses_least_bad_relative_ranking() -> None:

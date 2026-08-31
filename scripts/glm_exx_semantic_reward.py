@@ -371,6 +371,10 @@ def semantic_score(
             return -1.0
         if "unsupported" in supports or row["critical_unsupported_claims"] > 0:
             return -0.75
+        if row["action_appropriateness"] == "inappropriate":
+            return -0.75
+        if row["action_appropriateness"] == "uncertain":
+            return 0.0
         if "partial" in supports:
             return 0.0
         citation = sum(bool(item["citation_complete"]) for item in facts) / len(facts)
