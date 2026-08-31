@@ -111,6 +111,50 @@ def test_contradiction_caps_semantic_reward() -> None:
     assert MODULE.semantic_score(row, payload) <= -0.5
 
 
+def test_precision_score_only_credits_fully_entailed_answers() -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E1"]}],
+    }
+    row = {
+        "rollout_index": 0,
+        "action_appropriateness": "appropriate",
+        "facts": [
+            {
+                "fact_index": 0,
+                "support": "entailed",
+                "checked_evidence_ids": ["E1"],
+                "citation_complete": True,
+            }
+        ],
+        "coverage": "complete",
+        "critical_unsupported_claims": 0,
+    }
+
+    assert math.isclose(
+        MODULE.semantic_score(row, payload, score_profile="precision-v1"), 1.0
+    )
+    row["facts"][0]["support"] = "partial"
+    assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == 0.0
+    row["facts"][0]["support"] = "unsupported"
+    assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == -0.75
+    row["facts"][0]["support"] = "contradicted"
+    assert MODULE.semantic_score(row, payload, score_profile="precision-v1") == -1.0
+
+
+def test_group_quality_gate_suppresses_least_bad_relative_ranking() -> None:
+    assert MODULE.group_quality_gate(
+        [-0.75, 0.0, -1.0, 0.5],
+        [True, True, False, True],
+        threshold=0.75,
+    ) == [0.0, 0.0, 0.0, 0.0]
+    assert MODULE.group_quality_gate(
+        [-0.75, 0.0, -1.0, 0.9],
+        [True, True, False, True],
+        threshold=0.75,
+    ) == [-0.75, 0.0, -1.0, 0.9]
+
+
 def test_one_unsupported_fact_cannot_be_hidden_by_supported_facts() -> None:
     payload = {
         "next_action": "answer_directly",
@@ -245,6 +289,58 @@ def test_cache_reuses_identical_group_without_api(tmp_path: Path) -> None:
     cached = json.loads((tmp_path / "cache.jsonl").read_text(encoding="utf-8"))
     assert cached["context"]["question"] == "谁批准了申请？"
     assert cached["rollouts"][0]["output"] == payload
+
+
+def test_cache_recomputes_scores_for_precision_profile(tmp_path: Path) -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "阿米娅批准了申请。", "evidence_ids": ["E1"]}],
+    }
+    judgement = {
+        "protocol": MODULE.PROTOCOL_VERSION,
+        "rollouts": [
+            {
+                "rollout_index": 0,
+                "action_appropriateness": "appropriate",
+                "facts": [
+                    {
+                        "fact_index": 0,
+                        "support": "partial",
+                        "checked_evidence_ids": ["E1"],
+                        "citation_complete": True,
+                    }
+                ],
+                "coverage": "complete",
+                "critical_unsupported_claims": 0,
+            }
+        ],
+    }
+    completion = [[{"role": "assistant", "content": json.dumps(payload, ensure_ascii=False)}]]
+    balanced = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=1,
+    )
+    balanced._request = lambda messages: (json.dumps(judgement), {"model": "glm-5.3"})
+    assert balanced.score_group(PROMPT, completion)[0] > 0.0
+
+    precision = MODULE.GlmEvidenceJudge(
+        endpoint="https://example.invalid",
+        api_key="secret",
+        model="glm-5.3",
+        cache_path=tmp_path / "cache.jsonl",
+        failures_path=tmp_path / "failures.jsonl",
+        max_attempts=1,
+        score_profile="precision-v1",
+    )
+    precision._request = lambda messages: (_ for _ in ()).throw(
+        AssertionError("cached judgement should be reused")
+    )
+
+    assert precision.score_group(PROMPT, completion) == [0.0]
 
 
 def test_invalid_rollout_skips_teacher_call(tmp_path: Path) -> None:

@@ -28,6 +28,7 @@ from typing import Any
 
 
 PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v3"
+SCORE_PROFILES = {"balanced-v3", "precision-v1"}
 SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contradicted": -1.0}
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
 COVERAGE_VALUES = {"complete": 1.0, "partial": 0.25, "none": 0.0, "not_applicable": 0.0}
@@ -344,7 +345,14 @@ def validate_judgement(
     return {"protocol": PROTOCOL_VERSION, "rollouts": [actual[index] for index in sorted(actual)]}
 
 
-def semantic_score(row: dict[str, Any], payload: dict[str, Any]) -> float:
+def semantic_score(
+    row: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    score_profile: str = "balanced-v3",
+) -> float:
+    if score_profile not in SCORE_PROFILES:
+        raise ValueError(f"unknown semantic score profile: {score_profile}")
     action_score = APPROPRIATENESS_VALUES[row["action_appropriateness"]]
     if payload.get("next_action") != "answer_directly":
         return action_score
@@ -352,6 +360,24 @@ def semantic_score(row: dict[str, Any], payload: dict[str, Any]) -> float:
     if not facts:
         return -1.0
     support_scores = [SUPPORT_VALUES[item["support"]] for item in facts]
+    if score_profile == "precision-v1":
+        supports = [item["support"] for item in facts]
+        # GRPO optimizes relative rank within a rollout group.  A smooth
+        # average score lets an answer with broad, only partially supported
+        # claims become the least-bad candidate and receive positive
+        # advantage.  Precision mode reserves positive semantic credit for
+        # answers whose every fact is fully entailed.
+        if "contradicted" in supports:
+            return -1.0
+        if "unsupported" in supports or row["critical_unsupported_claims"] > 0:
+            return -0.75
+        if "partial" in supports:
+            return 0.0
+        citation = sum(bool(item["citation_complete"]) for item in facts) / len(facts)
+        coverage = COVERAGE_VALUES[row["coverage"]]
+        score = 0.70 + 0.10 * citation + 0.10 * coverage + 0.10 * action_score
+        return max(-1.0, min(1.0, score))
+
     mean_entailment = sum(support_scores) / len(support_scores)
     worst_entailment = min(support_scores)
     citation = sum(bool(item["citation_complete"]) for item in facts) / len(facts)
@@ -442,6 +468,7 @@ class GlmEvidenceJudge:
         ca_bundle: str | Path | None = None,
         allow_duplicate_facts: bool = False,
         strict_json: bool = False,
+        score_profile: str = "balanced-v3",
     ) -> None:
         if not api_key:
             raise ValueError("missing GLM API key")
@@ -465,6 +492,9 @@ class GlmEvidenceJudge:
         self.ssl_context = build_ssl_context(self.ca_bundle)
         self.allow_duplicate_facts = allow_duplicate_facts
         self.strict_json = strict_json
+        if score_profile not in SCORE_PROFILES:
+            raise ValueError(f"unknown semantic score profile: {score_profile}")
+        self.score_profile = score_profile
         self._lock = threading.Lock()
         self._cache = self._load_cache()
         self._consecutive_failures = 0
@@ -567,7 +597,21 @@ class GlmEvidenceJudge:
         cached = self._cache.get(cache_key)
         if cached is not None:
             self.stats["cache_hit"] += 1
-            cached_scores = cached["scores"]
+            cached_judgement = cached.get("judgement")
+            if isinstance(cached_judgement, dict):
+                judgement = validate_judgement(cached_judgement, indexed)
+                cached_scores = [
+                    semantic_score(
+                        row,
+                        payload,
+                        score_profile=self.score_profile,
+                    )
+                    for row, (_, payload) in zip(
+                        judgement["rollouts"], indexed, strict=True
+                    )
+                ]
+            else:
+                cached_scores = cached["scores"]
             for (index, _), value in zip(indexed, cached_scores, strict=True):
                 scores[index] = float(value)
             return scores
@@ -592,7 +636,11 @@ class GlmEvidenceJudge:
                     raise SemanticJudgeError("judge_response_invalid_json")
                 judgement = validate_judgement(parsed, indexed)
                 semantic_scores = [
-                    semantic_score(row, payload)
+                    semantic_score(
+                        row,
+                        payload,
+                        score_profile=self.score_profile,
+                    )
                     for row, (_, payload) in zip(judgement["rollouts"], indexed, strict=True)
                 ]
                 record = {
@@ -600,6 +648,7 @@ class GlmEvidenceJudge:
                     "protocol": PROTOCOL_VERSION,
                     "model": self.model,
                     "reasoning_effort": self.reasoning_effort,
+                    "score_profile": self.score_profile,
                     "allow_duplicate_facts": self.allow_duplicate_facts,
                     "created_at_utc": datetime.now(timezone.utc).isoformat(),
                     "context": context,
@@ -767,7 +816,26 @@ class GlmEvidenceJudge:
         return [scores if scores is not None else [] for scores in result]
 
 
-def make_glm_semantic_reward(judge: GlmEvidenceJudge, *, gate_invalid: bool = False):
+def group_quality_gate(
+    scores: Sequence[float],
+    eligible: Sequence[bool],
+    *,
+    threshold: float,
+) -> list[float]:
+    """Suppress relative semantic learning when no rollout is good enough."""
+    if len(scores) != len(eligible):
+        raise ValueError("semantic score/eligibility length mismatch")
+    if any(is_eligible and float(score) >= threshold for score, is_eligible in zip(scores, eligible)):
+        return [float(score) for score in scores]
+    return [0.0] * len(scores)
+
+
+def make_glm_semantic_reward(
+    judge: GlmEvidenceJudge,
+    *,
+    gate_invalid: bool = False,
+    group_quality_threshold: float | None = None,
+):
     def glm_semantic_reward(
         completions: Sequence[Any], judge_context: Sequence[str], **_: Any
     ) -> list[float]:
@@ -777,22 +845,26 @@ def make_glm_semantic_reward(judge: GlmEvidenceJudge, *, gate_invalid: bool = Fa
         grouped: dict[str, list[int]] = defaultdict(list)
         for index, context in enumerate(judge_context):
             grouped[str(context)].append(index)
-        eligible = [False] * len(completions)
-        failed = [False] * len(completions)
+        result = [0.0] * len(completions)
         for context, indices in grouped.items():
             values = [completions[index] for index in indices]
             group_eligible, group_failed = judge.group_status(context, values)
-            for index, value in zip(indices, group_eligible, strict=True):
-                eligible[index] = value
-                failed[index] = group_failed
+            group_scores = [scores[index] for index in indices]
+            if group_failed:
+                adjusted = [0.0] * len(indices)
+            else:
+                adjusted = semantic_reward_gate(group_scores, group_eligible)
+                if group_quality_threshold is not None:
+                    adjusted = group_quality_gate(
+                        adjusted,
+                        group_eligible,
+                        threshold=group_quality_threshold,
+                    )
+            for index, value in zip(indices, adjusted, strict=True):
+                result[index] = value
         # A provider outage gives every rollout a neutral semantic component;
         # deterministic protocol penalties still apply independently.
-        return [
-            0.0 if did_fail else value
-            for value, did_fail in zip(
-                semantic_reward_gate(scores, eligible), failed, strict=True
-            )
-        ]
+        return result
 
     glm_semantic_reward.__name__ = "glm_semantic_reward"
     return glm_semantic_reward

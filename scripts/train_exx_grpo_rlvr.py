@@ -31,6 +31,7 @@ REWARD_PROFILES = (
     "semantic-gated",
     "protocol-gated-rules",
     "glm-semantic-gated",
+    "glm-precision-gated",
 )
 SEMANTIC_JUDGE_PROTOCOL = "asa_glm_exx_evidence_judge_v3"
 GLM_SEMANTIC_DEFAULT_WEIGHT = 3.0
@@ -469,7 +470,7 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
             ],
             [1.0, 0.75, 1.0, 1.0, 0.75, 1.0],
         )
-    if profile == "glm-semantic-gated":
+    if profile in {"glm-semantic-gated", "glm-precision-gated"}:
         return (
             [
                 protocol_penalty,
@@ -716,24 +717,24 @@ def validate_runtime_args(args: argparse.Namespace) -> None:
         raise ValueError("glm-max-consecutive-failures must be non-negative")
     if not 0.0 <= args.warmup_ratio < 1.0:
         raise ValueError("warmup-ratio must be in [0, 1)")
-    if args.reward_profile == "glm-semantic-gated" and not args.glm_semantic_reward:
-        raise ValueError("glm-semantic-gated requires --glm-semantic-reward")
+    if args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"} and not args.glm_semantic_reward:
+        raise ValueError(f"{args.reward_profile} requires --glm-semantic-reward")
     if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
         raise ValueError(f"missing GLM API key environment variable: {args.glm_api_key_env}")
     if args.glm_reward_weight is None:
         args.glm_reward_weight = (
             GLM_SEMANTIC_DEFAULT_WEIGHT
-            if args.reward_profile == "glm-semantic-gated"
+            if args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"}
             else 1.0
         )
     if args.glm_reward_weight <= 0:
         raise ValueError("glm-reward-weight must be positive")
     if (
-        args.reward_profile == "glm-semantic-gated"
+        args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"}
         and args.glm_reward_weight < GLM_SEMANTIC_MIN_WEIGHT
     ):
         raise ValueError(
-            f"glm-semantic-gated requires --glm-reward-weight >= {GLM_SEMANTIC_MIN_WEIGHT}"
+            f"{args.reward_profile} requires --glm-reward-weight >= {GLM_SEMANTIC_MIN_WEIGHT}"
         )
     generation_batch_size = args.batch_size * args.gradient_accumulation_steps
     if generation_batch_size % args.num_generations:
@@ -849,6 +850,14 @@ def main() -> int:
             "enabled": args.glm_semantic_reward,
             "protocol": SEMANTIC_JUDGE_PROTOCOL if args.glm_semantic_reward else None,
             "gold_or_reference_visible": False,
+            "score_profile": (
+                "precision-v1"
+                if args.reward_profile == "glm-precision-gated"
+                else "balanced-v3"
+            ),
+            "group_quality_threshold": (
+                0.75 if args.reward_profile == "glm-precision-gated" else None
+            ),
         },
     }
     (args.output_dir / "run_manifest.json").write_text(
@@ -880,12 +889,23 @@ def main() -> int:
             workers=args.glm_workers,
             max_consecutive_failures=args.glm_max_consecutive_failures,
             ca_bundle=args.glm_ca_bundle,
-            strict_json=args.reward_profile == "glm-semantic-gated",
+            strict_json=args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"},
+            score_profile=(
+                "precision-v1"
+                if args.reward_profile == "glm-precision-gated"
+                else "balanced-v3"
+            ),
         )
         reward_funcs.append(
             make_glm_semantic_reward(
                 judge,
-                gate_invalid=args.reward_profile == "glm-semantic-gated",
+                gate_invalid=args.reward_profile in {
+                    "glm-semantic-gated",
+                    "glm-precision-gated",
+                },
+                group_quality_threshold=(
+                    0.75 if args.reward_profile == "glm-precision-gated" else None
+                ),
             )
         )
         reward_weights.append(args.glm_reward_weight)

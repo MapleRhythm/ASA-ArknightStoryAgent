@@ -180,6 +180,9 @@ def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
     gated_funcs, gated_weights = MODULE.build_rule_reward_stack("semantic-gated")
     renamed_funcs, renamed_weights = MODULE.build_rule_reward_stack("protocol-gated-rules")
     glm_funcs, glm_weights = MODULE.build_rule_reward_stack("glm-semantic-gated")
+    precision_funcs, precision_weights = MODULE.build_rule_reward_stack(
+        "glm-precision-gated"
+    )
 
     assert [func.__name__ for func in legacy_funcs] == [
         "json_reward",
@@ -209,6 +212,10 @@ def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
         "gated_near_duplicate_fact_penalty",
     ]
     assert glm_weights == [2.0, 1.5]
+    assert [func.__name__ for func in precision_funcs] == [
+        func.__name__ for func in glm_funcs
+    ]
+    assert precision_weights == glm_weights
     assert "action_reward" not in {func.__name__ for func in glm_funcs}
     assert "reference_fact_reward" not in {func.__name__ for func in glm_funcs}
 
