@@ -32,6 +32,7 @@ REWARD_PROFILES = (
     "protocol-gated-rules",
     "glm-semantic-gated",
     "glm-precision-gated",
+    "glm-precision-structural",
 )
 SEMANTIC_JUDGE_PROTOCOL = "asa_glm_exx_evidence_judge_v3"
 GLM_SEMANTIC_DEFAULT_WEIGHT = 3.0
@@ -293,6 +294,51 @@ def protocol_penalty(
     ]
 
 
+def protocol_violation_penalty(
+    completions: Sequence[Any], visible_ids: Sequence[Sequence[str]], **_: Any
+) -> list[float]:
+    """Give malformed outputs a graded training signal.
+
+    A binary protocol penalty treats a truncated JSON object, one unknown E-ID,
+    and eight duplicated/unknown facts as the same failure.  That makes it
+    difficult for GRPO to learn which local error to remove.  Keep valid
+    outputs at zero, but make the penalty grow with the number of structural
+    violations.  Invalid JSON receives a fixed stronger penalty because no
+    field-level diagnosis is possible.
+    """
+    penalties: list[float] = []
+    for item, visible in zip(completions, visible_ids, strict=True):
+        problems = validate_payload(parse_json_object(completion_text(item)), set(visible))
+        if not problems:
+            penalties.append(0.0)
+        elif "invalid_json" in problems:
+            penalties.append(-1.5)
+        else:
+            penalties.append(-min(1.5, 0.25 * len(problems)))
+    return penalties
+
+
+def concise_fact_penalty(completions: Sequence[Any], **_: Any) -> list[float]:
+    """Discourage padding an otherwise valid answer with unnecessary facts.
+
+    The protocol permits up to eight facts for genuinely multi-part questions,
+    but the canonical prompt says the usual answer should be 1--4 facts.  This
+    soft penalty only applies to valid answer payloads and remains weaker than
+    the evidence-only semantic reward, so complete multi-fact answers can still
+    win when GLM judges their coverage as complete.
+    """
+    penalties: list[float] = []
+    for item in completions:
+        payload = parse_json_object(completion_text(item))
+        if not payload or payload.get("next_action") != "answer_directly":
+            penalties.append(0.0)
+            continue
+        facts = payload.get("supported_facts")
+        count = len(facts) if isinstance(facts, list) else 0
+        penalties.append(-min(1.0, max(0, count - 4) / 4.0))
+    return penalties
+
+
 def protocol_gated(reward_func: Any) -> Any:
     """Return a reward function whose positive credit requires valid schema."""
 
@@ -480,6 +526,18 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
             # semantic reward.  Near-duplicate padding is a material but
             # secondary penalty; evidence entailment remains the main signal.
             [2.0, 1.5],
+        )
+    if profile == "glm-precision-structural":
+        return (
+            [
+                protocol_penalty,
+                protocol_violation_penalty,
+                protocol_gated(near_duplicate_fact_penalty),
+                protocol_gated(concise_fact_penalty),
+            ],
+            # Keep the evidence-only GLM judge dominant while adding graded
+            # structural feedback for malformed JSON, bad E-IDs, and padding.
+            [1.5, 1.5, 1.5, 0.75],
         )
     raise ValueError(f"unknown reward profile: {profile}")
 
@@ -717,20 +775,26 @@ def validate_runtime_args(args: argparse.Namespace) -> None:
         raise ValueError("glm-max-consecutive-failures must be non-negative")
     if not 0.0 <= args.warmup_ratio < 1.0:
         raise ValueError("warmup-ratio must be in [0, 1)")
-    if args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"} and not args.glm_semantic_reward:
+    if args.reward_profile in {
+        "glm-semantic-gated",
+        "glm-precision-gated",
+        "glm-precision-structural",
+    } and not args.glm_semantic_reward:
         raise ValueError(f"{args.reward_profile} requires --glm-semantic-reward")
     if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
         raise ValueError(f"missing GLM API key environment variable: {args.glm_api_key_env}")
     if args.glm_reward_weight is None:
         args.glm_reward_weight = (
             GLM_SEMANTIC_DEFAULT_WEIGHT
-            if args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"}
+            if args.reward_profile
+            in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"}
             else 1.0
         )
     if args.glm_reward_weight <= 0:
         raise ValueError("glm-reward-weight must be positive")
     if (
-        args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"}
+        args.reward_profile
+        in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"}
         and args.glm_reward_weight < GLM_SEMANTIC_MIN_WEIGHT
     ):
         raise ValueError(
@@ -852,11 +916,15 @@ def main() -> int:
             "gold_or_reference_visible": False,
             "score_profile": (
                 "precision-v1"
-                if args.reward_profile == "glm-precision-gated"
+                if args.reward_profile
+                in {"glm-precision-gated", "glm-precision-structural"}
                 else "balanced-v3"
             ),
             "group_quality_threshold": (
-                0.75 if args.reward_profile == "glm-precision-gated" else None
+                0.75
+                if args.reward_profile
+                in {"glm-precision-gated", "glm-precision-structural"}
+                else None
             ),
         },
     }
@@ -889,22 +957,29 @@ def main() -> int:
             workers=args.glm_workers,
             max_consecutive_failures=args.glm_max_consecutive_failures,
             ca_bundle=args.glm_ca_bundle,
-            strict_json=args.reward_profile in {"glm-semantic-gated", "glm-precision-gated"},
+            strict_json=args.reward_profile
+            in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"},
             score_profile=(
                 "precision-v1"
-                if args.reward_profile == "glm-precision-gated"
+                if args.reward_profile
+                in {"glm-precision-gated", "glm-precision-structural"}
                 else "balanced-v3"
             ),
         )
         reward_funcs.append(
             make_glm_semantic_reward(
                 judge,
-                gate_invalid=args.reward_profile in {
+                gate_invalid=args.reward_profile
+                in {
                     "glm-semantic-gated",
                     "glm-precision-gated",
+                    "glm-precision-structural",
                 },
                 group_quality_threshold=(
-                    0.75 if args.reward_profile == "glm-precision-gated" else None
+                    0.75
+                    if args.reward_profile
+                    in {"glm-precision-gated", "glm-precision-structural"}
+                    else None
                 ),
             )
         )

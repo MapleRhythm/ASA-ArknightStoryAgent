@@ -106,6 +106,52 @@ def test_duplicate_fact_penalty_rejects_reward_padding() -> None:
     assert "fact_2_duplicate" in MODULE.validate_payload(padded, {"E1"})
 
 
+def test_protocol_violation_penalty_is_graded() -> None:
+    valid = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E1"]}],
+    }
+    unknown_id = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E9"]}],
+    }
+    malformed = '{"next_action":"answer_directly","supported_facts":['
+    values = MODULE.protocol_violation_penalty(
+        [completion(valid), completion(unknown_id), malformed],
+        [["E1"], ["E1"], ["E1"]],
+    )
+    assert values[0] == 0.0
+    assert values[1] < 0.0
+    assert values[2] == -1.5
+
+
+def test_concise_fact_penalty_only_applies_to_long_valid_answers() -> None:
+    short = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E1"]}],
+    }
+    long = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": f"事实{i}", "evidence_ids": ["E1"]} for i in range(1, 7)
+        ],
+    }
+    retrieve = {
+        "next_action": "retrieve_more",
+        "follow_up_hypothesis": {
+            "question": "还需要什么？",
+            "query_type": "fact",
+            "entities": [],
+            "keywords": [],
+            "expected_answer_type": "原因",
+        },
+    }
+    values = MODULE.concise_fact_penalty(
+        [completion(short), completion(long), completion(retrieve)]
+    )
+    assert values == [0.0, -0.5, 0.0]
+
+
 def test_near_duplicate_penalty_catches_reworded_reward_padding() -> None:
     unique = {
         "next_action": "answer_directly",
@@ -218,6 +264,16 @@ def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
     assert precision_weights == glm_weights
     assert "action_reward" not in {func.__name__ for func in glm_funcs}
     assert "reference_fact_reward" not in {func.__name__ for func in glm_funcs}
+    structural_funcs, structural_weights = MODULE.build_rule_reward_stack(
+        "glm-precision-structural"
+    )
+    assert [func.__name__ for func in structural_funcs] == [
+        "protocol_penalty",
+        "protocol_violation_penalty",
+        "gated_near_duplicate_fact_penalty",
+        "gated_concise_fact_penalty",
+    ]
+    assert structural_weights == [1.5, 1.5, 1.5, 0.75]
 
 
 def test_training_diagnostic_reports_pre_clip_bound_and_coefficient() -> None:
