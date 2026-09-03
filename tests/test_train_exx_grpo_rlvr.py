@@ -152,6 +152,29 @@ def test_concise_fact_penalty_only_applies_to_long_valid_answers() -> None:
     assert values == [0.0, -0.5, 0.0]
 
 
+def test_structural_padding_penalties_are_not_schema_gated() -> None:
+    padded = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+            {"fact": "同一个事实。", "evidence_ids": ["E1"]},
+        ],
+    }
+
+    # Duplicate facts make the payload schema-invalid, but v2 must retain
+    # targeted anti-padding feedback instead of zeroing it through
+    # protocol_gated().
+    assert MODULE.validate_payload(padded, {"E1"})
+    assert MODULE.near_duplicate_fact_penalty([completion(padded)])[0] < 0.0
+    assert MODULE.concise_fact_penalty([completion(padded)])[0] == -1.0
+
+
 def test_near_duplicate_penalty_catches_reworded_reward_padding() -> None:
     unique = {
         "next_action": "answer_directly",
@@ -274,6 +297,16 @@ def test_reward_profiles_preserve_legacy_and_name_gated_components() -> None:
         "gated_concise_fact_penalty",
     ]
     assert structural_weights == [1.5, 1.5, 1.5, 0.75]
+    structural_v2_funcs, structural_v2_weights = MODULE.build_rule_reward_stack(
+        "glm-precision-structural-v2"
+    )
+    assert [func.__name__ for func in structural_v2_funcs] == [
+        "protocol_penalty",
+        "protocol_violation_penalty",
+        "near_duplicate_fact_penalty",
+        "concise_fact_penalty",
+    ]
+    assert structural_v2_weights == [1.5, 1.5, 2.0, 1.0]
 
 
 def test_training_diagnostic_reports_pre_clip_bound_and_coefficient() -> None:

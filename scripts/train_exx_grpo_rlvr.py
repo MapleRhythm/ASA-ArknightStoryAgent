@@ -33,6 +33,7 @@ REWARD_PROFILES = (
     "glm-semantic-gated",
     "glm-precision-gated",
     "glm-precision-structural",
+    "glm-precision-structural-v2",
 )
 SEMANTIC_JUDGE_PROTOCOL = "asa_glm_exx_evidence_judge_v3"
 GLM_SEMANTIC_DEFAULT_WEIGHT = 3.0
@@ -319,13 +320,15 @@ def protocol_violation_penalty(
 
 
 def concise_fact_penalty(completions: Sequence[Any], **_: Any) -> list[float]:
-    """Discourage padding an otherwise valid answer with unnecessary facts.
+    """Discourage padding an answer with unnecessary facts.
 
     The protocol permits up to eight facts for genuinely multi-part questions,
     but the canonical prompt says the usual answer should be 1--4 facts.  This
-    soft penalty only applies to valid answer payloads and remains weaker than
-    the evidence-only semantic reward, so complete multi-fact answers can still
-    win when GLM judges their coverage as complete.
+    soft penalty also applies to structurally invalid answer payloads when their
+    fact list is parseable.  This is intentional: a malformed answer must not
+    bypass the anti-padding signal by first introducing a duplicate or invalid
+    E-ID.  It remains weaker than the evidence-only semantic reward, so complete
+    multi-fact answers can still win when GLM judges their coverage as complete.
     """
     penalties: list[float] = []
     for item in completions:
@@ -538,6 +541,20 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
             # Keep the evidence-only GLM judge dominant while adding graded
             # structural feedback for malformed JSON, bad E-IDs, and padding.
             [1.5, 1.5, 1.5, 0.75],
+        )
+    if profile == "glm-precision-structural-v2":
+        # Unlike the historical structural profile, anti-padding rewards are
+        # deliberately *not* schema-gated.  Exact duplicate facts make a
+        # payload invalid, so gating these components would zero the only
+        # targeted feedback for the failure mode we want to remove.
+        return (
+            [
+                protocol_penalty,
+                protocol_violation_penalty,
+                near_duplicate_fact_penalty,
+                concise_fact_penalty,
+            ],
+            [1.5, 1.5, 2.0, 1.0],
         )
     raise ValueError(f"unknown reward profile: {profile}")
 
@@ -779,6 +796,7 @@ def validate_runtime_args(args: argparse.Namespace) -> None:
         "glm-semantic-gated",
         "glm-precision-gated",
         "glm-precision-structural",
+        "glm-precision-structural-v2",
     } and not args.glm_semantic_reward:
         raise ValueError(f"{args.reward_profile} requires --glm-semantic-reward")
     if args.glm_semantic_reward and not os.environ.get(args.glm_api_key_env, "").strip():
@@ -787,14 +805,24 @@ def validate_runtime_args(args: argparse.Namespace) -> None:
         args.glm_reward_weight = (
             GLM_SEMANTIC_DEFAULT_WEIGHT
             if args.reward_profile
-            in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"}
+            in {
+                "glm-semantic-gated",
+                "glm-precision-gated",
+                "glm-precision-structural",
+                "glm-precision-structural-v2",
+            }
             else 1.0
         )
     if args.glm_reward_weight <= 0:
         raise ValueError("glm-reward-weight must be positive")
     if (
         args.reward_profile
-        in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"}
+        in {
+            "glm-semantic-gated",
+            "glm-precision-gated",
+            "glm-precision-structural",
+            "glm-precision-structural-v2",
+        }
         and args.glm_reward_weight < GLM_SEMANTIC_MIN_WEIGHT
     ):
         raise ValueError(
@@ -917,13 +945,21 @@ def main() -> int:
             "score_profile": (
                 "precision-v1"
                 if args.reward_profile
-                in {"glm-precision-gated", "glm-precision-structural"}
+                in {
+                    "glm-precision-gated",
+                    "glm-precision-structural",
+                    "glm-precision-structural-v2",
+                }
                 else "balanced-v3"
             ),
             "group_quality_threshold": (
                 0.75
                 if args.reward_profile
-                in {"glm-precision-gated", "glm-precision-structural"}
+                in {
+                    "glm-precision-gated",
+                    "glm-precision-structural",
+                    "glm-precision-structural-v2",
+                }
                 else None
             ),
         },
@@ -958,11 +994,20 @@ def main() -> int:
             max_consecutive_failures=args.glm_max_consecutive_failures,
             ca_bundle=args.glm_ca_bundle,
             strict_json=args.reward_profile
-            in {"glm-semantic-gated", "glm-precision-gated", "glm-precision-structural"},
+            in {
+                "glm-semantic-gated",
+                "glm-precision-gated",
+                "glm-precision-structural",
+                "glm-precision-structural-v2",
+            },
             score_profile=(
                 "precision-v1"
                 if args.reward_profile
-                in {"glm-precision-gated", "glm-precision-structural"}
+                in {
+                    "glm-precision-gated",
+                    "glm-precision-structural",
+                    "glm-precision-structural-v2",
+                }
                 else "balanced-v3"
             ),
         )
@@ -974,11 +1019,16 @@ def main() -> int:
                     "glm-semantic-gated",
                     "glm-precision-gated",
                     "glm-precision-structural",
+                    "glm-precision-structural-v2",
                 },
                 group_quality_threshold=(
                     0.75
                     if args.reward_profile
-                    in {"glm-precision-gated", "glm-precision-structural"}
+                    in {
+                        "glm-precision-gated",
+                        "glm-precision-structural",
+                        "glm-precision-structural-v2",
+                    }
                     else None
                 ),
             )
