@@ -1,0 +1,49 @@
+model_name_or_path: /home/zhb/ASA-ArknightStoryAgent/model/qwen3.5-4b
+adapter_name_or_path: /home/zhb/ASA-ArknightStoryAgent/model/lora/teacher_scored_kto_mix_v1_from_soda_lora_qwen35_4b_lr8e7_beta001_epoch2
+trust_remote_code: true
+enable_liger_kernel: true
+
+stage: sft
+do_train: true
+do_eval: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+dataset_dir: /mnt/wwn-0x5000cca295f3594f/zhb_asa/rank_v8_coverage/data/exx_grounding_v3_sft_minimal559_glm53_20260903
+dataset: exx_grounding_v3_sft_minimal_train
+eval_dataset: exx_grounding_v3_sft_minimal_val
+template: qwen3_nothink
+cutoff_len: 10000
+max_samples: 256
+overwrite_cache: true
+preprocessing_num_workers: 4
+dataloader_num_workers: 1
+
+output_dir: /mnt/wwn-0x5000cca295f3594f/zhb_asa/rank_v8_coverage/models/exx_grounding_v3_sft_minimal_glm53_smoke256_a100_20260903
+run_name: exx_grounding_v3_sft_minimal_glm53_smoke256_a100_20260903
+logging_steps: 4
+save_strategy: 'no'
+plot_loss: true
+overwrite_output_dir: false
+report_to: none
+
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 3.0e-6
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+max_grad_norm: 1.0
+gradient_checkpointing: true
+bf16: true
+fp16: false
+ddp_timeout: 180000000
+
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 64
+predict_with_generate: false
+packing: false
