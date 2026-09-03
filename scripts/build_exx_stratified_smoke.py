@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,34 @@ def key(row: dict[str, Any]) -> tuple[str, str]:
 
 def stable_order(row: dict[str, Any]) -> str:
     return hashlib.sha256(str(row.get("id") or "").encode()).hexdigest()
+
+
+def token_count(encoded: Any) -> int:
+    """Return token count across Transformers return formats."""
+    if isinstance(encoded, Mapping):
+        input_ids = encoded["input_ids"]
+    elif hasattr(encoded, "input_ids"):
+        input_ids = encoded.input_ids
+    else:
+        input_ids = encoded
+    shape = getattr(input_ids, "shape", None)
+    if shape is not None:
+        if len(shape) == 0:
+            return 1
+        if len(shape) > 1:
+            if int(shape[0]) != 1:
+                raise ValueError("expected one tokenized prompt")
+            return int(shape[-1])
+        return int(shape[0])
+    if isinstance(input_ids, Sequence) and not isinstance(input_ids, (str, bytes)):
+        if input_ids and isinstance(input_ids[0], Sequence) and not isinstance(
+            input_ids[0], (str, bytes)
+        ):
+            if len(input_ids) != 1:
+                raise ValueError("expected one tokenized prompt")
+            input_ids = input_ids[0]
+        return len(input_ids)
+    raise TypeError(f"unsupported tokenized output: {type(input_ids)!r}")
 
 
 def main() -> int:
@@ -50,16 +79,14 @@ def main() -> int:
             {"role": "user", "content": str(row["conversations"][0].get("value") or "")},
             {"role": "assistant", "content": str(row["conversations"][-1].get("value") or "")},
         ]
-        token_count = len(
-            tokenizer.apply_chat_template(
-                messages, tokenize=True, enable_thinking=False
-            )
+        token_count_value = token_count(
+            tokenizer.apply_chat_template(messages, tokenize=True, enable_thinking=False)
         )
-        if token_count <= args.max_tokens:
+        if token_count_value <= args.max_tokens:
             item = dict(row)
-            item["_token_count"] = token_count
+            item["_token_count"] = token_count_value
             eligible.append(item)
-            lengths[str(row.get("id"))] = token_count
+            lengths[str(row.get("id"))] = token_count_value
 
     groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in eligible:
