@@ -79,3 +79,9 @@ def test_schema_strictly_validates_retrieve_and_abstain_payloads() -> None:
 
     assert "follow_up_schema" in MODULE.validate_payload(incomplete_retrieve, {"E1"})
     assert "abstain_reason" in MODULE.validate_payload(empty_abstain, {"E1"})
+
+
+def test_generation_was_truncated_accepts_both_generator_markers() -> None:
+    assert MODULE.generation_was_truncated({"hit_max_new_tokens": True})
+    assert MODULE.generation_was_truncated({"finish_reason": "length"})
+    assert not MODULE.generation_was_truncated({"finish_reason": "stop"})

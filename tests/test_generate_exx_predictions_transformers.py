@@ -24,3 +24,30 @@ def test_chat_messages_preserves_system_and_full_user_prompt() -> None:
         {"role": "system", "content": "只输出 JSON。"},
         {"role": "user", "content": "问题\n[E1]\n完整证据"},
     ]
+
+
+def test_generation_hit_token_limit_distinguishes_eos_from_length_cutoff() -> None:
+    class Scalar:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def item(self) -> int:
+            return self.value
+
+    class Completion:
+        def __init__(self, values: list[int]) -> None:
+            self.values = values
+            self.shape = (len(values),)
+
+        def __getitem__(self, index: int) -> Scalar:
+            return Scalar(self.values[index])
+
+    assert MODULE.generation_hit_token_limit(
+        Completion([10, 11, 12]), max_new_tokens=3, eos_token_id=99
+    )
+    assert not MODULE.generation_hit_token_limit(
+        Completion([10, 11, 99]), max_new_tokens=3, eos_token_id=99
+    )
+    assert not MODULE.generation_hit_token_limit(
+        Completion([10, 11]), max_new_tokens=3, eos_token_id=99
+    )

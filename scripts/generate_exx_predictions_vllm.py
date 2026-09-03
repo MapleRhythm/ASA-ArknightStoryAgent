@@ -55,7 +55,7 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=12000)
-    parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--max-tokens", type=int, default=768)
     parser.add_argument("--max-num-batched-tokens", type=int, default=32768)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.88)
     parser.add_argument("--enforce-eager", action="store_true")
@@ -165,8 +165,12 @@ def main() -> int:
             lora_request=LoRARequest(name, adapter_id, str(path)),
         )
         predictions = []
+        truncated_rows = 0
         for row, prompt, output in zip(rows, prompts, outputs, strict=True):
             text = output.outputs[0].text if output.outputs else ""
+            finish_reason = output.outputs[0].finish_reason if output.outputs else "empty"
+            hit_max_tokens = finish_reason == "length"
+            truncated_rows += int(hit_max_tokens)
             predictions.append(
                 {
                     "id": row.get("id"),
@@ -183,7 +187,8 @@ def main() -> int:
                     "generated_token_count": len(output.outputs[0].token_ids)
                     if output.outputs
                     else 0,
-                    "finish_reason": output.outputs[0].finish_reason if output.outputs else "empty",
+                    "finish_reason": finish_reason,
+                    "hit_max_new_tokens": hit_max_tokens,
                 }
             )
         output_path = args.output_dir / f"{name}.predictions.json"
@@ -194,6 +199,7 @@ def main() -> int:
             "seconds": time.monotonic() - adapter_started,
             "output": str(output_path),
             "output_sha256": sha256_file(output_path),
+            "truncated_rows": truncated_rows,
         }
         print(json.dumps({"completed": name, **timings["adapters"][name]}, ensure_ascii=False))
 

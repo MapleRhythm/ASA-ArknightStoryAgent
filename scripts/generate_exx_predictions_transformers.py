@@ -29,13 +29,27 @@ def chat_messages(row: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def generation_hit_token_limit(
+    completion_ids: Any, *, max_new_tokens: int, eos_token_id: int | list[int] | None
+) -> bool:
+    generated = int(completion_ids.shape[-1])
+    if generated < max_new_tokens or generated == 0:
+        return False
+    eos_ids = (
+        set(eos_token_id)
+        if isinstance(eos_token_id, list)
+        else ({eos_token_id} if eos_token_id is not None else set())
+    )
+    return int(completion_ids[-1].item()) not in eos_ids
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gold", type=Path, required=True)
     parser.add_argument("--base-model", type=Path, required=True)
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--max-new-tokens", type=int, default=768)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
@@ -63,6 +77,7 @@ def main() -> int:
     model.eval()
 
     predictions = []
+    truncated_rows = 0
     started = time.monotonic()
     for index, row in enumerate(rows, start=1):
         messages = chat_messages(row)
@@ -87,6 +102,12 @@ def main() -> int:
             )
         completion_ids = generated[0, prompt_tokens:]
         text = tokenizer.decode(completion_ids, skip_special_tokens=True).strip()
+        hit_max_new_tokens = generation_hit_token_limit(
+            completion_ids,
+            max_new_tokens=args.max_new_tokens,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+        truncated_rows += int(hit_max_new_tokens)
         predictions.append(
             {
                 "id": row.get("id"),
@@ -99,6 +120,8 @@ def main() -> int:
                 "raw_output": text,
                 "prompt_token_count": prompt_tokens,
                 "generated_token_count": int(completion_ids.shape[-1]),
+                "finish_reason": "length" if hit_max_new_tokens else "stop",
+                "hit_max_new_tokens": hit_max_new_tokens,
             }
         )
         if index == 1 or index % 10 == 0 or index == len(rows):
@@ -117,6 +140,7 @@ def main() -> int:
         "output": str(args.output),
         "output_sha256": sha256_file(args.output),
         "rows": len(predictions),
+        "truncated_rows": truncated_rows,
         "seconds": time.monotonic() - started,
         "decoding": {"do_sample": False, "max_new_tokens": args.max_new_tokens},
         "evidence_truncated": False,

@@ -182,6 +182,10 @@ def payload_from_row(row: dict[str, Any]) -> tuple[dict[str, Any] | None, bool]:
         return None, False
 
 
+def generation_was_truncated(row: dict[str, Any]) -> bool:
+    return bool(row.get("hit_max_new_tokens")) or str(row.get("finish_reason") or "") == "length"
+
+
 def validate_payload(payload: dict[str, Any] | None, visible: set[str]) -> list[str]:
     if payload is None:
         return ["invalid_json"]
@@ -272,6 +276,8 @@ def main() -> int:
         counts["total"] += 1
         counts["strict_json"] += int(strict)
         counts["schema_valid"] += int(not problems)
+        generation_truncated = generation_was_truncated(row)
+        counts["generation_truncated_rows"] += int(generation_truncated)
         action = str((payload or {}).get("next_action") or "invalid")
         counts[f"action:{action}"] += 1
         counts["legacy_field_rows"] += int(any(item.startswith("legacy_fields:") for item in problems))
@@ -315,6 +321,7 @@ def main() -> int:
                 "action": action,
                 "gold_action": gold_action,
                 "problems": problems,
+                "generation_truncated": generation_truncated,
                 "evidence_jaccard": evidence_jaccard,
                 "exact_evidence_set": exact_evidence_set,
                 "reference_fact_similarity": fact_similarity,
@@ -346,6 +353,9 @@ def main() -> int:
         "rates": {
             "strict_json_rate": round(counts["strict_json"] / total, 6),
             "schema_valid_rate": round(counts["schema_valid"] / total, 6),
+            "generation_truncated_rate": round(
+                counts["generation_truncated_rows"] / total, 6
+            ),
             "legacy_field_rate": round(counts["legacy_field_rows"] / total, 6),
             "invalid_e_id_rate": round(counts["invalid_e_id_rows"] / total, 6),
             "duplicate_fact_rate": round(counts["duplicate_fact_rows"] / total, 6),
