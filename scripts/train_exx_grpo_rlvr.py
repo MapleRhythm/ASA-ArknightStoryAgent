@@ -30,6 +30,7 @@ REWARD_PROFILES = (
     "legacy",
     "semantic-gated",
     "protocol-gated-rules",
+    "clean-binding-rlvr",
     "glm-semantic-gated",
     "glm-precision-gated",
     "glm-precision-structural",
@@ -474,6 +475,41 @@ def near_duplicate_fact_penalty(completions: Sequence[Any], **_: Any) -> list[fl
     return penalties
 
 
+def follow_up_quality_penalty(completions: Sequence[Any], **_: Any) -> list[float]:
+    """Penalize repetitive or unbounded retrieve-more hypotheses.
+
+    ``retrieve_more`` is intentionally a structured action, but an otherwise
+    valid payload can still repeat the same entity/keyword until the decoder
+    hits its length limit.  This reward is gold-independent and gives GRPO a
+    local signal for the exact failure mode seen in clean-SFT evaluation.
+    """
+    penalties: list[float] = []
+    for item in completions:
+        payload = parse_json_object(completion_text(item))
+        if not payload or payload.get("next_action") != "retrieve_more":
+            penalties.append(0.0)
+            continue
+        follow_up = payload.get("follow_up_hypothesis")
+        if not isinstance(follow_up, Mapping):
+            penalties.append(-1.0)
+            continue
+        penalty = 0.0
+        for key, limit in (("entities", 8), ("keywords", 16)):
+            values = follow_up.get(key)
+            if not isinstance(values, list) or not values:
+                continue
+            strings = [str(value).strip() for value in values]
+            duplicate_ratio = 1.0 - len(set(strings)) / len(strings)
+            excess_ratio = max(0, len(strings) - limit) / limit
+            penalty += min(1.0, duplicate_ratio + excess_ratio)
+
+        question = str(follow_up.get("question") or "")
+        if len(question) > 512:
+            penalty += min(1.0, (len(question) - 512) / 512)
+        penalties.append(-min(2.0, penalty))
+    return penalties
+
+
 def premature_answer_penalty(
     completions: Sequence[Any], gold_action: Sequence[str], **_: Any
 ) -> list[float]:
@@ -518,6 +554,21 @@ def build_rule_reward_stack(profile: str) -> tuple[list[Any], list[float]]:
                 premature_answer_penalty,
             ],
             [1.0, 0.75, 1.0, 1.0, 0.75, 1.0],
+        )
+    if profile == "clean-binding-rlvr":
+        return (
+            [
+                protocol_penalty,
+                protocol_violation_penalty,
+                follow_up_quality_penalty,
+                protocol_gated(action_reward),
+                protocol_gated(claim_citation_reward),
+                protocol_gated(reference_fact_reward),
+                duplicate_fact_penalty,
+                near_duplicate_fact_penalty,
+                premature_answer_penalty,
+            ],
+            [1.5, 1.5, 2.0, 0.75, 1.5, 1.0, 0.5, 0.75, 0.75],
         )
     if profile in {"glm-semantic-gated", "glm-precision-gated"}:
         return (
