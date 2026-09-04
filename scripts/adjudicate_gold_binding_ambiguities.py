@@ -139,9 +139,15 @@ def call(row: dict[str, Any], fact: dict[str, Any], api_key: str, timeout: float
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
         method="POST",
     )
+    ca_bundle = "/etc/ssl/certs/ca-certificates.crt"
+    ssl_ctx = (
+        ssl.create_default_context(cafile=ca_bundle)
+        if os.path.exists(ca_bundle)
+        else ssl.create_default_context()
+    )
     opener = urllib.request.build_opener(
         urllib.request.ProxyHandler({}),
-        urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+        urllib.request.HTTPSHandler(context=ssl_ctx),
     )
     last = ""
     for attempt in range(1, 4):
