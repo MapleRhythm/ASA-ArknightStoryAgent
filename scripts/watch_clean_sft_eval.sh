@@ -15,8 +15,9 @@ eval_dir=$root/eval/${run}_val
 base=/mnt/store/zhb/ASA-ArknightStoryAgent/model/qwen3.5-4b
 baseline=$root/models/exx_grounding_v1_sft_success559_a100_r16_lr3e6_e1_20260827
 gold=$root/data/exx_binding_clean_sft_v2_20260904/val.json
-generator=$root/tools/generate_exx_predictions_transformers.py
 evaluator=$root/tools/evaluate_exx_outputs.py
+vllm_generator=$root/tools/generate_exx_predictions_vllm.py
+raw_dir=$eval_dir/vllm_outputs
 
 mkdir -p "$eval_dir"
 exec >>"$log_dir/eval_watcher.log" 2>&1
@@ -40,20 +41,32 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CC=/usr/bin/gcc-11
+export CXX=/usr/bin/g++-11
+export CUDAHOSTCXX=/usr/bin/g++-11
 python_bin=/mnt/store/zhb/asa_train/env/reasoning/bin/python
 
-for spec in "baseline:$baseline" "clean_sft:$model"; do
-  name=${spec%%:*}
-  adapter=${spec#*:}
-  "$python_bin" "$generator" \
-    --gold "$gold" \
-    --base-model "$base" \
-    --adapter "$adapter" \
-    --output "$eval_dir/$name.predictions.json" \
-    --max-new-tokens 768 \
-    >"$eval_dir/$name.generate.log" 2>&1
+if [[ -e "$raw_dir" && -n "$(find "$raw_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  echo "refusing_existing_vllm_output=$raw_dir"
+  exit 1
+fi
+
+"$python_bin" "$vllm_generator" \
+  --gold "$gold" \
+  --base-model "$base" \
+  --adapter "baseline=$baseline" \
+  --adapter "clean_sft=$model" \
+  --output-dir "$raw_dir" \
+  --max-model-len 12000 \
+  --max-tokens 768 \
+  --max-num-batched-tokens 32768 \
+  --gpu-memory-utilization 0.80 \
+  --enforce-eager \
+  >"$eval_dir/vllm.generate.log" 2>&1
+
+for name in baseline clean_sft; do
   "$python_bin" "$evaluator" \
-    --predictions "$eval_dir/$name.predictions.json" \
+    --predictions "$raw_dir/$name.predictions.json" \
     --gold "$gold" \
     --output "$eval_dir/$name.metrics.json" \
     >"$eval_dir/$name.evaluate.log" 2>&1
