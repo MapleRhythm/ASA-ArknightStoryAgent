@@ -64,6 +64,7 @@ export CUDA_VISIBLE_DEVICES=0
 export PYTHONPATH="$python_path"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export DISABLE_VERSION_CHECK=1
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
