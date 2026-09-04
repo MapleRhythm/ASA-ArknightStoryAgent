@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: $0 TRAIN_PID" >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: $0 TRAIN_PID [RUN_NAME]" >&2
   exit 2
 fi
 
 train_pid=$1
 root=/mnt/store/zhb/exx_grounding_v1
-run=exx_binding_clean_sft_v2_a100_r16_lr2e6_e1_20260904
+run=${2:-exx_binding_clean_sft_v2_a100_r16_lr2e6_e1_20260904}
 model=$root/models/$run
 log_dir=$root/logs/$run
 eval_dir=$root/eval/${run}_val
