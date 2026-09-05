@@ -18,6 +18,7 @@
 - B1/B2 验证表明重复原查询的新增覆盖为 0，而针对缺失证据构造的查询有明显增益；这说明二轮检索应由“未覆盖证据”驱动，而不是泛化改写。见 `docs/CLEAN_SFT_RETRY_AND_RETRIEVAL_FINDINGS_20260904.md`。
 - GLM set-audit v2 在相同的 8 个问题族上发现：clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none；gap-mix 为 5 complete / 0 contradicted / 1 partial / 2 none。gap-mix 修复了一个反证绑定，但其同题输出夹带了无关、虽被证据支持的事实，说明“证据支持”不能代替“问题相关性”。
 - GLM set-audit v3 增加问题相关性轴后，clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none、0 条 irrelevant；gap-mix 为 3 complete / 0 contradicted / 3 partial / 2 none、2 条 irrelevant。v3 证明 gap-mix 的绑定修复伴随回答范围膨胀，不能把 v2 的 5/8 complete 当作最终正确率。
+- 扩展到全部 79 条后，clean-SFT（77 条有效）为 25 complete / 35 partial / 2 contradicted / 15 none；gap-mix（78 条有效）为 27 complete / 34 partial / 0 contradicted / 17 none。两者共有 20 条状态变化：7 条 partial→complete，但 5 条 complete→partial、3 条 complete→none，另有 1 条 contradicted→complete、1 条 contradicted→partial。结论是 gap-mix 改善了部分绑定错误，却没有稳定提高整体回答质量。
 - 当前 GPU runtime 的 `prompt_evidence_top_k=10`，而 `select_prompt_evidence` 默认只按 `prompt_evidence_score` 排序；它不计算问题信息需求的增量覆盖。MMR 仍关闭。见 `src/asa_arknight_story_agent/inference/evidence/prompt_ordering.py` 与 `configs/runtime_gpu_reranker_qwen35_4b.json`。
 - 当前生产候选池配置仍为 dense 120 + sparse 120 → fusion 80 → rerank 32 → prompt 10。任何在 32 之后才需要的证据都无法恢复，且 prompt 选择还有一次额外截断。
 - `binding_verifier v2` 的训练输入是 claim/evidence pair；生产 reranker 的输入是 question/document。两者必须分别报告，不能把 verifier 指标当作检索指标。
@@ -95,3 +96,16 @@
 `fact_utility = evidence_support × question_relevance × set_coverage`
 
 其中 `set_coverage` 只奖励回答问题尚未覆盖的信息需求，不奖励无关事实数量。RLVR 可以使用本地 verifier 的 support 分数，但 relevance 与覆盖应由离线 GLM/人工审计蒸馏后再使用；不能让 verifier 单独决定“回答是否正确”。
+
+## 全量数据产物
+
+完整 79 条审计结果：
+
+`/mnt/store/zhb/exx_grounding_v1/eval/set_audit_v3_all79_20260906/`
+
+基于最新断点重试后的清洗数据：
+
+- `relevance_clean_clean_sft_all79_retry_20260906/`：56 条 SFT、40 条 KTO；
+- `relevance_clean_gap_mix_all79_retry_20260906/`：55 条 SFT、46 条 KTO。
+
+这两套数据是校准/训练候选，不替换现有生产数据。由于仍有结构不合格或无法安全修复的样本，训练前还应加入 family-held-out 切分和独立盲测。
