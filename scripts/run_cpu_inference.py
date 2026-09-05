@@ -166,6 +166,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reranker-candidate-top-k", type=int, default=None)
     parser.add_argument("--enable-mmr", dest="enable_mmr", action="store_true", default=None)
     parser.add_argument("--disable-mmr", dest="enable_mmr", action="store_false")
+    parser.add_argument(
+        "--enable-set-coverage-selection",
+        dest="enable_set_coverage_selection",
+        action="store_true",
+        default=None,
+    )
+    parser.add_argument(
+        "--disable-set-coverage-selection",
+        dest="enable_set_coverage_selection",
+        action="store_false",
+    )
     parser.add_argument("--mmr-lambda", type=float, default=None)
     parser.add_argument("--enable-pyramid-order", dest="enable_pyramid_order", action="store_true", default=None)
     parser.add_argument("--disable-pyramid-order", dest="enable_pyramid_order", action="store_false")
@@ -370,6 +381,14 @@ def main() -> None:
     )
     enable_mmr = bool(resolve_config_value(args.enable_mmr, inference_cfg, "enable_mmr", False))
     mmr_lambda = float(resolve_config_value(args.mmr_lambda, inference_cfg, "mmr_lambda", 0.72))
+    enable_set_coverage_selection = bool(
+        resolve_config_value(
+            args.enable_set_coverage_selection,
+            inference_cfg,
+            "enable_set_coverage_selection",
+            False,
+        )
+    )
     enable_pyramid_order = bool(
         resolve_config_value(args.enable_pyramid_order, inference_cfg, "enable_pyramid_order", False)
     )
@@ -646,6 +665,7 @@ def main() -> None:
         prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
         enable_mmr=enable_mmr,
         mmr_lambda=mmr_lambda,
+        enable_set_coverage_selection=enable_set_coverage_selection,
         enable_pyramid_order=enable_pyramid_order,
         enable_evidence_pinning=enable_evidence_pinning,
         enable_crag_refinement=enable_crag_refinement,

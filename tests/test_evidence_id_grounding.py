@@ -174,6 +174,8 @@ def test_evidence_id_mode_keeps_evidence_text_in_input_but_not_output_schema() -
     assert "evidence_refs" in prompt  # forbidden-field rule, not output schema
     assert '"quote"' not in prompt
     assert "不要输出evidence_refs、quote" in prompt
+    assert "证据联合支持" in prompt
+    assert "机械拆成互相依赖的碎片" in prompt
     assert prompt.startswith(f"<|im_start|>system\n{EXX_SYSTEM_PROMPT}")
     assert prompt.endswith("<|im_start|>assistant\n")
 
@@ -434,3 +436,30 @@ def test_truncated_exx_recovery_preserves_evidence_ids() -> None:
         {"fact": "事实甲", "evidence_refs": [{"evidence_id": "E1"}, {"evidence_id": "E2"}]},
         {"fact": "事实乙", "evidence_refs": [{"evidence_id": "E3"}]},
     ]
+
+
+def test_prompt_evidence_coverage_keeps_complementary_candidate() -> None:
+    from asa_arknight_story_agent.inference.evidence.prompt_ordering import (
+        select_prompt_evidence_coverage,
+    )
+
+    hypothesis = HypothesisDocument(
+        question="谁在什么时候完成了任务？",
+        intent="plot_fact",
+        query_type="fact",
+        entities=["甲"],
+        keywords=["完成", "时间"],
+        expected_answer_type="事实",
+    )
+    evidence = [
+        {"doc_index": 0, "fusion_score": 10.0, "document": {"clean_text": "甲完成了任务。"}},
+        {"doc_index": 1, "fusion_score": 9.9, "document": {"clean_text": "甲完成任务的时间是夜里。"}},
+        {"doc_index": 2, "fusion_score": 1.0, "document": {"clean_text": "乙在白天离开。"}},
+    ]
+    selected = select_prompt_evidence_coverage(
+        "谁在什么时候完成了任务？",
+        hypothesis,
+        evidence,
+        prompt_evidence_top_k=2,
+    )
+    assert [item["doc_index"] for item in selected] == [0, 1]

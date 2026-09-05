@@ -20,7 +20,7 @@
     "fusion_top_k": 80,
     "rerank_top_k": 32,
     "rerank_batch_size": 4,
-    "reranker_max_length": 1024,
+    "reranker_max_length": 1536,
     "minirag_chapter_isolation": true,
     "minirag_auto_second_retrieval": true,
     "minirag_scope_seed_top_k": 40,

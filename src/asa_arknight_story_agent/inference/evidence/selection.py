@@ -23,6 +23,7 @@ from asa_arknight_story_agent.inference.evidence.prompt_ordering import (
     apply_pyramid_evidence_order,
     merge_forced_prompt_evidence,
     select_prompt_evidence,
+    select_prompt_evidence_coverage,
 )
 from asa_arknight_story_agent.inference.evidence.prompt_similarity import (
     dedupe_prompt_evidence_candidates,
@@ -52,4 +53,5 @@ __all__ = [
     "apply_pyramid_evidence_order",
     "split_evidence_strips",
     "select_prompt_evidence",
+    "select_prompt_evidence_coverage",
 ]

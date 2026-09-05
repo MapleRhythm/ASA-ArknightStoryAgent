@@ -36,6 +36,7 @@ class CPUInferencePipeline(
         prompt_conclusion_evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
         enable_mmr: bool = False,
         mmr_lambda: float = 0.72,
+        enable_set_coverage_selection: bool = False,
         enable_pyramid_order: bool = False,
         enable_crag_refinement: bool = False,
         crag_refine_top_sentences: int = 4,
@@ -75,6 +76,7 @@ class CPUInferencePipeline(
         )
         self.enable_mmr = enable_mmr
         self.mmr_lambda = min(1.0, max(0.0, mmr_lambda))
+        self.enable_set_coverage_selection = bool(enable_set_coverage_selection)
         self.enable_pyramid_order = enable_pyramid_order
         self.enable_crag_refinement = enable_crag_refinement
         self.crag_refine_top_sentences = max(1, crag_refine_top_sentences)

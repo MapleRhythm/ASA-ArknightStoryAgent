@@ -9,7 +9,9 @@ EXX_SYSTEM_PROMPT = "你是《明日方舟》剧情RAG证据动作模块。只�
 EXX_RULES = (
     "只使用当前可见证据；next_action只能是answer_directly、retrieve_more或abstain；"
     "answer_directly时只输出next_action和1至8条supported_facts，每个可核验原子事实的"
-    "evidence_ids绑定1至2个当前存在的E编号；retrieve_more时输出follow_up_hypothesis；"
+    "evidence_ids绑定1至2个当前存在的E编号；同一个事实允许由这1至2条证据联合支持，"
+    "不要把一个需要联合证据的完整关系机械拆成互相依赖的碎片；不同事实可以共享证据编号；"
+    "retrieve_more时输出follow_up_hypothesis；"
     "abstain时输出reason；"
     "不要复制引文，不要输出evidence_refs、quote、final_answer、answer或inferred_facts；"
     "只保留完整回答问题所必需的最少事实，通常1至4条，禁止重复或近义改写同一事实；"

@@ -67,7 +67,7 @@ def build_minimal_conclusion_prompt(
         else 'answer_directly: {"next_action":"answer_directly","supported_facts":[{"fact":"","evidence_refs":[{"evidence_id":"","quote":""}]}],"inferred_facts":[],"final_answer":""}'
     )
     grounding_rules = (
-        "rules: 只使用当前可见证据；回答时把每个可核验原子事实绑定到1至2个当前存在的E编号；不要复制引文，不要输出evidence_refs、quote、final_answer、answer或inferred_facts；supported_facts为1至8条；证据不足且未到最后一轮才retrieve_more，最后一轮不足则abstain。"
+        "rules: 只使用当前可见证据；回答时把每个可核验原子事实绑定到1至2个当前存在的E编号；同一个事实可以由多条证据联合支持，不要把联合证据机械拆成互相依赖的碎片；不同事实可以共享E编号；不要复制引文，不要输出evidence_refs、quote、final_answer、answer或inferred_facts；supported_facts为1至8条；证据不足且未到最后一轮才retrieve_more，最后一轮不足则abstain。"
         if evidence_id_only
         else "rules: JSON only；只能使用 evidence_brief 中的证据；每条证据以 [E编号] 开头；evidence_id 必须填该证据的编号（如 E1），不得编造不存在的编号；单条 quote 必须从该编号对应的证据原文复制，推荐20-60字，硬上限80字；每个 supported_fact 最多2条 quote 且总长<=160字；supported_facts最多6条，所有quote总长最好<=400字；final_answer 只能使用 supported_facts 和 inferred_facts；证据不足才 retrieve_more；不要输出 current_round、confidence、decision、missing_slots、clarification_question。"
     )

@@ -11,6 +11,7 @@ from asa_arknight_story_agent.inference.evidence.prompt_ordering import (
     apply_pyramid_evidence_order,
     merge_forced_prompt_evidence,
     select_prompt_evidence,
+    select_prompt_evidence_coverage,
 )
 from asa_arknight_story_agent.inference.retrieval.merge import merge_evidence_keep_order
 
@@ -58,7 +59,14 @@ def prepare_prompt_evidence(
                 limit=max(1, min(2, pipeline.prompt_evidence_top_k // 4 or 1)),
             )
         )
-    if pipeline.enable_mmr:
+    if pipeline.enable_set_coverage_selection:
+        selected = select_prompt_evidence_coverage(
+            question,
+            hypothesis,
+            evidence,
+            prompt_evidence_top_k=pipeline.prompt_evidence_top_k,
+        )
+    elif pipeline.enable_mmr:
         selected = select_prompt_evidence_mmr(
             evidence,
             prompt_evidence_top_k=pipeline.prompt_evidence_top_k,
