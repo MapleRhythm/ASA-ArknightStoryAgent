@@ -16,7 +16,8 @@
 - clean-SFT 与 gap-mix 的校准评估：格式提升明显，但 action 与 claim-local binding 没有提升。见 `docs/CALIBRATED_BINDING_EVAL_20260905.md`。
 - binding verifier v2 在“主张→证据”难例上的 AUC 从 v1 的 0.805 提升到 0.904；这是绑定判别器结果，不是问题→候选检索 Recall。见 `docs/BINDING_VERIFIER_AUGMENTED_V2_FINDINGS_20260905.md`。
 - B1/B2 验证表明重复原查询的新增覆盖为 0，而针对缺失证据构造的查询有明显增益；这说明二轮检索应由“未覆盖证据”驱动，而不是泛化改写。见 `docs/CLEAN_SFT_RETRY_AND_RETRIEVAL_FINDINGS_20260904.md`。
-- GLM set-audit v2 在相同的 8 个问题族上发现：clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none；gap-mix 为 5 complete / 0 contradicted / 1 partial / 2 none。gap-mix 修复了一个反证绑定，但其同题输出夹带了 3 条与问题无关、虽被证据支持的事实，说明“证据支持”不能代替“问题相关性”。
+- GLM set-audit v2 在相同的 8 个问题族上发现：clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none；gap-mix 为 5 complete / 0 contradicted / 1 partial / 2 none。gap-mix 修复了一个反证绑定，但其同题输出夹带了无关、虽被证据支持的事实，说明“证据支持”不能代替“问题相关性”。
+- GLM set-audit v3 增加问题相关性轴后，clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none、0 条 irrelevant；gap-mix 为 3 complete / 0 contradicted / 3 partial / 2 none、2 条 irrelevant。v3 证明 gap-mix 的绑定修复伴随回答范围膨胀，不能把 v2 的 5/8 complete 当作最终正确率。
 - 当前 GPU runtime 的 `prompt_evidence_top_k=10`，而 `select_prompt_evidence` 默认只按 `prompt_evidence_score` 排序；它不计算问题信息需求的增量覆盖。MMR 仍关闭。见 `src/asa_arknight_story_agent/inference/evidence/prompt_ordering.py` 与 `configs/runtime_gpu_reranker_qwen35_4b.json`。
 - 当前生产候选池配置仍为 dense 120 + sparse 120 → fusion 80 → rerank 32 → prompt 10。任何在 32 之后才需要的证据都无法恢复，且 prompt 选择还有一次额外截断。
 - `binding_verifier v2` 的训练输入是 claim/evidence pair；生产 reranker 的输入是 question/document。两者必须分别报告，不能把 verifier 指标当作检索指标。
@@ -86,3 +87,11 @@
 4. 在同一候选池做 top-score/MMR/coverage 三路 ablation；
 5. 只有当 Recall 提升且延迟合格，再训练 question→document reranker；binding verifier 保留为离线 verifier/reward；
 6. 最后才在校准标签上做小规模 RLVR smoke，并与 clean-SFT、原模型三方盲测。
+
+## 直接修复方向
+
+生成训练不能只给“被证据支持的事实”正例，还要给“被证据支持但与问题无关的事实”负例。建议在 answer_directly 的每个 fact 上离线标注 `direct/supporting/irrelevant`，训练目标同时优化：
+
+`fact_utility = evidence_support × question_relevance × set_coverage`
+
+其中 `set_coverage` 只奖励回答问题尚未覆盖的信息需求，不奖励无关事实数量。RLVR 可以使用本地 verifier 的 support 分数，但 relevance 与覆盖应由离线 GLM/人工审计蒸馏后再使用；不能让 verifier 单独决定“回答是否正确”。
