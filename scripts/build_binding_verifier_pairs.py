@@ -7,9 +7,15 @@ This script joins it with the GLM gold recalibration manifest and emits only:
 * clean/partial gold bindings as positives (partial keeps only confirmed E-IDs);
 * candidates explicitly judged ``unsupported`` by GLM as negatives.
 
-Un-audited candidates and suspected missed positives are intentionally omitted.
-The output is grouped by source record before the deterministic train/eval split
-so a question cannot leak across the two sets.
+By default, un-audited candidates and suspected missed positives are omitted,
+preserving the original dataset.  ``--include-suspected-missed-positives`` adds
+GLM-confirmed missed evidence as additional positive variants.  An optional
+ambiguity sidecar can override the strict merged/individual decision for the
+86 contradiction rows: union/some-supported labels are retained, while
+ambiguous and explicitly unsupported rows are excluded.
+
+The output is grouped by source record before the deterministic train/eval
+split so a question cannot leak across the two sets.
 """
 
 from __future__ import annotations
@@ -66,6 +72,40 @@ def classify(judgement: dict[str, Any]) -> tuple[str, list[str]]:
     return "clean_support", eids
 
 
+def load_adjudications(path: Path | None) -> dict[str, dict[str, Any]]:
+    if path is None:
+        return {}
+    return {
+        str(row.get("fact_id")): row
+        for row in read_jsonl(path)
+        if str(row.get("fact_id") or "")
+    }
+
+
+def classify_with_adjudication(
+    judgement: dict[str, Any],
+    adjudication: dict[str, Any] | None,
+) -> tuple[str, list[str]]:
+    """Apply the third-pass ambiguity adjudication when one exists.
+
+    The strict first pass is deliberately kept as the default.  The sidecar is
+    only consulted when explicitly supplied, and its ``keep_eids`` are trusted
+    only for supported_by_union/supported_by_some labels.
+    """
+    if adjudication:
+        label = str(adjudication.get("label") or "")
+        keep_eids = [
+            str(item)
+            for item in adjudication.get("keep_eids") or []
+            if str(item)
+        ]
+        if label in {"ambiguous", "unsupported"}:
+            return label, []
+        if label in {"supported_by_union", "supported_by_some"} and keep_eids:
+            return label, keep_eids
+    return classify(judgement)
+
+
 def stable_eval(record_id: str, eval_ratio: float, seed: int) -> bool:
     digest = hashlib.sha256(f"{seed}:{record_id}".encode()).digest()
     value = int.from_bytes(digest[:8], "big") / float(2**64)
@@ -78,6 +118,17 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--judgements", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument(
+        "--ambiguity",
+        type=Path,
+        default=None,
+        help="Optional third-pass adjudication JSONL keyed by fact_id.",
+    )
+    parser.add_argument(
+        "--include-suspected-missed-positives",
+        action="store_true",
+        help="Add GLM-confirmed suspected-missed evidence as positive variants.",
+    )
     parser.add_argument("--eval-ratio", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=20260904)
     args = parser.parse_args()
@@ -86,6 +137,7 @@ def main() -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = read_jsonl(args.manifest)
+    adjudications = load_adjudications(args.ambiguity)
     task_lookup = {
         (str(row.get("row_id") or ""), int(row.get("fact_index", -1))): row
         for row in manifest
@@ -106,9 +158,17 @@ def main() -> int:
         if task is None or judgement is None:
             stats["missing_join"] += 1
             continue
-        status, kept_eids = classify(judgement)
+        status, kept_eids = classify_with_adjudication(
+            judgement,
+            adjudications.get(str(judgement.get("fact_id") or "")),
+        )
         stats[f"gold_status:{status}"] += 1
-        if status not in {"clean_support", "partial"} or not kept_eids:
+        if status not in {
+            "clean_support",
+            "partial",
+            "supported_by_union",
+            "supported_by_some",
+        } or not kept_eids:
             stats["dropped_nonpositive_gold"] += 1
             continue
         positive = "\n\n".join(
@@ -123,6 +183,7 @@ def main() -> int:
             item
             for item in source.get("hard_negatives") or []
             if str(item.get("glm_verdict") or "") == "unsupported"
+            and str(item.get("text") or "").strip()
         ]
         stats["confirmed_candidates"] += len(confirmed)
         stats["provisional_candidates"] += sum(
@@ -130,33 +191,65 @@ def main() -> int:
             for item in source.get("hard_negatives") or []
         )
         stats["suspected_missed_positives"] += len(source.get("suspected_missed_positives") or [])
+        positive_variants: list[dict[str, Any]] = [
+            {
+                "text": positive,
+                "eids": kept_eids,
+                "variant": "gold",
+                "glm_reason": "",
+            }
+        ]
+        if args.include_suspected_missed_positives:
+            for item in source.get("suspected_missed_positives") or []:
+                if str(item.get("glm_verdict") or "") != "supported":
+                    continue
+                missed_text = str(item.get("text") or "").strip()
+                missed_eid = str(item.get("eid") or "").strip()
+                if not missed_text or not missed_eid or missed_text == positive:
+                    continue
+                positive_variants.append(
+                    {
+                        "text": missed_text,
+                        "eids": [missed_eid],
+                        "variant": "suspected_missed_positive",
+                        "glm_reason": str(item.get("glm_reason") or ""),
+                    }
+                )
+                stats["included_suspected_missed_positives"] += 1
         for item in confirmed:
             negative = str(item.get("text") or "").strip()
-            if not negative or negative == positive:
+            if not negative:
                 stats["dropped_empty_or_equal_negative"] += 1
                 continue
-            pair = {
-                "query": str(source.get("claim") or task.get("claim") or "").strip(),
-                "query_type": str(source.get("query_type") or task.get("query_type") or "unknown"),
-                "source_name": str(source.get("source_name") or record_id),
-                "positive": positive,
-                "negative": negative,
-                "positive_score": 1.0,
-                "negative_score": 0.0,
-                "negative_type": "binding_glm_confirmed_unsupported",
-                "answer": "",
-                "answer_evidence": kept_eids,
-                "answer_focus": "",
-                "positive_chain": kept_eids,
-                "negative_chain": [str(item.get("eid") or "")],
-                "record_id": record_id,
-                "fact_index": int(source.get("fact_index", -1)),
-                "gold_status": status,
-                "negative_glm_reason": str(item.get("glm_reason") or ""),
-                "negative_cos_sim": item.get("cos_sim"),
-            }
-            pairs.append(pair)
-            group_records[record_id].append(pair)
+            for variant in positive_variants:
+                variant_text = str(variant["text"])
+                if negative == variant_text:
+                    stats["dropped_empty_or_equal_negative"] += 1
+                    continue
+                pair = {
+                    "query": str(source.get("claim") or task.get("claim") or "").strip(),
+                    "query_type": str(source.get("query_type") or task.get("query_type") or "unknown"),
+                    "source_name": str(source.get("source_name") or record_id),
+                    "positive": variant_text,
+                    "negative": negative,
+                    "positive_score": 1.0,
+                    "negative_score": 0.0,
+                    "negative_type": "binding_glm_confirmed_unsupported",
+                    "positive_type": variant["variant"],
+                    "positive_glm_reason": variant["glm_reason"],
+                    "answer": "",
+                    "answer_evidence": kept_eids,
+                    "answer_focus": "",
+                    "positive_chain": variant["eids"],
+                    "negative_chain": [str(item.get("eid") or "")],
+                    "record_id": record_id,
+                    "fact_index": int(source.get("fact_index", -1)),
+                    "gold_status": status,
+                    "negative_glm_reason": str(item.get("glm_reason") or ""),
+                    "negative_cos_sim": item.get("cos_sim"),
+                }
+                pairs.append(pair)
+                group_records[record_id].append(pair)
 
     eval_ids = {
         record_id
@@ -181,7 +274,9 @@ def main() -> int:
             "hardneg": str(args.hardneg),
             "manifest": str(args.manifest),
             "judgements": str(args.judgements),
+            "ambiguity": str(args.ambiguity) if args.ambiguity else None,
         },
+        "include_suspected_missed_positives": args.include_suspected_missed_positives,
         "seed": args.seed,
         "eval_ratio": args.eval_ratio,
         "pairs": len(pairs),
