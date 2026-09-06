@@ -140,6 +140,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--repeat-penalty", type=float, default=None)
     parser.add_argument("--max-retrieval-rounds", type=int, default=None)
+    parser.add_argument(
+        "--enable-adaptive-round-scheduler",
+        dest="enable_adaptive_round_scheduler",
+        action="store_true",
+        default=None,
+        help="Experimental: filter repeated follow-up queries and stop on no-new-evidence rounds.",
+    )
+    parser.add_argument(
+        "--disable-adaptive-round-scheduler",
+        dest="enable_adaptive_round_scheduler",
+        action="store_false",
+    )
     parser.add_argument("--dense-top-k", type=int, default=None)
     parser.add_argument("--sparse-top-k", type=int, default=None)
     parser.add_argument("--fusion-top-k", type=int, default=None)
@@ -371,6 +383,14 @@ def main() -> None:
     if max_retrieval_rounds is None:
         max_retrieval_rounds = 2
     max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
+    enable_adaptive_round_scheduler = bool(
+        resolve_config_value(
+            args.enable_adaptive_round_scheduler,
+            inference_cfg,
+            "enable_adaptive_round_scheduler",
+            False,
+        )
+    )
     prompt_evidence_top_k = int(inference_cfg.get("prompt_evidence_top_k", 8))
     use_model_hypothesis = bool(inference_cfg.get("use_model_hypothesis", True))
     use_model_conclusion_generation = bool(
@@ -687,6 +707,7 @@ def main() -> None:
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
+        enable_adaptive_round_scheduler=enable_adaptive_round_scheduler,
         prompt_evidence_top_k=prompt_evidence_top_k,
         prompt_evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
         prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,

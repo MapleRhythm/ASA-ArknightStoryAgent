@@ -31,6 +31,7 @@ class CPUInferencePipeline(
         generator: LlamaCppRunner | VllmRunner,
         query_config: QueryConfig | None = None,
         max_retrieval_rounds: int = 2,
+        enable_adaptive_round_scheduler: bool = False,
         prompt_evidence_top_k: int = 8,
         prompt_evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
         prompt_conclusion_evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
@@ -61,6 +62,10 @@ class CPUInferencePipeline(
         # stops growing, so this upper bound is a safety budget rather than a
         # promise to spend three rounds on every request.
         self.max_retrieval_rounds = min(3, max(1, int(max_retrieval_rounds)))
+        # Keep the historical orchestration path as the production default.
+        # The adaptive scheduler is experimental until it has been evaluated
+        # on a blind set with recall/abstention and latency metrics.
+        self.enable_adaptive_round_scheduler = bool(enable_adaptive_round_scheduler)
         if not use_model_hypothesis:
             raise ValueError("heuristic hypothesis generation is disabled; set use_model_hypothesis=true")
         if use_model_retrieval_planner is not None:

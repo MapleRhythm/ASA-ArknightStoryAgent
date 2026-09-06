@@ -72,14 +72,16 @@ class PipelineOrchestrationMixin:
             progress_callback(INITIAL_HYPOTHESIS_TASK_TYPE)
         current_hypothesis = self.build_hypothesis(question, dialogue_context)
         state = PipelineRunState()
-        scheduler = AdaptiveRoundScheduler()
-        pending_queries, duplicate_queries = scheduler.prepare_queries(
-            self._build_initial_queries(question, current_hypothesis)
-        )
+        scheduler = AdaptiveRoundScheduler() if self.enable_adaptive_round_scheduler else None
+        initial_queries = self._build_initial_queries(question, current_hypothesis)
+        if scheduler is not None:
+            pending_queries, duplicate_queries = scheduler.prepare_queries(initial_queries)
+        else:
+            pending_queries, duplicate_queries = initial_queries, 0
         current_hypothesis_task_type = INITIAL_HYPOTHESIS_TASK_TYPE
 
         for round_index in range(1, self.max_retrieval_rounds + 1):
-            if not pending_queries:
+            if scheduler is not None and not pending_queries:
                 state.final_answer = "现有检索证据不足以确认，且没有新的检索方向。"
                 break
             if progress_callback:
@@ -101,12 +103,17 @@ class PipelineOrchestrationMixin:
                 minirag_expansion_record=minirag_expansion_record,
                 web_context_record=web_context_record,
             )
-            new_evidence_count = scheduler.observe_evidence(state.evidence)
             step_record["scheduler"] = {
+                "enabled": scheduler is not None,
                 "duplicate_queries_filtered": duplicate_queries,
-                "new_evidence_count": new_evidence_count,
-                "issued_query_count": len(scheduler.issued_query_keys),
             }
+            if scheduler is not None:
+                step_record["scheduler"].update(
+                    {
+                        "new_evidence_count": scheduler.observe_evidence(state.evidence),
+                        "issued_query_count": len(scheduler.issued_query_keys),
+                    }
+                )
             state.retrieval_trace.append(step_record)
 
             if progress_callback:
@@ -138,21 +145,26 @@ class PipelineOrchestrationMixin:
                 round_index=round_index,
                 progress_callback=progress_callback,
             )
-            pending_queries, duplicate_queries = scheduler.prepare_queries(proposed_queries)
-            can_continue, stop_reason = scheduler.can_continue(
-                round_index=round_index,
-                max_rounds=self.max_retrieval_rounds,
-                pending_queries=pending_queries,
-            )
-            step_record["scheduler"].update(
-                {
-                    "next_round_query_count": len(pending_queries),
-                    "next_round_stop_reason": "" if can_continue else stop_reason,
-                }
-            )
-            if not can_continue:
-                state.final_answer = "现有检索证据不足以确认，且继续检索没有新的有效方向。"
-                break
+            if scheduler is not None:
+                pending_queries, duplicate_queries = scheduler.prepare_queries(proposed_queries)
+                can_continue, stop_reason = scheduler.can_continue(
+                    round_index=round_index,
+                    max_rounds=self.max_retrieval_rounds,
+                    pending_queries=pending_queries,
+                )
+                step_record["scheduler"].update(
+                    {
+                        "next_round_query_count": len(pending_queries),
+                        "next_round_stop_reason": "" if can_continue else stop_reason,
+                    }
+                )
+                if not can_continue:
+                    state.final_answer = "现有检索证据不足以确认，且继续检索没有新的有效方向。"
+                    break
+            else:
+                # Baseline semantics: do not filter model queries or turn a
+                # no-new-document observation into an automatic abstention.
+                pending_queries, duplicate_queries = proposed_queries, 0
             current_hypothesis_task_type = FOLLOW_UP_HYPOTHESIS_TASK_TYPE
 
         return build_inference_result(
