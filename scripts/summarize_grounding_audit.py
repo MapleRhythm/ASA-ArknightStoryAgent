@@ -32,10 +32,52 @@ def summarize(payload: dict[str, Any]) -> dict[str, Any]:
     relevance = collections.Counter(
         str(fact.get("question_relevance") or "unknown") for fact in facts
     )
+    answers = [row for row in valid if row.get("action") == "answer_directly"]
+    actions = collections.Counter(str(row.get("action") or "unknown") for row in valid)
+    answer_events = {
+        "any_unsupported_or_contradicted": sum(
+            any(
+                fact.get("support") in {"unsupported", "contradicted"}
+                for fact in row["judgement"].get("facts", [])
+            )
+            for row in answers
+        ),
+        # Partial support can hide an unsupported subject, cause, or clause.
+        # It must not disappear behind a low outright-unsupported fact rate.
+        "any_nonentailed_fact": sum(
+            any(fact.get("support") != "entailed" for fact in row["judgement"].get("facts", []))
+            for row in answers
+        ),
+        "any_critical_unsupported_claim": sum(
+            int(row["judgement"].get("critical_unsupported_claims") or 0) > 0
+            for row in answers
+        ),
+        "any_irrelevant_fact": sum(
+            any(
+                fact.get("question_relevance") == "irrelevant"
+                for fact in row["judgement"].get("facts", [])
+            )
+            for row in answers
+        ),
+        "complete_answer": sum(row["judgement"].get("set_support") == "complete" for row in answers),
+    }
     return {
         "rows": len(results),
         "status": dict(sorted(status.items())),
         "semantic_denominator": len(valid),
+        "actions": dict(sorted(actions.items())),
+        "answer_level": {
+            "denominator": len(answers),
+            "counts": answer_events,
+            "rates": {
+                name: count / len(answers) if answers else None
+                for name, count in answer_events.items()
+            },
+            "note": "Diagnostic rates, not an independent-blind-test pass. Unknown actions are excluded.",
+        },
+        "complete_answers_per_valid_request": (
+            answer_events["complete_answer"] / len(valid) if valid else None
+        ),
         "set_support": dict(
             sorted(
                 collections.Counter(

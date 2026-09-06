@@ -38,3 +38,44 @@ def test_summary_excludes_protocol_failures_from_semantic_denominator() -> None:
     assert result["semantic_denominator"] == 1
     assert result["fact_support"] == {"partial": 1}
     assert result["question_relevance"] == {"direct": 1}
+
+
+def test_summary_reports_answer_level_risk_separately_from_fact_rate() -> None:
+    payload = {
+        "results": [
+            {
+                "status": "ok",
+                "action": "answer_directly",
+                "judgement": {
+                    "set_support": "partial",
+                    "facts": [
+                        {
+                            "support": "partial",
+                            "question_relevance": "direct",
+                            "citation_complete": False,
+                        }
+                    ],
+                    "critical_unsupported_claims": 1,
+                    "context_sufficiency": "sufficient",
+                    "action_appropriateness": "inappropriate",
+                },
+            },
+            {
+                "status": "ok",
+                "action": "abstain",
+                "judgement": {
+                    "set_support": "none",
+                    "facts": [],
+                    "critical_unsupported_claims": 0,
+                    "context_sufficiency": "insufficient",
+                    "action_appropriateness": "appropriate",
+                },
+            },
+        ]
+    }
+    result = MODULE.summarize(payload)
+    assert result["answer_level"]["denominator"] == 1
+    assert result["answer_level"]["counts"]["any_nonentailed_fact"] == 1
+    assert result["answer_level"]["counts"]["any_critical_unsupported_claim"] == 1
+    assert result["answer_level"]["rates"]["complete_answer"] == 0.0
+    assert result["complete_answers_per_valid_request"] == 0.0
