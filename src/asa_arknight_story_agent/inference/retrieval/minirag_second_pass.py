@@ -52,6 +52,7 @@ def run_minirag_second_pass(
         graph_hits,
         chapter_scope_label=str(scope_info.get("label") or chapter_scope) if graph_scope_enabled else "global",
         top_k=max(1, int(pipeline.query_config.minirag_expansion_query_top_k)),
+        compact=bool(getattr(pipeline.query_config, "minirag_compact_query", False)),
     )
     expanded_second_pass_queries = expand_queries_with_main_chapter_terms(second_pass_queries)
     second_dense_hits, second_sparse_hits, second_minirag_hits = pipeline._search_queries(

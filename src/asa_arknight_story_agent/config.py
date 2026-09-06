@@ -58,6 +58,10 @@ class QueryConfig:
     minirag_fusion_mode: str = "score"
     minirag_chapter_isolation: bool = True
     minirag_auto_second_retrieval: bool = True
+    # Keep graph/chapter expansion enabled while avoiding the long
+    # evidence-blob query that dominates BM25 latency.  Disabled by default
+    # to preserve the historical production behavior until A/B validation.
+    minirag_compact_query: bool = False
     minirag_scope_seed_top_k: int = 40
     minirag_expansion_query_top_k: int = 8
     minirag_graph_scope_min_ratio: float = 1.0

@@ -19,6 +19,7 @@ def build_minirag_expansion_queries(
     *,
     chapter_scope_label: str,
     top_k: int = 8,
+    compact: bool = False,
 ) -> list[str]:
     anchors = extract_question_anchor_terms(question, hypothesis)[:12]
     metadata_terms: list[str] = []
@@ -52,4 +53,10 @@ def build_minirag_expansion_queries(
         ).strip(),
         " ".join([question, chapter_scope_label, *compact_terms]).strip(),
     ]
-    return dedupe_keep_order([query for query in queries if query])[:3]
+    result = dedupe_keep_order([query for query in queries if query])
+    if compact:
+        # The first query embeds up to ~1.4k chars of graph evidence and is
+        # expensive for BM25 while adding little beyond the metadata query.
+        # Keep only short queries; this is intentionally opt-in.
+        result = [query for query in result if len(query) <= 420]
+    return result[:3]
