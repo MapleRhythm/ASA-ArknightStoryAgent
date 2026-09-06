@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from typing import Any
 
 from asa_arknight_story_agent.inference.common.lexicon import COMMON_NON_ENTITY_WORDS
@@ -87,3 +88,91 @@ def quote_matches_evidence(quote: str, evidence_text: str) -> bool:
             return False
         cursor = position + len(part)
     return True
+
+
+def ordered_fuzzy_term_match(
+    term: str,
+    evidence_text: str,
+    *,
+    max_intervening_chars: int | None = None,
+) -> bool:
+    """Match a short Chinese term when evidence inserts modifiers.
+
+    ``extract_content_tokens`` intentionally emits compact retrieval terms.
+    For grounding, however, a fixed-width token can split a phrase at an
+    arbitrary boundary (for example ``强化防卫体系`` becoming
+    ``化防卫体系``) or the evidence can insert a normal qualifier
+    (``强化罗德岛防卫体系``).  Exact substring matching therefore creates
+    false rejections.  This helper keeps the safety direction conservative:
+
+    * ASCII terms still require an exact normalized substring;
+    * Chinese terms must preserve character order;
+    * only a short bounded gap is allowed between adjacent characters.
+
+    It is deliberately not a general semantic matcher.  Relation/entity
+    terms listed in ``claim_has_unsupported_quote_required_terms`` remain
+    strict and can still reject unsupported identity or causal claims.
+    """
+
+    normalized_term = normalize_for_evidence_match(term)
+    normalized_evidence = normalize_for_evidence_match(evidence_text)
+    if not normalized_term or not normalized_evidence:
+        return False
+    if normalized_term in normalized_evidence:
+        return True
+    if normalized_term.isascii():
+        return False
+    # Two-character fragments are too ambiguous to fuzzy-match safely.
+    if len(normalized_term) < 3:
+        return False
+    if max_intervening_chars is None:
+        # Allow a small amount of inserted context without turning this into
+        # an unrestricted subsequence test.
+        max_intervening_chars = max(2, min(8, len(normalized_term)))
+
+    def ordered_subsequence(candidate: str) -> bool:
+        # Keep all viable positions instead of greedily taking the first one:
+        # a common source pattern is ``凯尔希医生……考虑……强化`` where an earlier
+        # unrelated ``考`` would otherwise make the greedy path fail.
+        positions: dict[str, list[int]] = defaultdict(list)
+        for index, char in enumerate(normalized_evidence):
+            positions[char].append(index)
+        states = {position: position for position in positions.get(candidate[0], [])}
+        if not states:
+            return False
+        for char in candidate[1:]:
+            next_states: dict[int, int] = {}
+            for position in positions.get(char, []):
+                # The evidence is short enough that scanning the current
+                # frontier is cheaper and clearer than introducing an index.
+                starts = [
+                    start
+                    for previous, start in states.items()
+                    if 0 <= position - previous - 1 <= max_intervening_chars
+                ]
+                if starts:
+                    # A later start minimizes the final span and avoids an
+                    # early distractor occurrence.
+                    next_states[position] = max(starts)
+            if not next_states:
+                return False
+            states = next_states
+        limit = max_intervening_chars * (len(candidate) - 1)
+        return any(
+            position - start - (len(candidate) - 1) <= limit
+            for position, start in states.items()
+        )
+
+    if ordered_subsequence(normalized_term):
+        return True
+    # Chinese morphology often inserts/removes a single aspect particle
+    # (例如“同意了娜塔莉娅” vs “同意娜塔莉娅”).  Permit at most one omitted
+    # character, while retaining order and gap limits.  More than one missing
+    # character is rejected to avoid turning this into a loose bag-of-chars
+    # matcher.
+    if len(normalized_term) >= 5:
+        return any(
+            ordered_subsequence(normalized_term[:index] + normalized_term[index + 1 :])
+            for index in range(len(normalized_term))
+        )
+    return False

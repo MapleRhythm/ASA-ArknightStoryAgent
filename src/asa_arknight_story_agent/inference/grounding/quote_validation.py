@@ -12,6 +12,7 @@ from asa_arknight_story_agent.inference.grounding.quote_match_utils import (
     grounding_evidence_pool,
     grounding_extract_answer_tokens,
     normalize_for_evidence_match,
+    ordered_fuzzy_term_match,
     quote_matches_evidence,
 )
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
@@ -91,7 +92,10 @@ def validate_grounded_quotes(
     missing_tokens = [
         token
         for token in answer_tokens
-        if len(token) >= GROUNDING_LONG_TOKEN_MIN_LEN and normalize_for_evidence_match(token) not in quote_pool
+        if (
+            len(token) >= GROUNDING_LONG_TOKEN_MIN_LEN
+            and not ordered_fuzzy_term_match(token, quote_pool)
+        )
     ]
     unsupported_relations = claim_has_unsupported_quote_required_terms(conclusion.answer, quote_pool)
     for fact_index, fact in enumerate(conclusion.supported_facts, start=1):

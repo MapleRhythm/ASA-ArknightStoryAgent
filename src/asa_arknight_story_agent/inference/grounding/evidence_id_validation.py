@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from asa_arknight_story_agent.inference.common.patterns import CHINESE_TOKEN_SPLIT_RE
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
 from asa_arknight_story_agent.inference.evidence.rendering import (
     evidence_id_text_map,
@@ -10,6 +12,7 @@ from asa_arknight_story_agent.inference.evidence.rendering import (
 from asa_arknight_story_agent.inference.grounding.quote_match_utils import (
     GROUNDING_LONG_TOKEN_MIN_LEN,
     normalize_for_evidence_match,
+    ordered_fuzzy_term_match,
 )
 from asa_arknight_story_agent.inference.grounding.grounded_fact_answers import (
     claim_has_unsupported_quote_required_terms,
@@ -17,6 +20,54 @@ from asa_arknight_story_agent.inference.grounding.grounded_fact_answers import (
 from asa_arknight_story_agent.inference.planning.query_understanding import extract_content_tokens
 from asa_arknight_story_agent.inference.pipeline.types import ConclusionResult
 from asa_arknight_story_agent.inference.payload.utils import normalize_fact_text
+
+
+_GROUNDING_CLAIM_TOKEN_RE = re.compile(
+    r"[\u4e00-\u9fff]{2,32}|[A-Za-z][A-Za-z0-9_.\-]{1,31}"
+)
+
+# These predicates change the answer's factual relation (identity, agency,
+# causality, ownership, or outcome). A lexical match elsewhere in the
+# document is not enough to accept them, so they stay hard-gated even while
+# ordinary Chinese paraphrases use the softer phrase-coverage rule below.
+_HARD_GROUNDING_RELATION_TERMS = (
+    "任命",
+    "领袖",
+    "幕后主使",
+    "真正原因",
+    "导致",
+    "因为",
+    "指挥",
+    "关闭",
+    "交给",
+    "继承",
+    "成为",
+    "打破诅咒",
+    "合作",
+    "杀死",
+)
+
+
+def _extract_grounding_claim_tokens(text: str) -> list[str]:
+    """Extract phrase-sized claim terms without fixed-width Chinese shards.
+
+    Retrieval uses short chunks for recall, but applying that same tokenizer
+    to a generated claim creates artifacts such as ``化防卫体系`` or
+    ``凯尔希考虑强化罗``.  Grounding needs phrase boundaries instead, so it
+    keeps longer Chinese runs and only splits on the existing linguistic
+    boundary lexicon/punctuation.
+    """
+
+    tokens: list[str] = []
+    for raw in _GROUNDING_CLAIM_TOKEN_RE.findall(str(text or "")):
+        if raw.isascii():
+            tokens.append(raw)
+            continue
+        for part in CHINESE_TOKEN_SPLIT_RE.split(raw):
+            normalized = part.strip()
+            if len(normalized) >= 3:
+                tokens.append(normalized)
+    return dedupe_keep_order(tokens)
 
 
 def validate_evidence_id_grounding(
@@ -90,23 +141,49 @@ def validate_evidence_id_grounding(
                 f"supported_fact_{fact_index}_sensitive_terms_outside_cited_evidence:"
                 + ",".join(sensitive_missing[:8])
             )
-        question_tokens = set(extract_content_tokens(question))
-        claim_tokens = [token for token in extract_content_tokens(claim) if token not in question_tokens]
+        question_tokens = set(_extract_grounding_claim_tokens(question))
+        claim_tokens = [
+            token for token in _extract_grounding_claim_tokens(claim)
+            if token not in question_tokens
+        ]
         missing_tokens: list[str] = []
         for token in claim_tokens:
             normalized = normalize_for_evidence_match(token)
             if len(normalized) < GROUNDING_LONG_TOKEN_MIN_LEN + 1 or normalized in cited_pool:
                 continue
-            # The Chinese tokenizer intentionally keeps short predicate phrases
-            # together (e.g. "同意了娜塔莉娅"). Accept a conservative fuzzy
-            # match only when most of a sufficiently long token is present.
-            matched_chars = sum(1 for char in set(normalized) if char in cited_pool)
-            if len(normalized) >= 6 and matched_chars / len(set(normalized)) >= 0.75:
+            # Chinese retrieval terms may be split at an arbitrary fixed-width
+            # boundary or have a qualifier inserted in the source
+            # (强化防卫体系 -> 强化罗德岛防卫体系). Preserve order and allow
+            # only a bounded gap; ASCII entities remain exact-only.
+            if ordered_fuzzy_term_match(normalized, cited_pool):
                 continue
             missing_tokens.append(token)
-        if missing_tokens:
+        hard_relation_missing = [
+            term
+            for term in _HARD_GROUNDING_RELATION_TERMS
+            if term in claim and normalize_for_evidence_match(term) not in cited_pool
+        ]
+        if hard_relation_missing:
             issues.append(
                 f"supported_fact_{fact_index}_terms_outside_cited_evidence:"
-                + ",".join(dedupe_keep_order(missing_tokens)[:8])
+                + ",".join(dedupe_keep_order(hard_relation_missing)[:8])
             )
+        elif missing_tokens:
+            # A generated Chinese claim can paraphrase a source sentence
+            # without copying every function word or qualifier. Treat a
+            # partially covered ordinary phrase as a warning, not an
+            # automatic rejection. Unknown ASCII entities and the
+            # high-risk predicates above remain hard failures.
+            matched_count = max(0, len(claim_tokens) - len(missing_tokens))
+            coverage = matched_count / max(1, len(claim_tokens))
+            if coverage < 0.30:
+                issues.append(
+                    f"supported_fact_{fact_index}_terms_outside_cited_evidence:"
+                    + ",".join(dedupe_keep_order(missing_tokens)[:8])
+                )
+            else:
+                warnings.append(
+                    f"supported_fact_{fact_index}_paraphrase_terms_outside_cited_evidence:"
+                    + ",".join(dedupe_keep_order(missing_tokens)[:8])
+                )
     return issues, warnings

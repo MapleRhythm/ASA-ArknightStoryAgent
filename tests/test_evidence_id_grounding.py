@@ -260,6 +260,49 @@ def test_evidence_id_validator_checks_sensitive_relation_even_if_question_mentio
     assert any("sensitive_terms_outside_cited_evidence:母亲" in issue for issue in issues)
 
 
+def test_evidence_id_validator_allows_chinese_qualifier_inserted_in_evidence() -> None:
+    conclusion = _conclusion("E1")
+    conclusion.supported_facts[0]["fact"] = "阿米娅强化防卫体系。"
+    evidence = [
+        {
+            "doc_index": 1,
+            "document": {
+                "id": "story#1",
+                "clean_text": "阿米娅强化罗德岛本舰防卫体系。",
+            },
+        }
+    ]
+    issues, _ = validate_evidence_id_grounding(
+        conclusion=conclusion,
+        evidence=evidence,
+        question="阿米娅做了什么？",
+    )
+    assert not any("terms_outside_cited_evidence" in issue for issue in issues)
+
+
+def test_evidence_id_validator_keeps_unknown_ascii_entity_rejected() -> None:
+    conclusion = _conclusion("E1")
+    conclusion.supported_facts[0]["fact"] = "阿米娅与Abyss合作。"
+    issues, _ = validate_evidence_id_grounding(
+        conclusion=conclusion,
+        evidence=_evidence(),
+        question="阿米娅做了什么？",
+    )
+    assert any("terms_outside_cited_evidence" in issue for issue in issues)
+
+
+def test_evidence_id_validator_softens_supported_chinese_paraphrase_to_warning() -> None:
+    conclusion = _conclusion("E1")
+    conclusion.supported_facts[0]["fact"] = "阿米娅检查了报告；处理了调岗请求。"
+    issues, warnings = validate_evidence_id_grounding(
+        conclusion=conclusion,
+        evidence=_evidence(),
+        question="阿米娅如何处理调岗申请？",
+    )
+    assert issues == []
+    assert any("paraphrase_terms_outside_cited_evidence" in warning for warning in warnings)
+
+
 def test_evidence_id_validator_uses_only_text_visible_in_truncated_prompt() -> None:
     conclusion = _conclusion("E1")
     conclusion.supported_facts[0]["fact"] = "阿米娅任命娜塔莉娅为整合运动领袖。"
