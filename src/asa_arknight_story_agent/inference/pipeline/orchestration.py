@@ -14,6 +14,7 @@ from asa_arknight_story_agent.inference.pipeline.state import PipelineRunState
 from asa_arknight_story_agent.inference.pipeline.trace import append_conclusion_to_step, build_step_record
 from asa_arknight_story_agent.inference.pipeline.types import HypothesisDocument, InferenceResult
 from asa_arknight_story_agent.inference.pipeline.result_rendering import build_inference_result
+from asa_arknight_story_agent.inference.pipeline.scheduler import AdaptiveRoundScheduler
 
 
 class PipelineOrchestrationMixin:
@@ -71,10 +72,16 @@ class PipelineOrchestrationMixin:
             progress_callback(INITIAL_HYPOTHESIS_TASK_TYPE)
         current_hypothesis = self.build_hypothesis(question, dialogue_context)
         state = PipelineRunState()
-        pending_queries = self._build_initial_queries(question, current_hypothesis)
+        scheduler = AdaptiveRoundScheduler()
+        pending_queries, duplicate_queries = scheduler.prepare_queries(
+            self._build_initial_queries(question, current_hypothesis)
+        )
         current_hypothesis_task_type = INITIAL_HYPOTHESIS_TASK_TYPE
 
         for round_index in range(1, self.max_retrieval_rounds + 1):
+            if not pending_queries:
+                state.final_answer = "现有检索证据不足以确认，且没有新的检索方向。"
+                break
             if progress_callback:
                 progress_callback("retrieval")
             minirag_expansion_record, web_context_record = self._retrieve_round_evidence(
@@ -94,6 +101,12 @@ class PipelineOrchestrationMixin:
                 minirag_expansion_record=minirag_expansion_record,
                 web_context_record=web_context_record,
             )
+            new_evidence_count = scheduler.observe_evidence(state.evidence)
+            step_record["scheduler"] = {
+                "duplicate_queries_filtered": duplicate_queries,
+                "new_evidence_count": new_evidence_count,
+                "issued_query_count": len(scheduler.issued_query_keys),
+            }
             state.retrieval_trace.append(step_record)
 
             if progress_callback:
@@ -115,7 +128,7 @@ class PipelineOrchestrationMixin:
             ):
                 break
 
-            current_hypothesis, pending_queries = prepare_next_round(
+            current_hypothesis, proposed_queries = prepare_next_round(
                 pipeline=self,
                 question=question,
                 current_hypothesis=current_hypothesis,
@@ -125,6 +138,21 @@ class PipelineOrchestrationMixin:
                 round_index=round_index,
                 progress_callback=progress_callback,
             )
+            pending_queries, duplicate_queries = scheduler.prepare_queries(proposed_queries)
+            can_continue, stop_reason = scheduler.can_continue(
+                round_index=round_index,
+                max_rounds=self.max_retrieval_rounds,
+                pending_queries=pending_queries,
+            )
+            step_record["scheduler"].update(
+                {
+                    "next_round_query_count": len(pending_queries),
+                    "next_round_stop_reason": "" if can_continue else stop_reason,
+                }
+            )
+            if not can_continue:
+                state.final_answer = "现有检索证据不足以确认，且继续检索没有新的有效方向。"
+                break
             current_hypothesis_task_type = FOLLOW_UP_HYPOTHESIS_TASK_TYPE
 
         return build_inference_result(
