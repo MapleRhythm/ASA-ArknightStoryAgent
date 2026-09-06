@@ -1,0 +1,58 @@
+{
+  "retrieval": {
+    "device": "cuda",
+    "enable_reranker": true,
+    "reranker_model_path": "model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch",
+    "dense_top_k": 120,
+    "sparse_top_k": 120,
+    "enable_minirag": false,
+    "fusion_top_k": 80,
+    "rerank_top_k": 32,
+    "rerank_batch_size": 4,
+    "reranker_max_length": 1536,
+    "minirag_chapter_isolation": true,
+    "minirag_auto_second_retrieval": true,
+    "enable_storyline_sparse_scope": true,
+    "neighbor_max_seed_docs": 16,
+    "neighbor_story_window": 2,
+    "neighbor_activity_story_sort_window": 1
+  },
+  "generator": {
+    "backend": "vllm",
+    "ctx_size": 12000,
+    "max_tokens": 768,
+    "temperature": 0.1,
+    "top_p": 0.8,
+    "repeat_penalty": 1.0,
+    "vllm": {
+      "base_model_path": "model/qwen3.5-4b",
+      "lora_path": "model/lora/asa-arknightstoryagent-4b-lora",
+      "tensor_parallel_size": 1,
+      "gpu_memory_utilization": 0.52,
+      "max_model_len": 12000,
+      "dtype": "auto",
+      "max_num_batched_tokens": 4096,
+      "enforce_eager": true
+    }
+  },
+  "inference": {
+    "max_retrieval_rounds": 3,
+    "prompt_evidence_top_k": 16,
+    "prompt_evidence_max_chars_per_doc": 1000,
+    "prompt_conclusion_evidence_max_total_chars": 16000,
+    "enable_set_coverage_selection": true,
+    "enable_mmr": false,
+    "enable_pyramid_order": false,
+    "enable_evidence_pinning": false,
+    "enable_crag_refinement": false,
+    "self_consistency_samples": 1,
+    "self_consistency_temperature": 0.7,
+    "conclusion_prompt_mode": "minimal",
+    "answer_grounding_mode": "evidence_id",
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true,
+    "web_context": {
+      "enabled": false
+    }
+  }
+}
