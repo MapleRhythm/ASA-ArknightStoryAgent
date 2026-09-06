@@ -38,6 +38,7 @@ def test_stage_recall_and_prompt_loss_are_reported() -> None:
     assert result["stages"]["rerank"]["all_gold_rate"]["@2"] == 1.0
     assert result["stages"]["prompt"]["all_gold_rate"]["@2"] == 0.0
     assert result["family_macro"]["family-a"]["prompt"]["recall"]["@1"] == 0.5
+    assert result["family_macro_mean"]["prompt"]["recall"]["@1"] == 0.5
 
 
 def test_round_metrics_measure_novelty_and_duplicate_queries() -> None:

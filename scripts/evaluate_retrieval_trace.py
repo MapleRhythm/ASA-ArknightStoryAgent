@@ -283,6 +283,40 @@ def merge_stage_records(records: list[dict[str, Any]], top_ks: list[int]) -> dic
     }
 
 
+def macro_average_stage_records(
+    family_records: dict[str, list[dict[str, Any]]], top_ks: list[int]
+) -> dict[str, Any]:
+    """Average stage metrics with each question family receiving equal weight."""
+    summaries = [
+        merge_stage_records(records, top_ks)
+        for _, records in sorted(family_records.items())
+        if records
+    ]
+    if not summaries:
+        return {
+            "family_count": 0,
+            "recall": {f"@{k}": 0.0 for k in top_ks},
+            "any_hit_rate": {f"@{k}": 0.0 for k in top_ks},
+            "all_gold_rate": {f"@{k}": 0.0 for k in top_ks},
+        }
+    count = len(summaries)
+    return {
+        "family_count": count,
+        "recall": {
+            f"@{k}": sum(item["recall"][f"@{k}"] for item in summaries) / count
+            for k in top_ks
+        },
+        "any_hit_rate": {
+            f"@{k}": sum(item["any_hit_rate"][f"@{k}"] for item in summaries) / count
+            for k in top_ks
+        },
+        "all_gold_rate": {
+            f"@{k}": sum(item["all_gold_rate"][f"@{k}"] for item in summaries) / count
+            for k in top_ks
+        },
+    }
+
+
 def round_metrics(rounds: list[dict[str, Any]], gold: set[str], top_k: int) -> dict[str, Any]:
     if not rounds:
         return {"round_count": 0, "transitions": []}
@@ -431,6 +465,16 @@ def evaluate_rows(rows: list[dict[str, Any]], top_ks: list[int], round_top_k: in
                 for stage in STAGES
             }
             for family in sorted(family_stage_records)
+        },
+        "family_macro_mean": {
+            stage: macro_average_stage_records(
+                {
+                    family: family_stage_records[family][stage]
+                    for family in family_stage_records
+                },
+                top_ks,
+            )
+            for stage in STAGES
         },
         "question_family_count": len(family_stage_records),
         "rounds": {
