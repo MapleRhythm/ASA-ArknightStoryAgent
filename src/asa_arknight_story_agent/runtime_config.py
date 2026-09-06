@@ -9,7 +9,7 @@ from asa_arknight_story_agent.config import PROJECT_ROOT
 
 def load_runtime_config(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {}
+        raise FileNotFoundError(f"Runtime config does not exist: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
 
