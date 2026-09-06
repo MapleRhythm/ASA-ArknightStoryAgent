@@ -1,6 +1,6 @@
 # ASA 回答正确率提升研究方案
 
-日期：2026-09-07  
+日期：2026-09-06  
 适用分支：`fix/grounding-pool-chain-priority`
 
 ## 1. 结论先行
@@ -148,9 +148,14 @@ GOLD_RECAL 的 1929 个 fact 中，只有 1518（78.69%）为 clean support，
 
 **实现范围**
 
-- 扩展现有 evaluator 输出 stage-level evidence IDs；
+- 新增只读脚本
+  `scripts/evaluate_retrieval_trace.py`，统一读取 JSON/JSONL stage snapshot；
+- 每个 snapshot 必须显式提供 `gold_evidence_ids`、`stages.dense`、
+  `stages.sparse`、`stages.fusion`、`stages.rerank`、`stages.prompt`；
+- 脚本同时输出 unit Recall@k、任一命中率、全 gold 覆盖率和逐题记录；
 - 每题记录 gold evidence 是否出现在 sparse、dense、fusion、rerank、prompt；
-- 记录 `context_sufficiency`、missing slots、round overlap、novel-doc rate；
+- 若提供 `rounds`/`retrieval_trace`，记录 `context_sufficiency`、missing slots、
+  round overlap、novel-doc rate 和 query 重复率；
 - 结果按 question-family、query type、证据链长度分层；
 - 对全程 miss 做 span-level corpus coverage 检查，不能只查拼接后的
   `gold_excerpt` 是否整段命中。
@@ -158,6 +163,7 @@ GOLD_RECAL 的 1929 个 fact 中，只有 1518（78.69%）为 clean support，
 **通过条件**
 
 - 同一输入能稳定重算；
+- 缺失 stage 时明确报错，不从其他 stage 猜测或补数据；
 - 每个错误能落入唯一主要归因；
 - 回归测试覆盖重复问题族、缺失 E-ID、非法 schema 和空证据。
 
@@ -466,4 +472,3 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 - 至少一个离线实验在无泄漏集上同时改善 complete/support，且不牺牲延迟；
 - 所有负面改动都有可复现的对照和回滚依据；
 - 生产默认值仍只包含经过独立盲测验证的改动。
-
