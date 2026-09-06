@@ -1,11 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
-
-from asa_arknight_story_agent.inference.evidence.texts import evidence_identity
-
 
 def query_key(value: str) -> str:
     """Return a stable key for duplicate-query detection.
@@ -17,6 +15,26 @@ def query_key(value: str) -> str:
 
     text = re.sub(r"\s+", "", str(value or "")).strip().lower()
     return text
+
+
+def evidence_observation_key(item: dict[str, Any]) -> str:
+    """Identify an evidence observation, including newly expanded chain text.
+
+    A document can be returned in multiple rounds with a larger
+    ``evidence_chain_text``.  Treating only its document id as novelty hides
+    useful multi-hop context and makes the adaptive stop rule too aggressive.
+    Scores and other volatile metadata are intentionally excluded.
+    """
+
+    doc = item.get("document") or {}
+    doc_id = str(doc.get("id") or "").strip()
+    if not doc_id:
+        doc_id = str(item.get("doc_index") or "").strip()
+    chain = str(item.get("evidence_chain_text") or "")
+    clean = str(doc.get("clean_text") or doc.get("search_text") or "")
+    content = re.sub(r"\s+", " ", chain or clean).strip()
+    digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:16] if content else "empty"
+    return f"{doc_id or 'unknown'}:{digest}"
 
 
 @dataclass(slots=True)
@@ -51,7 +69,7 @@ class AdaptiveRoundScheduler:
 
     def observe_evidence(self, evidence: list[dict[str, Any]]) -> int:
         before = len(self.evidence_keys)
-        self.evidence_keys.update(evidence_identity(item) for item in evidence)
+        self.evidence_keys.update(evidence_observation_key(item) for item in evidence)
         self.last_new_evidence_count = len(self.evidence_keys) - before
         return self.last_new_evidence_count
 

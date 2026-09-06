@@ -159,6 +159,12 @@ class PipelineOrchestrationMixin:
                     }
                 )
                 if not can_continue:
+                    # Keep the trace truthful: the conclusion requested more
+                    # retrieval, but the controller converted that request
+                    # into a terminal abstention because its budget/novelty
+                    # gate failed.
+                    step_record["planner_action"] = "abstain"
+                    step_record["scheduler"]["terminal_action"] = "abstain"
                     state.final_answer = "现有检索证据不足以确认，且继续检索没有新的有效方向。"
                     break
             else:
