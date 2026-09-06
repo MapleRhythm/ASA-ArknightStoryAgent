@@ -550,6 +550,33 @@ def main() -> None:
                 "`python scripts/build_minirag_index.py` or disable retrieval.enable_minirag."
             )
 
+    # Validate generation assets before constructing the retriever.  Retriever
+    # construction can load a large reranker and embedding model; resolving a
+    # bad vLLM path only afterwards made configuration errors look like a
+    # multi-minute initialization hang.
+    preflight_base_model = None
+    preflight_lora_path = None
+    if backend == "vllm":
+        preflight_base_model = resolve_path_value(
+            args.base_model,
+            vllm_cfg,
+            "base_model_path",
+            DEFAULT_BASE_MODEL_PATH,
+        )
+        if preflight_base_model is None or not preflight_base_model.exists():
+            raise SystemExit(
+                "Invalid vLLM base model path: "
+                f"{preflight_base_model or '<empty>'}."
+            )
+        if not args.disable_lora:
+            preflight_lora_path = resolve_path_value(
+                args.lora_path,
+                vllm_cfg,
+                "lora_path",
+                DEFAULT_VLLM_LORA_PATH if DEFAULT_VLLM_LORA_PATH.exists() else None,
+            )
+            validate_vllm_lora_path(preflight_lora_path)
+
     from asa_arknight_story_agent.inference import CPUInferencePipeline, LlamaCppRunner, VllmRunner  # noqa: E402
     from asa_arknight_story_agent.retrieval.hybrid import ArknightsHybridRetriever  # noqa: E402
 
