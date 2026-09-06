@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from asa_arknight_story_agent.inference.grounding.quote_match_utils import quote_matches_evidence
+
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_exx_outputs.py"
 SPEC = importlib.util.spec_from_file_location("evaluate_exx_outputs", SCRIPT)
@@ -85,3 +87,9 @@ def test_generation_was_truncated_accepts_both_generator_markers() -> None:
     assert MODULE.generation_was_truncated({"hit_max_new_tokens": True})
     assert MODULE.generation_was_truncated({"finish_reason": "length"})
     assert not MODULE.generation_was_truncated({"finish_reason": "stop"})
+
+
+def test_quote_matching_treats_ellipsis_as_ordered_wildcard() -> None:
+    evidence = "雷德擦破了嘴角，并让对方相信感染风险很高。"
+    assert quote_matches_evidence("雷德擦破了嘴角……让对方相信感染风险很高", evidence)
+    assert not quote_matches_evidence("雷德擦破了嘴角……店里没有人", evidence)

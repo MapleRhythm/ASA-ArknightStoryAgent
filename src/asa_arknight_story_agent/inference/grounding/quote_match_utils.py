@@ -53,3 +53,37 @@ def normalize_for_evidence_match(text: str) -> str:
     cleaned = re.sub(r"\[E\d+\]", "", cleaned)
     cleaned = cleaned.replace("...", "").replace("…", "")
     return re.sub(r"\s+", "", cleaned)
+
+
+def quote_matches_evidence(quote: str, evidence_text: str) -> bool:
+    """Return whether a model quote is supported by one evidence item.
+
+    Models frequently abbreviate a copied quote with ``...``/``…``.  Removing
+    the ellipsis before substring matching is incorrect because the omitted
+    characters still exist in the source text (``A...B`` would become ``AB``).
+    Treat ellipses as ordered wildcards instead, while retaining exact
+    substring matching for ordinary quotes.
+    """
+
+    raw_quote = strip_internal_evidence_meta(str(quote or ""))
+    raw_quote = re.sub(r"\[E\d+\]", "", raw_quote)
+    target = normalize_for_evidence_match(evidence_text)
+    if not target:
+        return False
+    if not re.search(r"(?:\.{3}|…)", raw_quote):
+        return normalize_for_evidence_match(raw_quote) in target
+
+    parts = [
+        normalize_for_evidence_match(part)
+        for part in re.split(r"(?:\.{3}|…)+", raw_quote)
+    ]
+    parts = [part for part in parts if part]
+    if len(parts) < 2:
+        return False
+    cursor = 0
+    for part in parts:
+        position = target.find(part, cursor)
+        if position < 0:
+            return False
+        cursor = position + len(part)
+    return True

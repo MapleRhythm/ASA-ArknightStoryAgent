@@ -12,6 +12,7 @@ from asa_arknight_story_agent.inference.grounding.quote_match_utils import (
     grounding_evidence_pool,
     grounding_extract_answer_tokens,
     normalize_for_evidence_match,
+    quote_matches_evidence,
 )
 from asa_arknight_story_agent.inference.common.text_utils import dedupe_keep_order
 from asa_arknight_story_agent.inference.evidence.rendering import (
@@ -76,7 +77,7 @@ def validate_grounded_quotes(
                 target_pool = normalize_for_evidence_match(eid_map[eid])
             else:
                 target_pool = evidence_pool
-            if normalize_for_evidence_match(quote) not in target_pool:
+            if not quote_matches_evidence(quote, target_pool):
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_quote_not_found")
         if fact_quote_chars > 160:
             issues.append(f"supported_fact_{fact_index}_quote_total_over_160")
