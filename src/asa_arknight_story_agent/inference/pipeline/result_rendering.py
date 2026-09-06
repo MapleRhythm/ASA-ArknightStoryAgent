@@ -58,6 +58,9 @@ def build_prompt_evidence_runtime_metadata(pipeline: Any) -> dict[str, Any]:
         "crag_refinement_enabled": pipeline.enable_crag_refinement,
         "crag_refine_top_sentences": pipeline.crag_refine_top_sentences,
         "crag_refine_max_sentences": pipeline.crag_refine_max_sentences,
+        "adaptive_round_scheduler_enabled": bool(
+            getattr(pipeline, "enable_adaptive_round_scheduler", False)
+        ),
         "web_context_enabled": pipeline.web_context_config.enabled,
         "web_context_max_pages": pipeline.web_context_config.max_pages,
         "web_context_max_total_chars": pipeline.web_context_config.max_total_chars,
