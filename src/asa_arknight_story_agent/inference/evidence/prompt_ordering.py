@@ -89,14 +89,15 @@ def select_prompt_evidence_coverage(
     candidates = dedupe_prompt_evidence_candidates(evidence)
     if len(candidates) <= prompt_evidence_top_k:
         return candidates[:prompt_evidence_top_k]
+    # The original user question is the only authoritative retrieval intent.
+    # Model-generated keyword lists are often fragmented or speculative; using
+    # them here can make prompt selection chase the hypothesis instead of the
+    # question.  Entities are retained as a compact, lower-noise expansion.
     query_tokens = text_similarity_tokens(
         "\n".join(
             [
                 str(question or ""),
-                str(getattr(hypothesis, "question", "") or ""),
                 " ".join(getattr(hypothesis, "entities", []) or []),
-                " ".join(getattr(hypothesis, "keywords", []) or []),
-                str(getattr(hypothesis, "expected_answer_type", "") or ""),
             ]
         )
     )

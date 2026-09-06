@@ -463,3 +463,31 @@ def test_prompt_evidence_coverage_keeps_complementary_candidate() -> None:
         prompt_evidence_top_k=2,
     )
     assert [item["doc_index"] for item in selected] == [0, 1]
+
+
+def test_prompt_evidence_coverage_does_not_follow_speculative_keywords() -> None:
+    from asa_arknight_story_agent.inference.evidence.prompt_ordering import (
+        select_prompt_evidence_coverage,
+    )
+
+    hypothesis = HypothesisDocument(
+        question="甲的去向是什么？",
+        intent="plot_fact",
+        query_type="fact",
+        entities=["甲"],
+        # This fragment is not in the user question and should not steer
+        # final prompt selection toward an unrelated high-scoring passage.
+        keywords=["乙的阴谋"],
+        expected_answer_type="事实",
+    )
+    evidence = [
+        {"doc_index": 0, "fusion_score": 10.0, "document": {"clean_text": "甲最后前往北方。"}},
+        {"doc_index": 1, "fusion_score": 1.0, "document": {"clean_text": "乙的阴谋在城中发酵。"}},
+    ]
+    selected = select_prompt_evidence_coverage(
+        "甲的去向是什么？",
+        hypothesis,
+        evidence,
+        prompt_evidence_top_k=1,
+    )
+    assert [item["doc_index"] for item in selected] == [0]
