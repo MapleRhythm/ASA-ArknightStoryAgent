@@ -8,31 +8,35 @@ from typing import Any
 def query_key(value: str) -> str:
     """Return a stable key for duplicate-query detection.
 
-    This is deliberately limited to whitespace/punctuation normalization.  It
-    must not rewrite entities or invent query terms, because those decisions
-    belong to the model planner.
+    Normalize whitespace, punctuation and case only.  It must not rewrite
+    entities or invent query terms, because those decisions belong to the
+    model planner.
     """
 
     text = re.sub(r"\s+", "", str(value or "")).strip().lower()
-    return text
+    return re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
 
 
 def evidence_observation_key(item: dict[str, Any]) -> str:
     """Identify an evidence observation, including newly expanded chain text.
 
-    A document can be returned in multiple rounds with a larger
-    ``evidence_chain_text``.  Treating only its document id as novelty hides
-    useful multi-hop context and makes the adaptive stop rule too aggressive.
-    Scores and other volatile metadata are intentionally excluded.
+    A document can be returned in multiple rounds with model-produced
+    ``evidence_chain_text``.  That chain may contain bridge text which is not
+    shown to the answer model, so novelty is based on the atomic document text
+    whenever available.  Scores and other volatile metadata are excluded.
     """
 
     doc = item.get("document") or {}
     doc_id = str(doc.get("id") or "").strip()
     if not doc_id:
         doc_id = str(item.get("doc_index") or "").strip()
-    chain = str(item.get("evidence_chain_text") or "")
     clean = str(doc.get("clean_text") or doc.get("search_text") or "")
-    content = re.sub(r"\s+", " ", chain or clean).strip()
+    content = re.sub(r"\s+", " ", clean).strip()
+    if not content:
+        # Without atomic text, an expanded chain cannot be distinguished from
+        # model-added bridge content safely.  Use the stable identity instead
+        # of counting each chain variant as a new document.
+        content = doc_id or str(item.get("doc_index") or "").strip()
     digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:16] if content else "empty"
     return f"{doc_id or 'unknown'}:{digest}"
 

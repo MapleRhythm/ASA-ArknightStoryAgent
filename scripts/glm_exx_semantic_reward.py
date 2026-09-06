@@ -318,9 +318,8 @@ def validate_judgement(
                 "checked_evidence_ids",
                 "citation_complete",
             }
-            if not isinstance(fact_row, dict) or set(fact_row) not in (
-                allowed_fact_keys,
-                allowed_fact_keys | {"question_relevance"},
+            if not isinstance(fact_row, dict) or set(fact_row) != (
+                allowed_fact_keys | {"question_relevance"}
             ):
                 raise SemanticJudgeError("invalid_judge_fact_schema")
             fact_index = fact_row.get("fact_index")
@@ -334,7 +333,7 @@ def validate_judgement(
             seen_fact_indices.add(fact_index)
             if fact_row.get("support") not in SUPPORT_VALUES:
                 raise SemanticJudgeError("invalid_fact_support")
-            if fact_row.get("question_relevance", "direct") not in RELEVANCE_VALUES:
+            if fact_row.get("question_relevance") not in RELEVANCE_VALUES:
                 raise SemanticJudgeError("invalid_question_relevance")
             checked = fact_row.get("checked_evidence_ids")
             expected_ids = predicted_facts[fact_index].get("evidence_ids")
@@ -371,10 +370,7 @@ def semantic_score(
     if not facts:
         return -1.0
     support_scores = [SUPPORT_VALUES[item["support"]] for item in facts]
-    relevance_scores = [
-        RELEVANCE_VALUES.get(item.get("question_relevance", "direct"), 1.0)
-        for item in facts
-    ]
+    relevance_scores = [RELEVANCE_VALUES[item["question_relevance"]] for item in facts]
     if score_profile == "precision-v1":
         supports = [item["support"] for item in facts]
         # GRPO optimizes relative rank within a rollout group.  A smooth
@@ -384,7 +380,7 @@ def semantic_score(
         # answers whose every fact is fully entailed.
         if "contradicted" in supports:
             return -1.0
-        if any(item.get("question_relevance", "direct") == "irrelevant" for item in facts):
+        if any(item["question_relevance"] == "irrelevant" for item in facts):
             return -0.75
         if "unsupported" in supports or row["critical_unsupported_claims"] > 0:
             return -0.75
@@ -422,7 +418,7 @@ def semantic_score(
         score = min(score, -0.5)
     elif any(item["support"] == "unsupported" for item in facts):
         score = min(score, 0.25)
-    if any(item.get("question_relevance", "direct") == "irrelevant" for item in facts):
+    if any(item["question_relevance"] == "irrelevant" for item in facts):
         score = min(score, 0.0)
     return max(-1.0, min(1.0, score))
 

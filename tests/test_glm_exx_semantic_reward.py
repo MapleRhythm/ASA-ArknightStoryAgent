@@ -65,6 +65,7 @@ def test_validate_and_score_answer_judgement() -> None:
                     {
                         "fact_index": 0,
                         "support": "entailed",
+                        "question_relevance": "direct",
                         "checked_evidence_ids": ["E1"],
                         "citation_complete": True,
                     }
@@ -84,6 +85,7 @@ def test_validate_and_score_answer_judgement() -> None:
         "coverage:complete": 1,
         "critical_unsupported_claims": 0,
         "facts": 1,
+        "relevance:direct": 1,
         "support:entailed": 1,
     }
 
@@ -100,6 +102,7 @@ def test_contradiction_caps_semantic_reward() -> None:
             {
                 "fact_index": 0,
                 "support": "contradicted",
+                "question_relevance": "direct",
                 "checked_evidence_ids": ["E1"],
                 "citation_complete": False,
             }
@@ -123,6 +126,7 @@ def test_precision_score_only_credits_fully_entailed_answers() -> None:
             {
                 "fact_index": 0,
                 "support": "entailed",
+                "question_relevance": "direct",
                 "checked_evidence_ids": ["E1"],
                 "citation_complete": True,
             }
@@ -175,12 +179,14 @@ def test_one_unsupported_fact_cannot_be_hidden_by_supported_facts() -> None:
             {
                 "fact_index": 0,
                 "support": "entailed",
+                "question_relevance": "direct",
                 "checked_evidence_ids": ["E1"],
                 "citation_complete": True,
             },
             {
                 "fact_index": 1,
                 "support": "unsupported",
+                "question_relevance": "direct",
                 "checked_evidence_ids": ["E2"],
                 "citation_complete": False,
             },
@@ -240,6 +246,7 @@ def test_checked_ids_must_equal_rollout_claim_ids() -> None:
                     {
                         "fact_index": 0,
                         "support": "entailed",
+                        "question_relevance": "direct",
                         "checked_evidence_ids": ["E2"],
                         "citation_complete": True,
                     }
@@ -258,6 +265,35 @@ def test_checked_ids_must_equal_rollout_claim_ids() -> None:
         raise AssertionError("judge was allowed to inspect an uncited passage")
 
 
+def test_v4_judgement_requires_question_relevance() -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [{"fact": "事实", "evidence_ids": ["E1"]}],
+    }
+    value = {
+        "protocol": MODULE.PROTOCOL_VERSION,
+        "rollouts": [
+            {
+                "rollout_index": 0,
+                "action_appropriateness": "appropriate",
+                "facts": [
+                    {
+                        "fact_index": 0,
+                        "support": "entailed",
+                        "checked_evidence_ids": ["E1"],
+                        "citation_complete": True,
+                    }
+                ],
+                "coverage": "complete",
+                "critical_unsupported_claims": 0,
+            }
+        ],
+    }
+
+    with pytest.raises(MODULE.SemanticJudgeError, match="invalid_judge_fact_schema"):
+        MODULE.validate_judgement(value, [(0, payload)])
+
+
 def test_checked_ids_may_return_same_set_in_different_order() -> None:
     payload = {
         "next_action": "answer_directly",
@@ -273,6 +309,7 @@ def test_checked_ids_may_return_same_set_in_different_order() -> None:
                     {
                         "fact_index": 0,
                         "support": "entailed",
+                        "question_relevance": "direct",
                         "checked_evidence_ids": ["E1", "E2"],
                         "citation_complete": True,
                     }
@@ -344,6 +381,7 @@ def test_cache_recomputes_scores_for_precision_profile(tmp_path: Path) -> None:
                     {
                         "fact_index": 0,
                         "support": "partial",
+                        "question_relevance": "direct",
                         "checked_evidence_ids": ["E1"],
                         "citation_complete": True,
                     }

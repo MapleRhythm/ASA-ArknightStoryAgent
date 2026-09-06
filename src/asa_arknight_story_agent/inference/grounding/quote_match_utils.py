@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 from typing import Any
 
 from asa_arknight_story_agent.inference.common.lexicon import COMMON_NON_ENTITY_WORDS
@@ -79,14 +78,27 @@ def quote_matches_evidence(quote: str, evidence_text: str) -> bool:
         for part in re.split(r"(?:\.{3}|…)+", raw_quote)
     ]
     parts = [part for part in parts if part]
-    if len(parts) < 2:
+    # A one-character fragment on either side is too easy to match by
+    # accident (for example ``阿...岛`` in an unrelated paragraph).  Require
+    # meaningful anchors and bound the wildcard span so ellipsis remains a
+    # quote abbreviation rather than an unrestricted document search.
+    if len(parts) < 2 or any(len(part) < 2 for part in parts):
         return False
     cursor = 0
+    first_position: int | None = None
+    last_end: int | None = None
     for part in parts:
         position = target.find(part, cursor)
         if position < 0:
             return False
+        if first_position is None:
+            first_position = position
         cursor = position + len(part)
+        last_end = cursor
+    if first_position is None or last_end is None:
+        return False
+    if last_end - first_position > 80:
+        return False
     return True
 
 
@@ -122,57 +134,59 @@ def ordered_fuzzy_term_match(
         return True
     if normalized_term.isascii():
         return False
-    # Two-character fragments are too ambiguous to fuzzy-match safely.
-    if len(normalized_term) < 3:
+    # Very short fragments are too ambiguous to fuzzy-match safely.
+    if len(normalized_term) < 4:
         return False
     if max_intervening_chars is None:
-        # Allow a small amount of inserted context without turning this into
-        # an unrestricted subsequence test.
+        # This is both the per-gap and total insertion budget.  Keeping a
+        # total bound prevents a term from being assembled from characters
+        # scattered across an otherwise unrelated paragraph.
         max_intervening_chars = max(2, min(8, len(normalized_term)))
 
+    positions: dict[str, list[int]] = {}
+    for index, char in enumerate(normalized_evidence):
+        positions.setdefault(char, []).append(index)
+
     def ordered_subsequence(candidate: str) -> bool:
-        # Keep all viable positions instead of greedily taking the first one:
-        # a common source pattern is ``凯尔希医生……考虑……强化`` where an earlier
-        # unrelated ``考`` would otherwise make the greedy path fail.
-        positions: dict[str, list[int]] = defaultdict(list)
-        for index, char in enumerate(normalized_evidence):
-            positions[char].append(index)
-        states = {position: position for position in positions.get(candidate[0], [])}
+        # position -> (start, total inserted characters)
+        states = {
+            position: (position, 0)
+            for position in positions.get(candidate[0], [])
+        }
         if not states:
             return False
         for char in candidate[1:]:
-            next_states: dict[int, int] = {}
+            next_states: dict[int, tuple[int, int]] = {}
             for position in positions.get(char, []):
-                # The evidence is short enough that scanning the current
-                # frontier is cheaper and clearer than introducing an index.
-                starts = [
-                    start
-                    for previous, start in states.items()
-                    if 0 <= position - previous - 1 <= max_intervening_chars
-                ]
-                if starts:
-                    # A later start minimizes the final span and avoids an
-                    # early distractor occurrence.
-                    next_states[position] = max(starts)
+                best: tuple[int, int] | None = None
+                for previous, (start, inserted) in states.items():
+                    gap = position - previous - 1
+                    total_inserted = inserted + gap
+                    if (
+                        0 <= gap <= max_intervening_chars
+                        and total_inserted <= max_intervening_chars
+                    ):
+                        candidate_state = (start, total_inserted)
+                        if best is None or (candidate_state[1], -candidate_state[0]) < (
+                            best[1],
+                            -best[0],
+                        ):
+                            best = candidate_state
+                if best is not None:
+                    next_states[position] = best
             if not next_states:
                 return False
             states = next_states
-        limit = max_intervening_chars * (len(candidate) - 1)
-        return any(
-            position - start - (len(candidate) - 1) <= limit
-            for position, start in states.items()
-        )
+        return bool(states)
 
     if ordered_subsequence(normalized_term):
         return True
-    # Chinese morphology often inserts/removes a single aspect particle
-    # (例如“同意了娜塔莉娅” vs “同意娜塔莉娅”).  Permit at most one omitted
-    # character, while retaining order and gap limits.  More than one missing
-    # character is rejected to avoid turning this into a loose bag-of-chars
-    # matcher.
-    if len(normalized_term) >= 5:
-        return any(
-            ordered_subsequence(normalized_term[:index] + normalized_term[index + 1 :])
-            for index in range(len(normalized_term))
-        )
-    return False
+    # Permit omission of one grammatical particle only.  The previous
+    # implementation allowed deleting any character, which could turn a
+    # semantically different term into a match.
+    omittable_particles = {"了", "的", "地", "得", "着", "过"}
+    return any(
+        char in omittable_particles
+        and ordered_subsequence(normalized_term[:index] + normalized_term[index + 1 :])
+        for index, char in enumerate(normalized_term)
+    )

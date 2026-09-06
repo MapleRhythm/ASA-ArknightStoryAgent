@@ -93,3 +93,9 @@ def test_quote_matching_treats_ellipsis_as_ordered_wildcard() -> None:
     evidence = "雷德擦破了嘴角，并让对方相信感染风险很高。"
     assert quote_matches_evidence("雷德擦破了嘴角……让对方相信感染风险很高", evidence)
     assert not quote_matches_evidence("雷德擦破了嘴角……店里没有人", evidence)
+    assert not quote_matches_evidence("雷……高", evidence)
+
+
+def test_quote_matching_rejects_unbounded_ellipsis_span() -> None:
+    evidence = "开头锚点" + "无关内容" * 30 + "结尾锚点"
+    assert not quote_matches_evidence("开头锚点……结尾锚点", evidence)

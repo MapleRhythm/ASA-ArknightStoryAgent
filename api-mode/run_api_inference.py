@@ -661,7 +661,9 @@ def main() -> None:
     max_retrieval_rounds = int(
         resolve_config_value(args.max_retrieval_rounds, inference_cfg, "max_retrieval_rounds", 2)
     )
-    max_retrieval_rounds = min(2, max(1, max_retrieval_rounds))
+    # Two rounds remain the default; an explicit third recovery round is
+    # supported by the pipeline and must remain reachable from the API.
+    max_retrieval_rounds = min(3, max(1, max_retrieval_rounds))
     prompt_evidence_top_k = int(
         resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 12)
     )

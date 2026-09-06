@@ -148,7 +148,8 @@ CPU/API：
 - `initial_prompt_hint`：API 初答阶段的极简提示词。
 - `initial_answer_max_tokens`：API 初答 token 上限。
 - `refine_answer_max_tokens`：证据校正阶段 token 上限。
-- `max_retrieval_rounds`：最多多轮检索次数。核心链路会 clamp 到最多 2 轮。
+- `max_retrieval_rounds`：最多多轮检索次数。默认 2 轮，显式配置时最多 3 轮；
+  第三轮仅作为受控 recovery 实验使用。
 - `prompt_evidence_top_k`：最终塞给生成模型的证据数量。
 - `prompt_evidence_max_chars_per_doc`：每条证据进入 prompt 的最大字符数。
 - `prompt_conclusion_evidence_max_total_chars`：conclusion 阶段证据包总字符数上限。

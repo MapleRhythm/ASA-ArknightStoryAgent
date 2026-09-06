@@ -169,21 +169,12 @@ def validate_evidence_id_grounding(
                 + ",".join(dedupe_keep_order(hard_relation_missing)[:8])
             )
         elif missing_tokens:
-            # A generated Chinese claim can paraphrase a source sentence
-            # without copying every function word or qualifier. Treat a
-            # partially covered ordinary phrase as a warning, not an
-            # automatic rejection. Unknown ASCII entities and the
-            # high-risk predicates above remain hard failures.
-            matched_count = max(0, len(claim_tokens) - len(missing_tokens))
-            coverage = matched_count / max(1, len(claim_tokens))
-            if coverage < 0.30:
-                issues.append(
-                    f"supported_fact_{fact_index}_terms_outside_cited_evidence:"
-                    + ",".join(dedupe_keep_order(missing_tokens)[:8])
-                )
-            else:
-                warnings.append(
-                    f"supported_fact_{fact_index}_paraphrase_terms_outside_cited_evidence:"
-                    + ",".join(dedupe_keep_order(missing_tokens)[:8])
-                )
+            # Partial lexical coverage is not proof that the remaining
+            # clause is supported.  A claim may contain an unsupported second
+            # sentence even when its first sentence matches the cited passage,
+            # so every unmatched material token remains a hard failure.
+            issues.append(
+                f"supported_fact_{fact_index}_terms_outside_cited_evidence:"
+                + ",".join(dedupe_keep_order(missing_tokens)[:8])
+            )
     return issues, warnings

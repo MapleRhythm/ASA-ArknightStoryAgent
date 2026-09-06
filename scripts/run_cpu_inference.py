@@ -383,7 +383,9 @@ def main() -> None:
     )
     if max_retrieval_rounds is None:
         max_retrieval_rounds = 2
-    max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
+    # Two rounds remain the default; an explicit third recovery round is
+    # supported by the pipeline and must remain reachable from the CLI.
+    max_retrieval_rounds = min(3, max(1, int(max_retrieval_rounds)))
     enable_adaptive_round_scheduler = bool(
         resolve_config_value(
             args.enable_adaptive_round_scheduler,

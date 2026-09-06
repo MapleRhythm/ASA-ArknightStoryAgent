@@ -318,16 +318,16 @@ def test_evidence_id_validator_keeps_unknown_ascii_entity_rejected() -> None:
     assert any("terms_outside_cited_evidence" in issue for issue in issues)
 
 
-def test_evidence_id_validator_softens_supported_chinese_paraphrase_to_warning() -> None:
+def test_evidence_id_validator_rejects_partially_covered_extra_clause() -> None:
     conclusion = _conclusion("E1")
-    conclusion.supported_facts[0]["fact"] = "阿米娅检查了报告；处理了调岗请求。"
+    conclusion.supported_facts[0]["fact"] = "阿米娅检查了报告；她在雨夜离开罗德岛。"
     issues, warnings = validate_evidence_id_grounding(
         conclusion=conclusion,
         evidence=_evidence(),
         question="阿米娅如何处理调岗申请？",
     )
-    assert issues == []
-    assert any("paraphrase_terms_outside_cited_evidence" in warning for warning in warnings)
+    assert any("terms_outside_cited_evidence" in issue for issue in issues)
+    assert not any("paraphrase_terms_outside_cited_evidence" in warning for warning in warnings)
 
 
 def test_evidence_id_validator_uses_only_text_visible_in_truncated_prompt() -> None:
