@@ -55,7 +55,12 @@ class CPUInferencePipeline(
         self.retriever = retriever
         self.generator = generator
         self.query_config = query_config or QueryConfig()
-        self.max_retrieval_rounds = min(2, max(1, int(max_retrieval_rounds)))
+        # Keep the normal path at two rounds, but allow an explicitly
+        # configured third recovery round for multi-hop questions.  The
+        # adaptive scheduler stops earlier when queries repeat or evidence
+        # stops growing, so this upper bound is a safety budget rather than a
+        # promise to spend three rounds on every request.
+        self.max_retrieval_rounds = min(3, max(1, int(max_retrieval_rounds)))
         if not use_model_hypothesis:
             raise ValueError("heuristic hypothesis generation is disabled; set use_model_hypothesis=true")
         if use_model_retrieval_planner is not None:
