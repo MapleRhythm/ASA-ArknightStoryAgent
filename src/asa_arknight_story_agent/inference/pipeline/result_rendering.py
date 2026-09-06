@@ -68,6 +68,10 @@ def build_prompt_evidence_runtime_metadata(pipeline: Any) -> dict[str, Any]:
         "minirag_auto_second_retrieval": pipeline.query_config.minirag_auto_second_retrieval,
         "minirag_scope_seed_top_k": pipeline.query_config.minirag_scope_seed_top_k,
         "minirag_expansion_query_top_k": pipeline.query_config.minirag_expansion_query_top_k,
+        "retrieval_workers": max(
+            1,
+            int(getattr(pipeline.query_config, "retrieval_workers", 1) or 1),
+        ),
         "scoped_chapter_search_enabled": pipeline.query_config.enable_scoped_chapter_search,
         "scoped_chapter_dense_top_k": pipeline.query_config.scoped_chapter_dense_top_k,
         "scoped_chapter_sparse_top_k": pipeline.query_config.scoped_chapter_sparse_top_k,

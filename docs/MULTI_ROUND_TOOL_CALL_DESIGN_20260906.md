@@ -49,6 +49,24 @@ opt-in 方式验证，不能直接替换生产。
 - 没有新证据、超时或查询全部重复时，控制器强制 `abstain`/最终受限回答。
 - `answer` 经过 schema、E-ID、fact-level support 和 set-level coverage 校验。
 
+## 当前实现状态（2026-09-06）
+
+- `src/.../pipeline/trace.py` 已将旧的 `next_action` 映射为内部
+  `asa_round_tool_v1`，并记录 `answer`、`search_more`、`clarify`、
+  `abstain` 四类动作。
+- 这仍是兼容适配层，不是要求本地 4B 模型原生输出 OpenAI
+  function-calling。这样可以保留现有训练数据，同时让后端拥有统一的
+  有限状态控制面。
+- 检索查询之间已支持可配置并行执行：`QueryConfig.retrieval_workers`
+  默认为 `1`，只有在完成线程安全和召回 A/B 后才应在 GPU 配置中设为
+  `2-4`。并行路径保持输入顺序和 RRF 合并顺序不变。
+- 不应把 `retrieval_workers` 与多轮次数混淆：前者只减少同一轮的等待，
+  后者决定是否追加检索和模型生成调用。
+
+一个 8 查询、每个 lane 人为 40ms 延迟的等价性测试中，串行约
+`0.643s`，4 worker 约 `0.163s`；这只是并行机制的微基准，不代表真实
+GPU 延迟，也不能替代端到端盲测。
+
 ## 保留 fact 间关系
 
 tool call 不能只检查每条 fact。回答动作内部应保留可选关系：
@@ -85,4 +103,3 @@ tool call 不能只检查每条 fact。回答动作内部应保留可选关系�
 验收指标必须同时满足：独立盲测中
 `unsupported + contradicted <= 20%`、回答级关键主张风险不超过 20%、
 不能靠大量弃答达标，且 warm p95 GPU 延迟不超过 20 秒。
-

@@ -82,3 +82,8 @@ class QueryConfig:
     same_story_sweep_max_docs_per_story: int = 24
     same_story_sweep_extra_candidates: int = 80
     rerank_batch_size: int = 8
+    # Retrieval calls are independent across query variants, but some
+    # backends (notably GPU encoders) are not thread-safe by default. Keep
+    # this opt-in and conservative; production configs can enable a small
+    # number of workers after measuring recall/latency on their hardware.
+    retrieval_workers: int = 1

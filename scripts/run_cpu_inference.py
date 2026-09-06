@@ -360,6 +360,7 @@ def main() -> None:
     rerank_batch_size = int(
         resolve_config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8)
     )
+    retrieval_workers = max(1, int(retrieval_cfg.get("retrieval_workers", 1)))
     enable_neighbor_expansion = bool(retrieval_cfg.get("enable_neighbor_expansion", False))
     neighbor_max_seed_docs = int(retrieval_cfg.get("neighbor_max_seed_docs", 24))
     neighbor_story_window = int(retrieval_cfg.get("neighbor_story_window", 2))
@@ -705,6 +706,7 @@ def main() -> None:
             same_story_sweep_max_docs_per_story=same_story_sweep_max_docs_per_story,
             same_story_sweep_extra_candidates=same_story_sweep_extra_candidates,
             rerank_batch_size=rerank_batch_size,
+            retrieval_workers=retrieval_workers,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
         enable_adaptive_round_scheduler=enable_adaptive_round_scheduler,

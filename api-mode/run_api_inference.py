@@ -587,6 +587,7 @@ def main() -> None:
     fusion_top_k = int(resolve_config_value(args.fusion_top_k, retrieval_cfg, "fusion_top_k", 40))
     rerank_top_k = int(resolve_config_value(args.rerank_top_k, retrieval_cfg, "rerank_top_k", 15))
     rerank_batch_size = int(resolve_config_value(args.rerank_batch_size, retrieval_cfg, "rerank_batch_size", 8))
+    retrieval_workers = max(1, int(retrieval_cfg.get("retrieval_workers", 1)))
     enable_neighbor_expansion = bool(
         resolve_config_value(args.enable_neighbor_expansion, retrieval_cfg, "enable_neighbor_expansion", False)
     )
@@ -801,6 +802,7 @@ def main() -> None:
             neighbor_max_seed_docs=neighbor_max_seed_docs,
             neighbor_story_window=neighbor_story_window,
             neighbor_activity_story_sort_window=neighbor_activity_story_sort_window,
+            retrieval_workers=retrieval_workers,
             rerank_batch_size=rerank_batch_size,
         ),
         max_retrieval_rounds=max_retrieval_rounds,
