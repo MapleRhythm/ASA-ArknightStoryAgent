@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Any
 
 
-PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v3"
+# v4 adds per-fact question_relevance.  Bumping the protocol is essential:
+# otherwise a v3 cache entry could silently bypass the new relevance reward.
+PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v4"
 SCORE_PROFILES = {"balanced-v3", "precision-v1"}
 SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contradicted": -1.0}
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
