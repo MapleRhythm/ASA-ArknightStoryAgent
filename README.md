@@ -221,7 +221,7 @@ python scripts/build_minirag_index.py --progress --output indexes/arknights_stor
 - `retrieval.fusion_top_k`：多路召回融合后保留的候选数。
 - `retrieval.rerank_top_k`：最终进入证据选择的候选数。
 - `retrieval.enable_neighbor_expansion`：是否启用 chunk 邻接扩展。
-- `inference.max_retrieval_rounds`：最多检索轮数，核心链路会限制为最多 2 轮。
+- `inference.max_retrieval_rounds`：最多检索轮数，默认 2 轮；显式配置最多 3 轮，第三轮仅用于受控 recovery 实验。
 - `inference.prompt_evidence_top_k`：塞给生成模型的证据数量。
 - `inference.answer_grounding_mode`：当前 LoRA 推荐 `quote`。
 - `generator.backend`：`vllm`、`llama.cpp` 或 `openai_compatible_api`。
@@ -291,7 +291,7 @@ python scripts/query_retrieval.py "你的问题"
 - `minirag_chapter_expansion`
 - `evidence_summary`
 
-如果前两轮都没有新增有效证据，第三轮通常只会增加延迟，因此当前发布版不会继续第三轮召回。
+如果前两轮都没有新增有效证据，第三轮通常只会增加延迟，因此默认发布配置不会继续第三轮召回；只有显式配置时才允许最多 3 轮。
 
 ### 输出不是最终答案而是一大段 JSON？
 
@@ -325,9 +325,9 @@ GPU 本地标准链路：
 -> prompt evidence 去重、降权、截断
 -> minimal conclusion_generation
 -> answer_directly / retrieve_more / clarify_user / abstain
--> 最多 2 轮召回；达到上限后基于当前证据输出可确认部分
+-> 默认 2 轮召回；显式配置最多 3 轮（第三轮仅用于受控 recovery 实验）
 ```
 
 CPU 本地模式复用同一套检索与推理框架，但关闭 reranker，并使用 llama.cpp 运行已合并 LoRA 的 GGUF。CPU API 模式默认使用“先答后检索再校正”链路：API 模型先给出初答，本地检索用原问题和初答召回证据，再让 API 模型按证据修正答案；如需回到完整 planning 流程，可把 `inference.pipeline_mode` 改为 `standard`。
 
-`max_retrieval_rounds` 在核心链路中会限制为最多 2 轮。达到上限后，系统不会继续机械检索，而是根据当前证据输出可确认部分，并明确缺少哪些直接证据。
+`max_retrieval_rounds` 默认是 2 轮，核心链路最多接受显式配置的 3 轮；第三轮仅建议用于受控 recovery 实验。达到上限后，系统不会继续机械检索，而是根据当前证据输出可确认部分，并明确缺少哪些直接证据。

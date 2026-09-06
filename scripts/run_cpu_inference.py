@@ -25,6 +25,7 @@ from asa_arknight_story_agent.config import (  # noqa: E402
 from asa_arknight_story_agent.runtime_config import (  # noqa: E402
     load_runtime_config,
     resolve_config_value,
+    resolve_max_retrieval_rounds,
     resolve_path_value,
 )
 
@@ -375,17 +376,7 @@ def main() -> None:
     same_story_sweep_max_docs_per_story = int(retrieval_cfg.get("same_story_sweep_max_docs_per_story", 24))
     same_story_sweep_extra_candidates = int(retrieval_cfg.get("same_story_sweep_extra_candidates", 80))
     reranker_max_length = int(retrieval_cfg.get("reranker_max_length", 1024))
-    max_retrieval_rounds = resolve_config_value(
-        args.max_retrieval_rounds,
-        inference_cfg,
-        "max_retrieval_rounds",
-        None,
-    )
-    if max_retrieval_rounds is None:
-        max_retrieval_rounds = 2
-    # Two rounds remain the default; an explicit third recovery round is
-    # supported by the pipeline and must remain reachable from the CLI.
-    max_retrieval_rounds = min(3, max(1, int(max_retrieval_rounds)))
+    max_retrieval_rounds = resolve_max_retrieval_rounds(args.max_retrieval_rounds, inference_cfg)
     enable_adaptive_round_scheduler = bool(
         resolve_config_value(
             args.enable_adaptive_round_scheduler,

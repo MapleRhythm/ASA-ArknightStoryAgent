@@ -20,6 +20,26 @@ def resolve_config_value(cli_value: Any, config_section: dict[str, Any], key: st
     return config_section.get(key, default)
 
 
+def resolve_max_retrieval_rounds(
+    cli_value: Any,
+    inference_section: dict[str, Any],
+    *,
+    default: int = 2,
+    maximum: int = 3,
+) -> int:
+    """Resolve and bound the retrieval-round budget used by CLI entry points.
+
+    Two rounds are the normal/default path.  A third round is intentionally
+    available only as an explicit recovery experiment, while values outside
+    the supported range are kept safe and deterministic.
+    """
+
+    value = resolve_config_value(cli_value, inference_section, "max_retrieval_rounds", default)
+    if value is None:
+        value = default
+    return min(maximum, max(1, int(value)))
+
+
 def resolve_path_value(
     cli_value: Any,
     config_section: dict[str, Any],

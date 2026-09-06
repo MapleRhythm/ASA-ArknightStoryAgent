@@ -31,6 +31,7 @@ from asa_arknight_story_agent.config import (  # noqa: E402
 from asa_arknight_story_agent.runtime_config import (  # noqa: E402
     load_runtime_config,
     resolve_config_value,
+    resolve_max_retrieval_rounds,
     resolve_path_value,
 )
 
@@ -658,12 +659,7 @@ def main() -> None:
                 "MiniRAG index is enabled but missing. Build it with "
                 "`python scripts/build_minirag_index.py` or disable retrieval.enable_minirag."
             )
-    max_retrieval_rounds = int(
-        resolve_config_value(args.max_retrieval_rounds, inference_cfg, "max_retrieval_rounds", 2)
-    )
-    # Two rounds remain the default; an explicit third recovery round is
-    # supported by the pipeline and must remain reachable from the API.
-    max_retrieval_rounds = min(3, max(1, max_retrieval_rounds))
+    max_retrieval_rounds = resolve_max_retrieval_rounds(args.max_retrieval_rounds, inference_cfg)
     prompt_evidence_top_k = int(
         resolve_config_value(args.prompt_evidence_top_k, inference_cfg, "prompt_evidence_top_k", 12)
     )
