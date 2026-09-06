@@ -32,6 +32,20 @@
 reranker 和 embedding 之前对基座与 LoRA 路径做存在性检查，避免配置错误表现为
 长时间假死。
 
+## 证据预算诊断
+
+从 79 条固定输入的实际 `[E#]` 顺序统计，62 条 answer 行共有 128 个 gold
+evidence IDs：
+
+- top-10 能覆盖全部 gold IDs 的题目为 59/62（95.16%）；
+- top-16 能覆盖全部 gold IDs 的题目为 62/62（100%）；
+- gold evidence 的最大出现位置为 E12。
+
+这说明当前 top-10 存在可量化的 prompt coverage 缺口。该缺口不是 reranker
+候选召回失败，而是候选已经存在、在进入回答 prompt 时被过早裁掉。新增的
+`runtime_gpu_reranker_qwen35_4b_evidence_id_coverage_ablation.json` 将 top-k
+提高到 16，并启用集合覆盖选择；它是独立 ablation，尚未替换默认配置。
+
 ## 已提交
 
 - `468dba5`：训练选择与生产验收门槛报告
@@ -48,4 +62,3 @@ reranker 和 embedding 之前对基座与 LoRA 路径做存在性检查，避免
 3. 只有在校准 gold、独立语义审计和新盲测三者一致显示
    `unsupported/contradicted <= 20%`、claim support >= 0.80、
    稳态 P95 <= 20s 时，才考虑生产切换或 RLVR。
-
