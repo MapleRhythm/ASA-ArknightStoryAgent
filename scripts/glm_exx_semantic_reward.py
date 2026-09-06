@@ -31,6 +31,7 @@ PROTOCOL_VERSION = "asa_glm_exx_evidence_judge_v3"
 SCORE_PROFILES = {"balanced-v3", "precision-v1"}
 SUPPORT_VALUES = {"entailed": 1.0, "partial": 0.25, "unsupported": 0.0, "contradicted": -1.0}
 APPROPRIATENESS_VALUES = {"appropriate": 1.0, "inappropriate": -1.0, "uncertain": 0.0}
+RELEVANCE_VALUES = {"direct": 1.0, "supporting": 0.5, "irrelevant": -1.0}
 COVERAGE_VALUES = {"complete": 1.0, "partial": 0.25, "none": 0.0, "not_applicable": 0.0}
 EVIDENCE_HEADER_RE = re.compile(r"^\[(E\d+)\]\s*$", re.MULTILINE)
 FOLLOW_UP_REQUIRED = {"question", "query_type", "entities", "keywords", "expected_answer_type"}
@@ -230,6 +231,7 @@ def build_messages(
                     {
                         "fact_index": 0,
                         "support": "entailed|partial|unsupported|contradicted",
+                        "question_relevance": "direct|supporting|irrelevant",
                         "checked_evidence_ids": ["E1"],
                         "citation_complete": True,
                     }
@@ -256,10 +258,11 @@ def build_messages(
             "2. checked_evidence_ids必须与候选fact给出的evidence_ids完全相同；不得补充别的E编号。",
             "3. citation_complete表示所列证据是否足以支持该fact的完整断言；缺少关键因果、身份、动机或时间条件时为false。",
             "4. coverage检查全部受支持facts合起来是否完整回答问题核心信息需求；只回答一部分为partial。",
-            "5. action_appropriateness必须遵守轮次状态机：证据足够时仅answer_directly合适；证据不足且仍有后续轮次（例如1/2）时仅retrieve_more合适；证据不足且已到最后一轮（例如2/2）时abstain合适。不得因当前证据不足就在非末轮提前abstain。",
-            "6. retrieve_more或abstain的facts必须为空且coverage为not_applicable，只判断动作是否合适。",
-            "7. 无法从当前证据可靠判定时使用uncertain，不得凭常识强行判正。",
-            "8. 每个输入rollout恰好返回一项，索引及fact_index不得遗漏、重复或新增。不要输出解释、引文或思维过程。",
+            "5. question_relevance独立判断该fact是否回答本题：direct=直接回答问题，supporting=回答所需的必要补充，irrelevant=即使证据支持也不属于本题答案。",
+            "6. action_appropriateness必须遵守轮次状态机：证据足够时仅answer_directly合适；证据不足且仍有后续轮次（例如1/2）时仅retrieve_more合适；证据不足且已到最后一轮（例如2/2）时abstain合适。不得因当前证据不足就在非末轮提前abstain。",
+            "7. retrieve_more或abstain的facts必须为空且coverage为not_applicable，只判断动作是否合适。",
+            "8. 无法从当前证据可靠判定时使用uncertain，不得凭常识强行判正。",
+            "9. 每个输入rollout恰好返回一项，索引及fact_index不得遗漏、重复或新增。不要输出解释、引文或思维过程。",
         )
     )
     return [
@@ -307,12 +310,16 @@ def validate_judgement(
             raise SemanticJudgeError("judge_fact_count_mismatch")
         seen_fact_indices: set[int] = set()
         for fact_row in facts:
-            if not isinstance(fact_row, dict) or set(fact_row) != {
+            allowed_fact_keys = {
                 "fact_index",
                 "support",
                 "checked_evidence_ids",
                 "citation_complete",
-            }:
+            }
+            if not isinstance(fact_row, dict) or set(fact_row) not in (
+                allowed_fact_keys,
+                allowed_fact_keys | {"question_relevance"},
+            ):
                 raise SemanticJudgeError("invalid_judge_fact_schema")
             fact_index = fact_row.get("fact_index")
             if (
@@ -325,6 +332,8 @@ def validate_judgement(
             seen_fact_indices.add(fact_index)
             if fact_row.get("support") not in SUPPORT_VALUES:
                 raise SemanticJudgeError("invalid_fact_support")
+            if fact_row.get("question_relevance", "direct") not in RELEVANCE_VALUES:
+                raise SemanticJudgeError("invalid_question_relevance")
             checked = fact_row.get("checked_evidence_ids")
             expected_ids = predicted_facts[fact_index].get("evidence_ids")
             checked_ids = [str(item) for item in checked] if isinstance(checked, list) else []
@@ -360,6 +369,10 @@ def semantic_score(
     if not facts:
         return -1.0
     support_scores = [SUPPORT_VALUES[item["support"]] for item in facts]
+    relevance_scores = [
+        RELEVANCE_VALUES.get(item.get("question_relevance", "direct"), 1.0)
+        for item in facts
+    ]
     if score_profile == "precision-v1":
         supports = [item["support"] for item in facts]
         # GRPO optimizes relative rank within a rollout group.  A smooth
@@ -369,6 +382,8 @@ def semantic_score(
         # answers whose every fact is fully entailed.
         if "contradicted" in supports:
             return -1.0
+        if any(item.get("question_relevance", "direct") == "irrelevant" for item in facts):
+            return -0.75
         if "unsupported" in supports or row["critical_unsupported_claims"] > 0:
             return -0.75
         if row["action_appropriateness"] == "inappropriate":
@@ -384,23 +399,29 @@ def semantic_score(
 
     mean_entailment = sum(support_scores) / len(support_scores)
     worst_entailment = min(support_scores)
+    mean_relevance = sum(relevance_scores) / len(relevance_scores)
+    worst_relevance = min(relevance_scores)
     citation = sum(bool(item["citation_complete"]) for item in facts) / len(facts)
     coverage = COVERAGE_VALUES[row["coverage"]]
     # Mean-only scoring lets several supported facts wash out one hallucinated
     # fact.  Give the weakest claim material weight, reduce the incentive to
     # pad an answer for coverage, and make unsupported claims a hard ceiling.
     score = (
-        0.30 * mean_entailment
-        + 0.25 * worst_entailment
+        0.25 * mean_entailment
+        + 0.20 * worst_entailment
         + 0.15 * citation
         + 0.15 * coverage
         + 0.15 * action_score
+        + 0.05 * mean_relevance
+        + 0.05 * worst_relevance
     )
     score -= min(0.75, 0.25 * row["critical_unsupported_claims"])
     if any(item["support"] == "contradicted" for item in facts):
         score = min(score, -0.5)
     elif any(item["support"] == "unsupported" for item in facts):
         score = min(score, 0.25)
+    if any(item.get("question_relevance", "direct") == "irrelevant" for item in facts):
+        score = min(score, 0.0)
     return max(-1.0, min(1.0, score))
 
 
@@ -426,6 +447,8 @@ def judgement_counts(judgement: dict[str, Any]) -> dict[str, int]:
         counts["critical_unsupported_claims"] += row["critical_unsupported_claims"]
         for fact in row["facts"]:
             counts[f"support:{fact['support']}"] += 1
+            if "question_relevance" in fact:
+                counts[f"relevance:{fact['question_relevance']}"] += 1
             counts["citation_complete"] += int(fact["citation_complete"])
             counts["facts"] += 1
     return dict(sorted(counts.items()))

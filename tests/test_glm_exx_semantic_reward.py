@@ -192,6 +192,39 @@ def test_one_unsupported_fact_cannot_be_hidden_by_supported_facts() -> None:
     assert MODULE.semantic_score(row, payload) <= 0.25
 
 
+def test_irrelevant_supported_fact_receives_no_positive_semantic_credit() -> None:
+    payload = {
+        "next_action": "answer_directly",
+        "supported_facts": [
+            {"fact": "事实甲", "evidence_ids": ["E1"]},
+            {"fact": "事实乙", "evidence_ids": ["E2"]},
+        ],
+    }
+    row = {
+        "rollout_index": 0,
+        "action_appropriateness": "appropriate",
+        "facts": [
+            {
+                "fact_index": 0,
+                "support": "entailed",
+                "question_relevance": "direct",
+                "checked_evidence_ids": ["E1"],
+                "citation_complete": True,
+            },
+            {
+                "fact_index": 1,
+                "support": "entailed",
+                "question_relevance": "irrelevant",
+                "checked_evidence_ids": ["E2"],
+                "citation_complete": True,
+            },
+        ],
+        "coverage": "complete",
+        "critical_unsupported_claims": 0,
+    }
+    assert MODULE.semantic_score(row, payload) <= 0.0
+
+
 def test_checked_ids_must_equal_rollout_claim_ids() -> None:
     payload = {
         "next_action": "answer_directly",
