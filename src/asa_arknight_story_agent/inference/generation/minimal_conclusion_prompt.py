@@ -17,6 +17,7 @@ from asa_arknight_story_agent.inference.pipeline.constants import (
 )
 from asa_arknight_story_agent.inference.pipeline.types import HypothesisDocument
 from asa_arknight_story_agent.inference.evidence.prompt_ordering import select_prompt_evidence
+from asa_arknight_story_agent.inference.evidence.texts import prefer_direct_prompt_text
 
 
 def build_minimal_conclusion_prompt(
@@ -47,6 +48,14 @@ def build_minimal_conclusion_prompt(
             prompt_evidence_top_k=prompt_evidence_top_k,
         )
     )
+    # Evidence-chain text is a retriever-produced aggregation and may contain
+    # neighboring chunks or model-derived bridge text.  In compact E-ID mode
+    # every E-number must denote an atomic passage the answer can actually
+    # cite; otherwise one oversized chain lets a model attach several
+    # unrelated claims to the same E-ID.  Keep chains available in the
+    # retrieval trace, but show direct document text to the answer generator.
+    if grounding_mode.strip().lower() == "evidence_id":
+        selected_evidence = [prefer_direct_prompt_text(item) for item in selected_evidence]
     system_prompt = (
         EXX_SYSTEM_PROMPT
         if grounding_mode.strip().lower() == "evidence_id"

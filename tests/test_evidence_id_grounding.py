@@ -180,6 +180,33 @@ def test_evidence_id_mode_keeps_evidence_text_in_input_but_not_output_schema() -
     assert prompt.endswith("<|im_start|>assistant\n")
 
 
+def test_evidence_id_mode_uses_atomic_document_text_not_aggregated_chain() -> None:
+    evidence = [
+        {
+            "doc_index": 1,
+            "document": {
+                "id": "story#atomic",
+                "clean_text": "原子段落：凯尔希提出防卫计划。",
+            },
+            "evidence_chain_text": (
+                "[CHAIN_MEMBER_1] 凯尔希提出防卫计划。\n"
+                "[CHAIN_MEMBER_2] 旁邻段落中的其他人物和另一事件。"
+            ),
+        }
+    ]
+    _, evidence_brief = build_minimal_conclusion_prompt(
+        question="凯尔希提出了什么？",
+        current_hypothesis=_hypothesis(),
+        evidence=evidence,
+        current_round=1,
+        max_retrieval_rounds=2,
+        prompt_evidence_top_k=1,
+        grounding_mode="evidence_id",
+    )
+    assert "原子段落：凯尔希提出防卫计划。" in evidence_brief
+    assert "旁邻段落中的其他人物和另一事件" not in evidence_brief
+
+
 def test_exx_prompt_drops_whole_lower_rank_evidence_instead_of_truncating() -> None:
     evidence = _evidence()
     evidence[0]["document"]["clean_text"] = "甲" * 40
