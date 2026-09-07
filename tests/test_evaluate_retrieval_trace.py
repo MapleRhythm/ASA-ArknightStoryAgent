@@ -20,6 +20,7 @@ def test_stage_recall_and_prompt_loss_are_reported() -> None:
             "id": "q1",
             "question": "问题一",
             "question_family": "family-a",
+            "query_type": "causality",
             "gold_evidence_ids": ["a", "b"],
             "stages": {
                 "dense": ["a", "x"],
@@ -39,6 +40,10 @@ def test_stage_recall_and_prompt_loss_are_reported() -> None:
     assert result["stages"]["prompt"]["all_gold_rate"]["@2"] == 0.0
     assert result["family_macro"]["family-a"]["prompt"]["recall"]["@1"] == 0.5
     assert result["family_macro_mean"]["prompt"]["recall"]["@1"] == 0.5
+    assert result["rows"][0]["coverage_attribution"] == "prompt_drop"
+    assert result["coverage_attribution"] == {"prompt_drop": 1}
+    assert result["by_query_type"]["causality"]["rerank"]["all_gold_rate"]["@2"] == 1.0
+    assert result["by_gold_chain_length"]["2"]["prompt"]["recall"]["@1"] == 0.5
 
 
 def test_round_metrics_measure_novelty_and_duplicate_queries() -> None:
@@ -66,6 +71,30 @@ def test_round_metrics_measure_novelty_and_duplicate_queries() -> None:
     assert transition["fresh_doc_rate"] == 0.5
     assert transition["fresh_recall"] == 0.5
     assert transition["query_exact_duplicate"] == 1
+
+
+@pytest.mark.parametrize(
+    ("fusion", "rerank", "prompt", "expected"),
+    [
+        (["a"], ["a"], ["a"], "candidate_pool_missing"),
+        (["a", "b"], ["a"], ["a"], "rerank_drop"),
+        (["a", "b"], ["a", "b"], ["a"], "prompt_drop"),
+        (["a", "b"], ["a", "b"], ["a", "b"], "retrieval_coverage_complete"),
+    ],
+)
+def test_retrieval_coverage_attribution_is_unique(
+    fusion: list[str],
+    rerank: list[str],
+    prompt: list[str],
+    expected: str,
+) -> None:
+    assert (
+        MODULE.retrieval_coverage_attribution(
+            {"a", "b"},
+            {"fusion": fusion, "rerank": rerank, "prompt": prompt},
+        )
+        == expected
+    )
 
 
 def test_object_stage_items_and_json_wrapper_are_supported(tmp_path: Path) -> None:

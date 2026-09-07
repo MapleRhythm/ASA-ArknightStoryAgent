@@ -253,6 +253,27 @@ def stage_record(gold: set[str], ranked: list[str], top_ks: list[int]) -> dict[s
     }
 
 
+def retrieval_coverage_attribution(
+    gold: set[str], stages: dict[str, list[str]]
+) -> str:
+    """Locate the first stage where a complete gold set is unavailable."""
+    if not gold.issubset(stages["fusion"]):
+        return "candidate_pool_missing"
+    if not gold.issubset(stages["rerank"]):
+        return "rerank_drop"
+    if not gold.issubset(stages["prompt"]):
+        return "prompt_drop"
+    return "retrieval_coverage_complete"
+
+
+def chain_length_bucket(gold_count: int) -> str:
+    if gold_count <= 1:
+        return "1"
+    if gold_count == 2:
+        return "2"
+    return "3+"
+
+
 def merge_stage_records(records: list[dict[str, Any]], top_ks: list[int]) -> dict[str, Any]:
     if not records:
         return {
@@ -402,6 +423,13 @@ def evaluate_rows(rows: list[dict[str, Any]], top_ks: list[int], round_top_k: in
     family_stage_records: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
+    query_type_stage_records: dict[
+        str, dict[str, list[dict[str, Any]]]
+    ] = defaultdict(lambda: defaultdict(list))
+    chain_length_stage_records: dict[
+        str, dict[str, list[dict[str, Any]]]
+    ] = defaultdict(lambda: defaultdict(list))
+    attribution_counts: Counter[str] = Counter()
     row_outputs: list[dict[str, Any]] = []
     round_outputs: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
@@ -411,6 +439,7 @@ def evaluate_rows(rows: list[dict[str, Any]], top_ks: list[int], round_top_k: in
             gold_ids = extract_gold_ids(row)
             stages = extract_stages(row)
             family = family_key(row)
+            query_type = str(row.get("query_type") or "unknown")
         except SnapshotError as exc:
             failures.append({"id": key, "error": str(exc)})
             continue
@@ -421,12 +450,21 @@ def evaluate_rows(rows: list[dict[str, Any]], top_ks: list[int], round_top_k: in
         for stage in STAGES:
             stage_records[stage].append(per_stage[stage])
             family_stage_records[family][stage].append(per_stage[stage])
+            query_type_stage_records[query_type][stage].append(per_stage[stage])
+            chain_length_stage_records[chain_length_bucket(len(gold))][stage].append(
+                per_stage[stage]
+            )
+        attribution = retrieval_coverage_attribution(gold, stages)
+        attribution_counts[attribution] += 1
         row_outputs.append(
             {
                 "id": key,
                 "question": str(row.get("question") or ""),
                 "question_family": family,
+                "query_type": query_type,
                 "gold_evidence_ids": gold_ids,
+                "gold_chain_length": len(gold_ids),
+                "coverage_attribution": attribution,
                 "stages": {
                     stage: {
                         "candidate_count": len(stages[stage]),
@@ -476,6 +514,26 @@ def evaluate_rows(rows: list[dict[str, Any]], top_ks: list[int], round_top_k: in
             )
             for stage in STAGES
         },
+        "by_query_type": {
+            query_type: {
+                stage: merge_stage_records(
+                    query_type_stage_records[query_type][stage], top_ks
+                )
+                for stage in STAGES
+            }
+            for query_type in sorted(query_type_stage_records)
+        },
+        "by_gold_chain_length": {
+            bucket: {
+                stage: merge_stage_records(
+                    chain_length_stage_records[bucket][stage], top_ks
+                )
+                for stage in STAGES
+            }
+            for bucket in ("1", "2", "3+")
+            if bucket in chain_length_stage_records
+        },
+        "coverage_attribution": dict(sorted(attribution_counts.items())),
         "question_family_count": len(family_stage_records),
         "rounds": {
             "rows_with_rounds": len(round_outputs),

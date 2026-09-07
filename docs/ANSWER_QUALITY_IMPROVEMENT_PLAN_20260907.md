@@ -1,6 +1,6 @@
 # ASA 回答正确率提升研究方案
 
-日期：2026-09-06  
+日期：2026-09-07
 适用分支：`fix/grounding-pool-chain-priority`
 
 ## 1. 结论先行
@@ -463,6 +463,24 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 7. 汇总 complete/support/unsupported/action/latency 的配对报告；
 8. 仅当所有前置门槛满足后，才启动小规模 RLVR pilot；
 9. 本轮研究结果写入独立版本目录，不覆盖既有生产配置或历史审计产物。
+
+E0/E1 的离线执行命令如下。manifest 中的 `gold_evidence_ids` 必须是真实
+corpus document ID，不能使用 prompt-local 的 `E1/E2` 编号代替：
+
+```bash
+python3 scripts/build_retrieval_stage_snapshots.py \
+  --manifest <family-held-out-manifest.jsonl> \
+  --runtime-config configs/runtime_gpu_reranker_qwen35_4b.json \
+  --output outputs/retrieval_stage_snapshots/<name>.jsonl
+
+python3 scripts/evaluate_retrieval_trace.py \
+  --snapshots outputs/retrieval_stage_snapshots/<name>.jsonl \
+  --output outputs/retrieval_stage_snapshots/<name>.metrics.json
+
+python3 scripts/evaluate_prompt_selection_ablation.py \
+  --snapshots outputs/retrieval_stage_snapshots/<name>.jsonl \
+  --output outputs/retrieval_stage_snapshots/<name>.selection.json
+```
 
 ## 8. 交付判定
 
