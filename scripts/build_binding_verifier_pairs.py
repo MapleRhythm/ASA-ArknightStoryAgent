@@ -169,6 +169,64 @@ def negative_evidence_fingerprint(
     return hashlib.sha256(compact(payload).encode("utf-8")).hexdigest()
 
 
+def negative_candidate_key(
+    record_id: str, fact_index: int, eid: str, candidate_role: str
+) -> tuple[str, int, str, str]:
+    return (record_id, fact_index, eid, candidate_role)
+
+
+def full_negative_rejudgement_matches(
+    record_id: str,
+    fact_index: int,
+    claim: str,
+    original_candidate: dict[str, Any],
+    candidate_role: str,
+    rejudgement: dict[str, Any] | None,
+) -> bool:
+    """Validate a full-evidence hard-negative sidecar row.
+
+    The sidecar is trusted only when it is an explicitly successful judgement,
+    carries the expected role/key, contains complete text, fingerprints that
+    exact text, and extends the historical candidate as a prefix.  This keeps
+    stale, cross-role, or hand-edited rows quarantined.
+    """
+    try:
+        sidecar_fact_index = int(rejudgement.get("fact_index", -1)) if rejudgement else -1
+    except (TypeError, ValueError):
+        sidecar_fact_index = -1
+    if not (
+        rejudgement
+        and rejudgement.get("status") == "ok"
+        and rejudgement.get("full_evidence") is True
+        and str(rejudgement.get("record_id") or "") == record_id
+        and sidecar_fact_index == fact_index
+        and str(rejudgement.get("claim") or "") == claim
+        and str(rejudgement.get("eid") or "") == str(original_candidate.get("eid") or "")
+        and str(rejudgement.get("candidate_role") or "") == candidate_role
+        and str(rejudgement.get("glm_verdict") or "")
+        in {"supported", "unsupported"}
+    ):
+        return False
+    text = str(rejudgement.get("text") or "")
+    if not text:
+        return False
+    original_text = str(original_candidate.get("text") or "")
+    if not text.startswith(original_text) or len(text) <= len(original_text):
+        return False
+    if (
+        str(rejudgement.get("evidence_sha256") or "")
+        != negative_evidence_fingerprint(
+            record_id, fact_index, claim, original_candidate | {"text": text}
+        )
+    ):
+        return False
+    try:
+        evidence_chars = int(rejudgement.get("evidence_chars"))
+    except (TypeError, ValueError):
+        return False
+    return evidence_chars == len(text)
+
+
 def negative_candidate_coverage_issue(
     record_id: str,
     fact_index: int,
@@ -256,6 +314,12 @@ def main() -> int:
     parser.add_argument("--judgements", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument(
+        "--full-evidence-rejudgements",
+        type=Path,
+        default=None,
+        help="Optional hard-negative full-evidence rejudgement JSONL sidecar.",
+    )
+    parser.add_argument(
         "--ambiguity",
         type=Path,
         default=None,
@@ -285,6 +349,23 @@ def main() -> int:
 
     manifest = read_jsonl(args.manifest)
     adjudications = load_adjudications(args.ambiguity)
+    full_negative_rows = (
+        read_jsonl(args.full_evidence_rejudgements)
+        if args.full_evidence_rejudgements
+        else []
+    )
+    full_negative_lookup: dict[tuple[str, int, str, str], dict[str, Any]] = {}
+    duplicate_full_negative_keys: set[tuple[str, int, str, str]] = set()
+    for row in full_negative_rows:
+        key = negative_candidate_key(
+            str(row.get("record_id") or ""),
+            int(row.get("fact_index", -1)),
+            str(row.get("eid") or ""),
+            str(row.get("candidate_role") or ""),
+        )
+        if key in full_negative_lookup:
+            duplicate_full_negative_keys.add(key)
+        full_negative_lookup[key] = row
     task_lookup = {
         (str(row.get("row_id") or ""), int(row.get("fact_index", -1))): row
         for row in manifest
@@ -349,19 +430,85 @@ def main() -> int:
             continue
         claim = str(source.get("claim") or task.get("claim") or "").strip()
         confirmed: list[dict[str, Any]] = []
-        for item in source.get("hard_negatives") or []:
-            if (
-                str(item.get("glm_verdict") or "") != "unsupported"
-                or not str(item.get("text") or "").strip()
-            ):
-                continue
-            issue = negative_candidate_coverage_issue(
-                record_id, int(source.get("fact_index", -1)), claim, item
-            )
-            if issue and not args.allow_truncated_negative_candidates:
-                stats[f"dropped_negative:{issue}"] += 1
-                continue
-            confirmed.append(item)
+        candidate_items: dict[
+            tuple[str, str], dict[str, Any] | None
+        ] = {}
+        for candidate_role, candidates in (
+            ("hard_negative", source.get("hard_negatives") or []),
+            (
+                "suspected_missed_positive",
+                source.get("suspected_missed_positives") or [],
+            ),
+        ):
+            for original_item in candidates:
+                eid = str(original_item.get("eid") or "")
+                candidate_key = (candidate_role, eid)
+                item: dict[str, Any] | None = original_item
+                sidecar_key = negative_candidate_key(
+                    record_id,
+                    int(source.get("fact_index", -1)),
+                    eid,
+                    candidate_role,
+                )
+                sidecar = full_negative_lookup.get(sidecar_key)
+                if sidecar is not None:
+                    valid = (
+                        sidecar_key not in duplicate_full_negative_keys
+                        and full_negative_rejudgement_matches(
+                            record_id,
+                            int(source.get("fact_index", -1)),
+                            claim,
+                            original_item,
+                            candidate_role,
+                            sidecar,
+                        )
+                    )
+                    if not valid:
+                        stats["invalid_full_evidence_rejudgements"] += 1
+                        stats[
+                            (
+                                "dropped_negative:"
+                                if candidate_role == "hard_negative"
+                                else "dropped_missed_positive:"
+                            )
+                            + "invalid_full_evidence_rejudgement"
+                        ] += 1
+                        item = None
+                    else:
+                        item = {
+                            **original_item,
+                            "text": str(sidecar.get("text") or ""),
+                            "glm_verdict": str(sidecar.get("glm_verdict") or ""),
+                            "glm_reason": str(sidecar.get("glm_reason") or ""),
+                            "full_evidence": True,
+                            "evidence_sha256": str(
+                                sidecar.get("evidence_sha256") or ""
+                            ),
+                        }
+                        stats["accepted_full_evidence_rejudgements"] += 1
+                        stats[
+                            f"full_evidence_rejudgement_verdict:{item['glm_verdict']}"
+                        ] += 1
+                elif candidate_role == "hard_negative":
+                    stats["unrejudged_hard_negative_candidates"] += 1
+                else:
+                    stats["unrejudged_suspected_missed_positive_candidates"] += 1
+                candidate_items[candidate_key] = item
+
+                if candidate_role != "hard_negative" or item is None:
+                    continue
+                if (
+                    str(item.get("glm_verdict") or "") != "unsupported"
+                    or not str(item.get("text") or "").strip()
+                ):
+                    continue
+                issue = negative_candidate_coverage_issue(
+                    record_id, int(source.get("fact_index", -1)), claim, item
+                )
+                if issue and not args.allow_truncated_negative_candidates:
+                    stats[f"dropped_negative:{issue}"] += 1
+                    continue
+                confirmed.append(item)
         stats["confirmed_candidates"] += len(confirmed)
         stats["provisional_candidates"] += sum(
             str(item.get("glm_verdict") or "") == "not_run"
@@ -377,7 +524,14 @@ def main() -> int:
             }
         ]
         if args.include_suspected_missed_positives:
-            for item in source.get("suspected_missed_positives") or []:
+            for original_item in source.get("suspected_missed_positives") or []:
+                key = (
+                    "suspected_missed_positive",
+                    str(original_item.get("eid") or ""),
+                )
+                if key in candidate_items and candidate_items[key] is None:
+                    continue
+                item = candidate_items.get(key, original_item)
                 if str(item.get("glm_verdict") or "") != "supported":
                     continue
                 missed_text = str(item.get("text") or "").strip()
@@ -458,12 +612,21 @@ def main() -> int:
             "manifest": str(args.manifest),
             "judgements": str(args.judgements),
             "ambiguity": str(args.ambiguity) if args.ambiguity else None,
+            "full_evidence_rejudgements": (
+                str(args.full_evidence_rejudgements)
+                if args.full_evidence_rejudgements
+                else None
+            ),
         },
         "include_suspected_missed_positives": args.include_suspected_missed_positives,
         "allow_unverified_gold_judgements": args.allow_unverified_gold_judgements,
         "allow_truncated_negative_candidates": args.allow_truncated_negative_candidates,
         "seed": args.seed,
         "eval_ratio": args.eval_ratio,
+        "full_evidence_rejudgement_rows": len(full_negative_rows),
+        "duplicate_full_evidence_rejudgement_keys": len(
+            duplicate_full_negative_keys
+        ),
         "pairs": len(pairs),
         "train_pairs": len(train),
         "eval_pairs": len(eval_rows),

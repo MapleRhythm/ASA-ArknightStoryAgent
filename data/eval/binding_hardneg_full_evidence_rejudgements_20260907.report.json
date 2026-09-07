@@ -1,0 +1,41 @@
+{
+  "schema_version": "binding_hardneg_full_evidence_rejudge_v1",
+  "source": {
+    "hardneg": "/home/maplerhythm/ASA/.codex_tmp/binding_hardneg_v2_20260904.jsonl",
+    "hardneg_sha256": "fd3ef76db717cb5c312de3fccf6f83cd2f48e15baf8ce02854455054740127b8",
+    "quarantine": "data/eval/binding_hardneg_quarantine_20260907.jsonl",
+    "quarantine_sha256": "8eb6705da668ba384aba2a48ae51174efbdbed2ea8a4f0088bf8854213ea9f91",
+    "rejudgements": "/home/maplerhythm/ASA/.codex_tmp/binding_hardneg_full_evidence_rejudgements_20260907.jsonl",
+    "rejudgements_sha256": "9f5ff5fa0795723142efdb4ff5abd15f1129a26680e61c28a6a3b544d55815dd"
+  },
+  "candidates": 480,
+  "completed": 480,
+  "pending_after_run": 0,
+  "candidate_roles": {
+    "hard_negative": 421,
+    "suspected_missed_positive": 59
+  },
+  "old_verdicts": {
+    "not_run": 135,
+    "supported": 59,
+    "unsupported": 286
+  },
+  "new_verdicts": {
+    "supported": 131,
+    "unsupported": 349
+  },
+  "transition_matrix": {
+    "not_run -> supported": 26,
+    "not_run -> unsupported": 109,
+    "supported -> supported": 55,
+    "supported -> unsupported": 4,
+    "unsupported -> supported": 50,
+    "unsupported -> unsupported": 236
+  },
+  "duplicate_keys": 0,
+  "validation_errors": [],
+  "training_gate": {
+    "status": "full_evidence_provenance_pass_manual_set_review_required",
+    "policy": "Only status=ok, full_evidence=true, four-key matched, historical-prefix matched, and SHA256-validated rows may replace old candidate text and verdicts. A supported hard-negative is excluded from the negative pool; a supported suspected-missed-positive still requires explicit opt-in."
+  }
+}

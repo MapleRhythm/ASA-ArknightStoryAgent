@@ -29,9 +29,13 @@ against candidates then labelled `unsupported`; neither side passed the later
 full-evidence provenance gate.
 
 With the corrected default gates, the same artifacts produce only 393
-conservative pairs from 65 record groups (360 train / 33 eval). This is still
-not a final dataset: the split is record-held-out rather than
-question/story-family-held-out, and no new full-evidence verdicts were fabricated.
+conservative pairs from 65 record groups (360 train / 33 eval). A subsequent
+full-evidence rejudgement completed all 480 quarantined candidates (131
+`supported`, 349 `unsupported`); the sidecar is now consumed by the builder.
+This yields 817 pairs (744 train / 73 eval), or 1019 pairs (907 / 112) when
+98 confirmed missed-positive variants are explicitly included. These remain
+record-held-out, not question/story-family-held-out, and the single GLM judge
+does not constitute human gold.
 
 ## Training
 
@@ -78,8 +82,9 @@ cannot justify a production switch.
 
 Do not switch this checkpoint into production. Before considering a replacement:
 
-1. rejudge quarantined gold and hard-negative candidates with complete evidence
-   and matching content fingerprints;
+1. complete the remaining set-level and family-held-out review; the quarantined
+   gold and hard-negative candidates now have complete-evidence sidecars with
+   matching content fingerprints;
 2. atomize every `supported_by_some` compound claim before positive training;
 3. split by question and story family before training;
 4. rerun blind pairwise/listwise evaluation and full retrieval recall;

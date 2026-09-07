@@ -1,0 +1,55 @@
+{
+  "source": {
+    "hardneg": "/home/maplerhythm/ASA/.codex_tmp/binding_hardneg_v2_20260904.jsonl",
+    "manifest": "/home/maplerhythm/ASA/.codex_tmp/facts_full.jsonl",
+    "judgements": "/home/maplerhythm/ASA/.codex_tmp/judgements_full.jsonl",
+    "ambiguity": "/home/maplerhythm/ASA/.codex_tmp/gold_recalibrated_full_evidence_adjudications_20260907.jsonl",
+    "full_evidence_rejudgements": "/home/maplerhythm/ASA/.codex_tmp/binding_hardneg_full_evidence_rejudgements_20260907.jsonl"
+  },
+  "include_suspected_missed_positives": true,
+  "allow_unverified_gold_judgements": false,
+  "allow_truncated_negative_candidates": false,
+  "seed": 20260904,
+  "eval_ratio": 0.1,
+  "full_evidence_rejudgement_rows": 480,
+  "duplicate_full_evidence_rejudgement_keys": 0,
+  "pairs": 1019,
+  "train_pairs": 907,
+  "eval_pairs": 112,
+  "groups": 123,
+  "train_groups": 113,
+  "eval_groups": 10,
+  "query_types": {
+    "fact": 151,
+    "causality": 587,
+    "reasoning": 193,
+    "reveal": 8,
+    "relation": 80
+  },
+  "gold_status": {
+    "supported_by_union": 374,
+    "clean_support": 605,
+    "partial": 40
+  },
+  "negative_type": {
+    "binding_glm_confirmed_unsupported": 1019
+  },
+  "stats": {
+    "gold_status:supported_by_union": 158,
+    "accepted_full_evidence_rejudgements": 355,
+    "full_evidence_rejudgement_verdict:supported": 97,
+    "full_evidence_rejudgement_verdict:unsupported": 258,
+    "unrejudged_hard_negative_candidates": 5655,
+    "confirmed_candidates": 817,
+    "provisional_candidates": 5184,
+    "suspected_missed_positives": 100,
+    "included_suspected_missed_positives": 98,
+    "gold_status:clean_support": 1303,
+    "unrejudged_suspected_missed_positive_candidates": 60,
+    "gold_status:supported_by_some": 94,
+    "dropped_nonpositive_gold": 169,
+    "gold_status:partial": 76,
+    "gold_status:unsupported": 54,
+    "gold_status:ambiguous": 21
+  }
+}

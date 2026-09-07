@@ -33,7 +33,12 @@
 
 **1．如何解读现有证据**
 
-上传文档顶部明确标记：它由另一并发模型生成，尚未逐项源码复核；strict9 snapshot、metrics、selection ablation 已在 2026-09-07 09:44 完成。正文第 23、26.5、29、31、33 节的“尚未完成”描述不能继续沿用。最新应以 `docs/STRICT9_RETRIEVAL_SMOKE_FINDINGS_20260907.md`、`docs/ANSWER_QUALITY_IMPROVEMENT_PLAN_20260907.md` 为准，但这两份文件未附在本次材料里。
+本备忘录最初由另一并发模型生成；截至 2026-09-07 已完成本地源码与主要
+strict9 产物复核。正文中的历史结果仍需按对应审计文档解释；新增的
+full-evidence GOLD/hard-negative 复判以
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`、
+`docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md` 和
+`docs/ANSWER_QUALITY_IMPROVEMENT_PLAN_20260907.md` 为准。
 
 下面数字只能视为上传文档报告的历史结果。
 
@@ -157,9 +162,11 @@ novel-doc rate 只作诊断或轻量 tie-break。全新但无关的文档没有�
 | answer completeness checker | question + 必要答案要点 + answer facts + 可见证据 | 是否回答了全部必要部分，且没有关键错误？ |
 
 claim verifier 的 100% clean pair accuracy 不能当 retrieval reranker 证据。某段材料不支持一个 claim，却可能支持同一问题的另一个必要要点；而历史 1005
-个 `claim-negative` 中又有 286 个只判断了 2000 字前缀。负例侧只有 719 个
-看到了完整 candidate，与安全 gold 正例取交集后仅剩 393 个 pair。因此这些
-数据既不能原样训练 question-document reranker，也不能直接重训 claim verifier。
+个 `claim-negative` 中有 286 个只判断了 2000 字前缀。480 个被截断 candidate
+现已完成 full-evidence 复判（131 supported、349 unsupported），接入安全 gold
+后可重建 817 个 pair；显式纳入 98 个 confirmed missed-positive 变体后为
+1019 个 pair。两者仍只按 record 隔离，不能原样训练 question-document
+reranker，也不能跳过原子化 claim 与 family-held-out split 直接重训 verifier。
 详见 `docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`。
 
 对真正需要多段联合支持的主张，不能要求任一单段独立蕴含完整结论，也不能简单用 max(pair score) 代替联合验证。先将复合事实拆开；确需多跳时检查引用集合与中间连接。
@@ -189,9 +196,10 @@ Qwen3-Embedding-0.6B 官方模型卡给出 query instruction、last-token poolin
 **5．训练数据：让同一个问题在不同证据状态下产生不同动作**
 
 历史 clean-SFT 已经改善格式，但其 strict-v1 标签存在 600 字 judge 截断：
-1929 个 fact 中有 326 个因截断或内部冲突被隔离，详见
-`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。因此下一轮 SFT 不能直接
-复用该“clean”标签集，必须先完成 full-evidence 复判；随后再增加真实的阅读、
+1929 个 fact 中有 326 个因截断或内部冲突被隔离，现已完成 full-evidence 复判，
+详见 `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。复判是单一 GLM 裁决，
+不是人工 gold；下一轮 SFT 仍不能直接复用原“clean”标签集，必须先处理
+`supported_by_some` 原子化、动作 set-level 复核和 family-held-out 切分，随后再增加真实的阅读、
 缺口和抗干扰监督。RAFT 的可借鉴点是在相关证据中混入 distractors，并监督
 基于正确证据作答；ASA 需要额外加入证据不足时的动作训练，这属于本项目适配，
 不是 RAFT 原方案的同义复述。[RAFT](https://arxiv.org/abs/2403.10131)

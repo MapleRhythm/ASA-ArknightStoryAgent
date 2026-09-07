@@ -1295,8 +1295,11 @@ binding 训练”的上限。
 | partial | 88 |
 | unsupported | 37 |
 
-50 个动作翻转中有 46 个依赖隔离项。以上 strict-v1 数字仍可用于复现实验，
-但不能作为 clean truth；完整复核、确定性假阴性、输入/输出 SHA 和复判入口见
+50 个动作翻转中有 46 个依赖隔离项。326 个隔离 fact 已完成 full-evidence
+盲复判：`supported_by_union=183`、`supported_by_some=96`、
+`ambiguous=23`、`unsupported=24`。以上 strict-v1 数字仍可用于复现实验，
+但不能作为 clean truth；复判是单一 GLM 裁决，`supported_by_some` 仍需原子化，
+动作翻转仍需 set-level 复核。完整复核、输入/输出 SHA 和复判入口见
 `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。
 
 ### 22.7 Hard-negative v2
@@ -1321,11 +1324,16 @@ binding 训练”的上限。
 | supported | 125 | 59 | 66 |
 | not_run | 5588 | 135 | 5453 |
 
-因此 1005/125 都不是完整证据标签。将负例完整性门禁与 gold 的 600 字截断/
-冲突门禁同时应用后，只能构成 393 个保守 pair、65 个 record group
-（360 train / 33 eval）；该划分仍按 record 而非 question/story family，
-不能作为最终 family-held-out 训练集。确定性尾部假阴性、SHA 与重建命令见
-`docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`。
+因此 1005/125 都不是完整证据标签。480 个截断 candidate 已于 2026-09-07
+完成 full-evidence 盲复判：131 个 `supported`、349 个 `unsupported`；
+旧→新翻转矩阵见
+`data/eval/binding_hardneg_full_evidence_rejudgements_20260907.report.json`。
+将负例完整性门禁与 gold 的 600 字截断/冲突门禁同时应用后，历史对照为
+393 个保守 pair、65 个 record group（360 train / 33 eval）。接入
+full-evidence sidecar 后为 817 对（744 train / 73 eval）；显式加入 98 条
+confirmed missed-positive 变体后为 1019 对（907 / 112）。两者仍按 record
+而非 question/story family，不能作为最终 family-held-out 训练集。确定性
+尾部假阴性、SHA 与重建命令见 `docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`。
 
 ### 22.8 4B verifier 与 GLM
 

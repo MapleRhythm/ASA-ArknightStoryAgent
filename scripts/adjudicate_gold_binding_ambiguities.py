@@ -365,6 +365,20 @@ def main() -> int:
                         complete[str(result.get("fact_id"))] = result
                 if index == 1 or index % 10 == 0 or index == len(futures):
                     print(f"progress {index}/{len(futures)}", flush=True)
+    # The append-only journal is convenient for interruption recovery, but
+    # duplicate/error rows must not be consumed as a completed sidecar.  Once
+    # this invocation has accounted for every candidate currently available,
+    # rewrite a canonical latest-ok view in candidate order.
+    canonical_rows = [
+        complete[str(row.get("fact_id") or "")]
+        for row, _, _ in candidates
+        if str(row.get("fact_id") or "") in complete
+    ]
+    tmp_output = args.output.with_suffix(args.output.suffix + ".tmp")
+    with tmp_output.open("w", encoding="utf-8") as handle:
+        for result in canonical_rows:
+            handle.write(compact(result) + "\n")
+    tmp_output.replace(args.output)
     counts = Counter(str(row.get("label") or "missing") for row in complete.values())
     report = {
         "total_candidates": len(candidates),

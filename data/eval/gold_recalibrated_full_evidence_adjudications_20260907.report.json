@@ -1,0 +1,29 @@
+{
+  "total_candidates": 326,
+  "include_truncated": true,
+  "complete": 326,
+  "pending_after_run": 0,
+  "label_counts": {
+    "ambiguous": 23,
+    "supported_by_some": 96,
+    "supported_by_union": 183,
+    "unsupported": 24
+  },
+  "kind_counts": {
+    "truncated_evidence:supported_by_union": 145,
+    "truncated_evidence:supported_by_some": 83,
+    "merged_supported_no_ind_supported:supported_by_union": 32,
+    "merged_supported_no_ind_supported:ambiguous": 10,
+    "truncated_evidence+merged_unsupported_ind_supported:supported_by_union": 2,
+    "merged_supported_no_ind_supported:unsupported": 11,
+    "truncated_evidence+merged_unsupported_ind_supported:supported_by_some": 1,
+    "merged_unsupported_ind_supported:supported_by_some": 6,
+    "merged_supported_no_ind_supported:supported_by_some": 6,
+    "truncated_evidence:unsupported": 6,
+    "truncated_evidence:ambiguous": 6,
+    "merged_unsupported_ind_supported:ambiguous": 7,
+    "merged_unsupported_ind_supported:unsupported": 7,
+    "truncated_evidence+merged_supported_no_ind_supported:supported_by_union": 4
+  },
+  "output": "/home/maplerhythm/ASA/.codex_tmp/gold_recalibrated_full_evidence_adjudications_20260907.jsonl"
+}

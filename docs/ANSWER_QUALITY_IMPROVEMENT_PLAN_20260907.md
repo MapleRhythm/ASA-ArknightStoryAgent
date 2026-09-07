@@ -393,13 +393,17 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 - 从完整 gold chain 删除一个必需链环，生成反事实
   `retrieve_more + missing_slot` 样本；
 - 增加身份/主语归属、因果、否定、多子问、无关但真实事实 hard negative；
-- 历史 1005 个 `unsupported` 候选中有 286 个只看了 2000 字前缀；负例侧
-  仅 719 个看到了完整 candidate。再与无截断、无冲突的 gold 正例取交集，
-  当前只能重建 393 个保守 pair（65 个 record group），仍需二次抽检；
-- 5588 条 `not_run` 中另有 135 条输入被截断，全部只作 provisional 候选，
-  不能作为干净负例；
-- 125 个历史 `supported` 候选中 59 个输入被截断；不能把 125 全部直接当
-  alternate positive；
+- 历史 1005 个 `unsupported` 候选中有 286 个只看了 2000 字前缀；这 286
+  个已与完整 source prompt 重新盲复判。480 个被截断 candidate 全部完成
+  full-evidence 复判，新 verdict 为 `supported=131`、`unsupported=349`；
+  旧→新翻转矩阵见 `data/eval/binding_hardneg_full_evidence_rejudgements_20260907.report.json`；
+- 5588 条 `not_run` 中另有 135 条输入被截断；未被 full-evidence sidecar
+  覆盖的候选仍只作 provisional，不能作为干净负例；
+- 125 个历史 `supported` 候选中 59 个输入被截断；复判后只有通过完整证据
+  指纹校验的结果可用于离线候选池，不能把旧 125 条直接当 alternate positive；
+- 接入 sidecar 后可重建 817 对（744 train / 73 eval）；显式加入 98 条
+  confirmed missed-positive 变体后为 1019 对（907 / 112）。两者仍按
+  record 隔离，需完成 question/story-family split 与 set-level 抽检；
 - 按 question-family 做 train/val/test 隔离。
 
 **训练顺序**
@@ -417,7 +421,8 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 
 1. E0 面板完成，且训练/验证/测试问题族无泄漏；
 2. gold recalibration 的 full-evidence judgement、内容指纹、变更和 set-level
-   复核可追溯，且 326 个隔离项已闭环；
+   复核可追溯，且 326 个隔离项已完成 GLM 复判；该裁决仍不是人工 gold，
+   `supported_by_some` 与动作翻转仍需原子化/set-level 复核；
 3. 本地 verifier 只作为离线审计或 pilot reward，不能把 91.2% agreement、
    AUC 0.937 当作事实正确率；
 4. verifier 在 fact/relation 正例难例上有独立验证，尤其处理主体、身份、

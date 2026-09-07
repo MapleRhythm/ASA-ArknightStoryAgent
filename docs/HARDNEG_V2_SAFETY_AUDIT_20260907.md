@@ -7,8 +7,9 @@
 历史的 1005 个 `unsupported` 和 125 个 `supported` 不是全证据标签，基于
 它们训练和评估的 augmented binding verifier v2 只能作为历史对照。
 
-本次只恢复完整 source prompt、做机械审计和关闭训练门禁，没有修改生产
-runtime，也没有在缺少 API 凭据时伪造新 verdict。
+本次已恢复完整 source prompt 并完成 480 个隔离 candidate 的盲复判，没有
+修改生产 runtime。复判结果仍是单一 GLM-5.3 裁决，不等于人工 gold；只有
+通过四元组连接、完整文本前缀和 SHA 校验的结果才可进入离线 pair builder。
 
 ## 机械复核
 
@@ -51,7 +52,7 @@ runtime，也没有在缺少 API 凭据时伪造新 verdict。
   附近，历史 verdict 为 `unsupported`。
 
 同类风险还出现在瓦列里与卓娅、火龙是否感染、真理本名等记录中。以上例子
-只用于证明旧标签存在确定性错误，不代替对全部 480 个隔离候选的完整复判。
+只用于证明旧标签存在确定性错误；全部 480 个隔离候选现已完成完整证据复判。
 
 ## 与 gold 门禁取交集
 
@@ -62,7 +63,7 @@ runtime，也没有在缺少 API 凭据时伪造新 verdict。
 - hard-negative 中达到旧 2000 字上限、却没有完整证据指纹的 candidate；
 - `supported_by_some` 的原始复合 claim。
 
-用相同历史输入重建：
+用相同历史输入重建（未接入 full-evidence sidecar）：
 
 | 项目 | 数量 |
 | --- | ---: |
@@ -83,10 +84,25 @@ python3 scripts/build_binding_verifier_pairs.py \
   --out-dir /path/to/safe_pairs
 ```
 
-这 393 条仍不是最终训练集。当前 builder 只按 `record_id` 隔离；原 hard-neg
-1706 行中有 1331 行没有 `question_key`，也没有完成 story-family 分组。因此
-在补齐 family provenance、二次抽检和独立 test 前，393 只能作为保守重建
-规模，不应启动正式训练。
+接入已校验的完整证据 sidecar：
+
+```bash
+python3 scripts/build_binding_verifier_pairs.py \
+  --hardneg /path/to/binding_hardneg_v2_20260904.jsonl \
+  --manifest /path/to/facts_full.jsonl \
+  --judgements /path/to/judgements_full.jsonl \
+  --ambiguity /path/to/gold_recalibrated_full_evidence_adjudications_20260907.jsonl \
+  --full-evidence-rejudgements /path/to/binding_hardneg_full_evidence_rejudgements_20260907.jsonl \
+  --include-suspected-missed-positives \
+  --out-dir /path/to/safe_pairs_with_missed
+```
+
+这 393 条仍不是最终训练集。接入 full-evidence sidecar 后，默认不纳入
+suspected missed positives 时得到 817 对、123 个 record group（744 train /
+73 eval）；显式加入 98 条完整证据确认的 missed-positive 变体后得到 1019
+对、123 个 group（907 train / 112 eval）。builder 仍只按 `record_id` 隔离；
+原 hard-neg 1706 行中有 1331 行没有 `question_key`，也没有完成 story-family
+分组，因此这些规模不能替代正式 family-held-out 训练集。
 
 ## 历史 verifier v2 的处置
 
@@ -101,8 +117,7 @@ question-document retrieval 能力或生产切换依据。生产 runtime 保持�
 
 ## 复判和训练边界
 
-下一步应从 source prompt 重新提交完整 candidate，而不是在旧 2000 字文本上
-续判。每条新结果至少保存：
+完整证据复判已完成。每条结果保存：
 
 - `record_id`、`fact_index`、claim、E-ID；
 - 完整 candidate 文本或可复原 source locator；
@@ -110,9 +125,11 @@ question-document retrieval 能力或生产切换依据。生产 runtime 保持�
 - claim/E-ID/完整文本的 `evidence_sha256`；
 - judge model、reasoning effort、status、verdict 和 reason。
 
-只有 `status=ok`、指纹与当前 source 完全一致的结果才能解封。API 错误、
-超时和截断结果不得计入完成数。`supported_by_some` 必须先拆成原子 claim
-再复核，不能通过保留某个 E-ID 把原复合主张变成正例。
+只有 `status=ok`、指纹与当前 source 完全一致的结果才能解封。此次 480/480
+通过校验：新 verdict 为 `supported=131`、`unsupported=349`；旧→新翻转矩阵
+见 `data/eval/binding_hardneg_full_evidence_rejudgements_20260907.report.json`。
+API 错误、超时和截断结果不计入完成数。`supported_by_some` 必须先拆成原子
+claim 再复核，不能通过保留某个 E-ID 把原复合主张变成正例。
 
 ## 产物与 SHA256
 
@@ -120,6 +137,8 @@ question-document retrieval 能力或生产切换依据。生产 runtime 保持�
 
 - `data/eval/binding_hardneg_safety_report_20260907.json`
 - `data/eval/binding_hardneg_quarantine_20260907.jsonl`
+- `data/eval/binding_hardneg_full_evidence_rejudgements_20260907.jsonl`
+- `data/eval/binding_hardneg_full_evidence_rejudgements_20260907.report.json`
 
 输入：
 
@@ -134,3 +153,5 @@ question-document retrieval 能力或生产切换依据。生产 runtime 保持�
 | --- | --- |
 | safety report | `4d1fe5a671c6add63541ea2f9dc42a989ea1d9ea1132dd0cc38d6213cdd8f34a` |
 | quarantine | `8eb6705da668ba384aba2a48ae51174efbdbed2ea8a4f0088bf8854213ea9f91` |
+| full-evidence rejudgements | `9f5ff5fa0795723142efdb4ff5abd15f1129a26680e61c28a6a3b544d55815dd` |
+| full-evidence rejudgement report | `ad4d1ba048a83a4f7e3cdfaccce2c38bd6a19b83740ec5a360021547e6758c60` |

@@ -94,28 +94,37 @@ python3 scripts/adjudicate_gold_binding_ambiguities.py \
   --include-truncated
 ```
 
-当前本机没有 `BIGMODEL_API_KEY`，且 248 的新 SSH 命令没有可用的非交互认证，
-所以本次提交没有伪造 326 条新 verdict；训练门禁保持关闭。
+2026-09-07 已使用完整 evidence 完成 326 个隔离 fact 的盲复判。结果写入
+`data/eval/gold_recalibrated_full_evidence_adjudications_20260907.jsonl`，
+326/326 均为 `status=ok`，且 evidence SHA 全部通过。该结果仍是单一
+GLM-5.3 裁决，不等于人工 gold；训练门禁只允许把它作为可追溯的候选标签。
 
 ## 下一轮 paired SFT 的数据边界
 
-完整证据复判完成前：
+完整证据复判完成后：
 
 - 1478 个无截断、无冲突的 `clean_support` 可作为候选正例；
 - 88 个无截断、无冲突的 `partial` 只能保留已确认 E-ID，并继续做 set-level
   复核；
 - 37 个保守 `unsupported` 仍建议二次裁决或人工抽样后才作为 hard target；
-- 326 个隔离项不能删除 gold、翻转动作、构造 confirmed negative 或进入
-  “clean”训练集；
+- full-evidence 结果中 `supported_by_union=183`、`supported_by_some=96`、
+  `ambiguous=23`、`unsupported=24`。其中 `supported_by_some` 仍不能把原
+  复合 claim 直接作为完整正例；
+- `ambiguous` 与 `unsupported` 继续隔离；动作翻转必须按题重新做 set-level
+  复核，不能沿用 strict-v1 的 50；
 - strict-v1 clean-SFT 继续作为历史 adapter 对照，不作为下一轮初始化标签真值。
 
-full-evidence 复判后按如下规则合并：
+full-evidence 结果按如下规则合并：
 
 - `supported_by_union`：保留完整 E-ID 联集；
 - `supported_by_some`：原复合 claim 不能作为正例；先拆出受支持的原子子句，
   再独立复核并绑定 `keep_eids`；
 - `ambiguous`：隔离或人工复核，不转 hard negative；
 - `unsupported`：移除 fact；只有一题所有 fact 均可靠移除后，才重新判断动作。
+
+复判产物和 SHA 见 `data/eval/gold_recalibrated_full_evidence_adjudications_20260907.report.json`；
+生产 runtime 仍冻结，复判改善的是标签可信度和训练安全边界，不是已验证的线上
+回答正确率。
 
 同一 question、`question_key`、事件及其 Full/distractor/missing/decoy 变体必须
 先分组再划 split，避免 paired SFT 的同源状态泄漏到验证集。
@@ -137,6 +146,8 @@ python3 scripts/audit_gold_recalibration.py \
 
 - `data/eval/gold_recalibration_safety_report_20260907.json`
 - `data/eval/gold_recalibration_quarantine_20260907.jsonl`
+- `data/eval/gold_recalibrated_full_evidence_adjudications_20260907.jsonl`
+- `data/eval/gold_recalibrated_full_evidence_adjudications_20260907.report.json`
 
 输入 SHA256：
 
@@ -152,3 +163,5 @@ python3 scripts/audit_gold_recalibration.py \
 | --- | --- |
 | safety report | `90932b648afeb0f63a96f9e22d2d24e03c128bd472089c70259d35137d59e038` |
 | quarantine | `4dc2204287968e80c1b4ca29eab221cccce19dcbb36a2f7c4ef06287cc9ccb5c` |
+| full-evidence adjudications | `504501570515ae343f95da88ff34ce57fef248fce16eeaa702d09b6529160f5e` |
+| full-evidence adjudication report | `5b2a8c2697fc5fc1e137bfb8c14ae570cdc3f139ce5ed4178c68a6078cd76235` |
