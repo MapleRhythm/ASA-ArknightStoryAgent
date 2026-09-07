@@ -53,8 +53,13 @@ def test_coverage_can_keep_complementary_gold_evidence() -> None:
     result = MODULE.evaluate_rows([row], top_ks=[2], mmr_lambda=0.72)
 
     assert result["strategies"]["top_score@2"]["summary"]["recall"] == 0.5
+    assert (
+        result["strategies"]["top_score@2"]["rows"][0]["coverage_attribution"]
+        == "selector_drop"
+    )
     assert result["strategies"]["coverage@2"]["summary"]["recall"] == 1.0
     assert result["strategies"]["oracle@2"]["summary"]["all_gold_rate"] == 1.0
+    assert result["common_pool"]["summary"]["dedupe_drop_rate"] == 0.0
 
 
 def test_family_macro_gives_each_family_equal_weight() -> None:
@@ -84,3 +89,40 @@ def test_family_macro_gives_each_family_equal_weight() -> None:
 
     assert MODULE.aggregate(records)["recall"] == 2 / 3
     assert MODULE.family_macro(records)["recall"] == 0.5
+
+
+def test_common_dedupe_reports_dropped_gold_and_kept_document() -> None:
+    row = {
+        "id": "q-dedupe",
+        "question": "甲是谁？",
+        "question_family": "family-dedupe",
+        "gold_evidence_ids": ["gold"],
+        "stages": {
+            "rerank": [
+                _candidate("decoy", "甲是来自拉特兰的信使。", 10.0),
+                _candidate("gold", "甲是来自拉特兰的信使。", 9.0),
+                _candidate("other", "乙来自维多利亚。", 8.0),
+            ]
+        },
+    }
+
+    result = MODULE.evaluate_rows([row], top_ks=[2], mmr_lambda=0.72)
+
+    pool = result["common_pool"]
+    assert pool["summary"]["rerank_recall"] == 1.0
+    assert pool["summary"]["deduped_recall"] == 0.0
+    assert pool["coverage_attribution"] == {"dedupe_drop": 1}
+    assert pool["rows"][0]["dedupe_dropped_gold_ids"] == ["gold"]
+    assert pool["rows"][0]["dedupe_drop_explanations"] == [
+        {
+            "dropped_id": "gold",
+            "reason": "text_similarity",
+            "kept_id": "decoy",
+            "similarity": 1.0,
+            "dropped_clean_text_fully_preserved": True,
+            "dropped_clean_text_token_recall": 1.0,
+        }
+    ]
+    assert result["strategies"]["oracle@2"]["coverage_attribution"] == {
+        "dedupe_drop": 1
+    }

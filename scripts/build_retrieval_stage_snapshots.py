@@ -74,7 +74,7 @@ from asa_arknight_story_agent.runtime_config import (  # noqa: E402
 )
 
 
-SNAPSHOT_VERSION = "asa_retrieval_stage_snapshot_v1"
+SNAPSHOT_VERSION = "asa_retrieval_stage_snapshot_v2"
 HYPOTHESIS_FIELDS = (
     "question",
     "intent",
@@ -182,6 +182,55 @@ def gold_ids_from_row(row: dict[str, Any]) -> list[str]:
             result.append(item_id)
     if not result:
         raise SnapshotBuildError("gold_evidence_ids must not be empty")
+    return result
+
+
+def gold_supported_facts_from_row(
+    row: dict[str, Any], gold_ids: list[str]
+) -> list[dict[str, Any]]:
+    value = row.get("gold_supported_facts")
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SnapshotBuildError("gold_supported_facts must be a list")
+    gold_set = set(gold_ids)
+    result: list[dict[str, Any]] = []
+    for fact in value:
+        if not isinstance(fact, dict):
+            raise SnapshotBuildError(
+                "gold_supported_facts items must be objects"
+            )
+        fact_text = str(fact.get("fact") or "").strip()
+        evidence_ids = fact.get("gold_evidence_ids")
+        if not fact_text:
+            raise SnapshotBuildError("gold supported fact missing fact text")
+        if not isinstance(evidence_ids, list) or not evidence_ids:
+            raise SnapshotBuildError(
+                "gold supported fact missing gold_evidence_ids"
+            )
+        normalized_ids = list(
+            dict.fromkeys(
+                str(item).strip()
+                for item in evidence_ids
+                if str(item).strip()
+            )
+        )
+        if not normalized_ids:
+            raise SnapshotBuildError(
+                "gold supported fact has no valid evidence IDs"
+            )
+        unknown = sorted(set(normalized_ids) - gold_set)
+        if unknown:
+            raise SnapshotBuildError(
+                "gold supported fact references unknown evidence IDs: "
+                + ",".join(unknown)
+            )
+        result.append(
+            {
+                "fact": fact_text,
+                "gold_evidence_ids": normalized_ids,
+            }
+        )
     return result
 
 
@@ -412,6 +461,7 @@ def build_snapshot_row(
     hypothesis = hypothesis_from_row(row)
     queries = queries_from_row(row, question, hypothesis)
     gold_ids = gold_ids_from_row(row)
+    gold_supported_facts = gold_supported_facts_from_row(row, gold_ids)
     (
         dense_hits,
         sparse_hits,
@@ -443,6 +493,7 @@ def build_snapshot_row(
         ),
         "query_type": hypothesis.query_type,
         "gold_evidence_ids": gold_ids,
+        "gold_supported_facts": gold_supported_facts,
         "hypothesis": {
             field: getattr(hypothesis, field) for field in HYPOTHESIS_FIELDS
         },

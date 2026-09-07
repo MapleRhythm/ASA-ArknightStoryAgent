@@ -59,6 +59,9 @@ relevance-aware 训练数据重合，必须单独报告重合/未重合结果。
 
 - sparse/dense/fusion/rerank/final prompt 各阶段 Recall@1/3/5/10；
 - 任一 gold evidence 命中率、全 gold 单元覆盖率、MRR；
+- 按 `supported_fact → corpus IDs` 保留引用分组，不能把所有引用拍平成
+  同等必需的独立 gold；
+- 分开报告外层 evidence ID、evidence-chain member 和内容覆盖；
 - `context_sufficiency`；
 - prompt selection 丢失率；
 - round 间 top-k Jaccard、novel-doc rate、query 重复率。
@@ -78,6 +81,7 @@ relevance-aware 训练数据重合，必须单独报告重合/未重合结果。
 | candidate pool 没有必要证据 | 召回/索引问题 |
 | candidate pool 有，rerank 后消失 | 排序问题 |
 | rerank 有，final prompt 不可见 | prompt selection/预算问题 |
+| 外层 gold ID 消失，但选中 chain 仍包含该 member 内容 | 评估表示问题，不能直接算选择器丢失 |
 | prompt 已充分，模型仍 retrieve/abstain | 动作模型/充分性判断问题 |
 | 模型引用不受其 E-ID 支持 | grounding/生成绑定问题 |
 | 模型原始 JSON 正确，但运行时拒绝 | parser/validator 问题 |
@@ -95,6 +99,16 @@ prompt 10。79 题实际证据顺序审计显示：
 
 这说明至少一部分错误发生在候选已找到、但最终 prompt 截断过早，而不是
 reranker 完全没有召回。
+
+2026-09-07 的 strict9 真实 corpus-ID smoke 没有复现“top-16 必然补齐”的
+假设：top-score/MMR/coverage 的 top-10 和 top-16 都是 83.3% ID Recall、
+55.6% all-gold。32 条 rerank 原池 9/9 含全部 gold，但公共去重产生的 3 题
+ID drop 中，3 个 chunk 被完整包含在保留 chain，另一个是 95.9% token 重叠
+的相邻 chunk；唯一 selector-drop 是排名 24 的辅助萌百背景引用。详见
+`docs/STRICT9_RETRIEVAL_SMOKE_FINDINGS_20260907.md`。
+
+因此当前不能把 outer ID all-gold 直接解释为内容充分性，也没有证据默认开启
+top-16、set coverage 或取消语义去重。
 
 ### 3.2 充分性是集合属性，当前没有显式缺口状态
 
@@ -154,6 +168,7 @@ GOLD_RECAL 的 1929 个 fact 中，只有 1518（78.69%）为 clean support，
   `stages.sparse`、`stages.fusion`、`stages.rerank`、`stages.prompt`；
 - 脚本同时输出 unit Recall@k、任一命中率、全 gold 覆盖率和逐题记录；
 - 每题记录 gold evidence 是否出现在 sparse、dense、fusion、rerank、prompt；
+- 保留 GLM 校准后的 fact citation group，并记录 chain member corpus IDs；
 - 若提供 `rounds`/`retrieval_trace`，记录 `context_sufficiency`、missing slots、
   round overlap、novel-doc rate 和 query 重复率；
 - 结果按 question-family、query type、证据链长度分层；
@@ -193,6 +208,7 @@ top-16 能提高 final-prompt Recall，从而提高回答完整率。
 **指标**
 
 - final prompt 全 gold 单元覆盖率、任一 gold 命中率；
+- fact citation group、chain member 和内容覆盖；
 - `context_sufficiency`；
 - complete rate、question coverage；
 - claim support precision、关键 unsupported/contradicted、irrelevant；
@@ -468,8 +484,14 @@ E0/E1 的离线执行命令如下。manifest 中的 `gold_evidence_ids` 必须�
 corpus document ID，不能使用 prompt-local 的 `E1/E2` 编号代替：
 
 ```bash
+python3 scripts/build_recalibrated_retrieval_manifest.py \
+  --tasks <tasks-with-doc-ids.json> \
+  --preference-eval <family-held-out-preference-val.json> \
+  --recalibrated <gold-recalibrated.jsonl> \
+  --output outputs/retrieval_stage_snapshots/<name>.manifest.jsonl
+
 python3 scripts/build_retrieval_stage_snapshots.py \
-  --manifest <family-held-out-manifest.jsonl> \
+  --manifest outputs/retrieval_stage_snapshots/<name>.manifest.jsonl \
   --runtime-config configs/runtime_gpu_reranker_qwen35_4b.json \
   --output outputs/retrieval_stage_snapshots/<name>.jsonl
 

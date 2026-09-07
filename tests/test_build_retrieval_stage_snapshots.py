@@ -57,6 +57,23 @@ def test_manifest_hypothesis_and_gold_are_strictly_validated() -> None:
     hypothesis = MODULE.hypothesis_from_row(row)
     assert hypothesis.query_type == "causality"
     assert MODULE.gold_ids_from_row(row) == ["doc-a", "doc-b"]
+    assert MODULE.gold_supported_facts_from_row(
+        {
+            **row,
+            "gold_supported_facts": [
+                {
+                    "fact": "甲行动有原因。",
+                    "gold_evidence_ids": ["doc-a"],
+                }
+            ],
+        },
+        ["doc-a", "doc-b"],
+    ) == [
+        {
+            "fact": "甲行动有原因。",
+            "gold_evidence_ids": ["doc-a"],
+        }
+    ]
 
     with pytest.raises(MODULE.SnapshotBuildError, match="unknown hypothesis"):
         MODULE.hypothesis_from_row(
@@ -64,6 +81,20 @@ def test_manifest_hypothesis_and_gold_are_strictly_validated() -> None:
                 "question": "问题",
                 "hypothesis": {"invented": True},
             }
+        )
+    with pytest.raises(
+        MODULE.SnapshotBuildError, match="unknown evidence IDs"
+    ):
+        MODULE.gold_supported_facts_from_row(
+            {
+                "gold_supported_facts": [
+                    {
+                        "fact": "错误引用。",
+                        "gold_evidence_ids": ["doc-missing"],
+                    }
+                ]
+            },
+            ["doc-a"],
         )
 
 
@@ -105,6 +136,12 @@ def test_build_snapshot_records_all_required_stages(monkeypatch: pytest.MonkeyPa
             "question": "问题",
             "question_family": "family-a",
             "gold_evidence_ids": ["gold-a", "gold-b"],
+            "gold_supported_facts": [
+                {
+                    "fact": "两个证据共同支持事实。",
+                    "gold_evidence_ids": ["gold-a", "gold-b"],
+                }
+            ],
             "queries": ["问题"],
         },
         row_index=0,
@@ -122,6 +159,12 @@ def test_build_snapshot_records_all_required_stages(monkeypatch: pytest.MonkeyPa
         "gold-a",
     ]
     assert [item["id"] for item in result["stages"]["prompt"]] == ["gold-b"]
+    assert result["gold_supported_facts"] == [
+        {
+            "fact": "两个证据共同支持事实。",
+            "gold_evidence_ids": ["gold-a", "gold-b"],
+        }
+    ]
 
 
 def test_scoped_minirag_second_pass_is_recorded(

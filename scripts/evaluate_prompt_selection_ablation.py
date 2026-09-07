@@ -13,7 +13,7 @@ import argparse
 import hashlib
 import json
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
@@ -29,6 +29,13 @@ from asa_arknight_story_agent.inference.evidence.prompt_ordering import (  # noq
 )
 from asa_arknight_story_agent.inference.evidence.prompt_similarity import (  # noqa: E402
     dedupe_prompt_evidence_candidates,
+    jaccard_similarity,
+    text_similarity_tokens,
+)
+from asa_arknight_story_agent.inference.evidence.texts import (  # noqa: E402
+    best_prompt_text,
+    document_clean_text,
+    evidence_identity,
 )
 from asa_arknight_story_agent.inference.pipeline.types import HypothesisDocument  # noqa: E402
 from asa_arknight_story_agent.inference.planning.query_understanding import (  # noqa: E402
@@ -36,7 +43,8 @@ from asa_arknight_story_agent.inference.planning.query_understanding import (  #
 )
 
 
-ABLATION_VERSION = "asa_prompt_selection_ablation_v1"
+ABLATION_VERSION = "asa_prompt_selection_ablation_v2"
+DEDUPE_SIMILARITY_THRESHOLD = 0.82
 
 
 class AblationError(ValueError):
@@ -197,6 +205,182 @@ def selection_metrics(gold: set[str], selected: list[dict[str, Any]]) -> dict[st
     }
 
 
+def coverage_attribution(
+    gold: set[str],
+    *,
+    rerank_ids: set[str],
+    deduped_ids: set[str],
+    selected_ids: set[str] | None = None,
+) -> str:
+    if not gold.issubset(rerank_ids):
+        return "rerank_pool_missing"
+    if not gold.issubset(deduped_ids):
+        return "dedupe_drop"
+    if selected_ids is not None and not gold.issubset(selected_ids):
+        return "selector_drop"
+    return "selection_complete" if selected_ids is not None else "common_pool_complete"
+
+
+def dedupe_drop_explanations(
+    candidates: list[dict[str, Any]],
+    dropped_gold_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Explain gold removals while mirroring the production dedupe order."""
+    output: list[dict[str, Any]] = []
+    kept: list[tuple[str, set[str], dict[str, Any]]] = []
+    for item in candidates:
+        identity = evidence_identity(item)
+        item_id = hit_id(item)
+        duplicate = next(
+            (kept_item for kept_identity, _, kept_item in kept if kept_identity == identity),
+            None,
+        )
+        if duplicate is not None:
+            if item_id in dropped_gold_ids:
+                output.append(
+                    {
+                        "dropped_id": item_id,
+                        "reason": "identity",
+                        "kept_id": hit_id(duplicate),
+                        "similarity": 1.0,
+                    }
+                )
+            continue
+        text = best_prompt_text(
+            item,
+            prefer_direct=bool(item.get("prompt_prefer_clean_text")),
+        )
+        token_set = text_similarity_tokens(text)
+        similar: list[tuple[float, dict[str, Any]]] = []
+        if token_set:
+            similar = [
+                (jaccard_similarity(token_set, kept_tokens), kept_item)
+                for _, kept_tokens, kept_item in kept
+                if kept_tokens
+            ]
+            similar = [
+                (score, kept_item)
+                for score, kept_item in similar
+                if score >= DEDUPE_SIMILARITY_THRESHOLD
+            ]
+        if similar:
+            score, kept_item = max(similar, key=lambda pair: pair[0])
+            if item_id in dropped_gold_ids:
+                dropped_clean_text = document_clean_text(item)
+                kept_prompt_text = best_prompt_text(
+                    kept_item,
+                    prefer_direct=bool(
+                        kept_item.get("prompt_prefer_clean_text")
+                    ),
+                )
+                normalized_dropped = "".join(dropped_clean_text.lower().split())
+                normalized_kept = "".join(kept_prompt_text.lower().split())
+                dropped_tokens = text_similarity_tokens(dropped_clean_text)
+                kept_tokens = text_similarity_tokens(kept_prompt_text)
+                output.append(
+                    {
+                        "dropped_id": item_id,
+                        "reason": "text_similarity",
+                        "kept_id": hit_id(kept_item),
+                        "similarity": score,
+                        "dropped_clean_text_fully_preserved": bool(
+                            normalized_dropped
+                            and normalized_dropped in normalized_kept
+                        ),
+                        "dropped_clean_text_token_recall": (
+                            len(dropped_tokens & kept_tokens)
+                            / len(dropped_tokens)
+                            if dropped_tokens
+                            else 0.0
+                        ),
+                    }
+                )
+            continue
+        kept.append((identity, token_set, item))
+    return output
+
+
+def common_pool_record(
+    *,
+    row_id: str,
+    question: str,
+    family: str,
+    gold: set[str],
+    candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    deduped = dedupe_prompt_evidence_candidates(candidates)
+    rerank_ids = {hit_id(item) for item in candidates if hit_id(item)}
+    deduped_ids = {hit_id(item) for item in deduped if hit_id(item)}
+    rerank_gold_ids = sorted(gold.intersection(rerank_ids))
+    deduped_gold_ids = sorted(gold.intersection(deduped_ids))
+    dropped_gold_ids = set(rerank_gold_ids) - set(deduped_gold_ids)
+    return (
+        {
+            "id": row_id,
+            "question": question,
+            "question_family": family,
+            "gold_count": len(gold),
+            "gold_evidence_ids": sorted(gold),
+            "rerank_candidate_count": len(candidates),
+            "rerank_gold_hit_count": len(rerank_gold_ids),
+            "rerank_gold_ids": rerank_gold_ids,
+            "rerank_recall": len(rerank_gold_ids) / len(gold),
+            "rerank_all_gold": int(len(rerank_gold_ids) == len(gold)),
+            "deduped_candidate_count": len(deduped),
+            "deduped_gold_hit_count": len(deduped_gold_ids),
+            "deduped_gold_ids": deduped_gold_ids,
+            "deduped_recall": len(deduped_gold_ids) / len(gold),
+            "deduped_all_gold": int(len(deduped_gold_ids) == len(gold)),
+            "dedupe_dropped_gold_ids": sorted(dropped_gold_ids),
+            "dedupe_drop_explanations": dedupe_drop_explanations(
+                candidates, dropped_gold_ids
+            ),
+            "coverage_attribution": coverage_attribution(
+                gold,
+                rerank_ids=rerank_ids,
+                deduped_ids=deduped_ids,
+            ),
+        },
+        deduped,
+    )
+
+
+def aggregate_common_pool(records: list[dict[str, Any]]) -> dict[str, Any]:
+    if not records:
+        return {
+            "count": 0,
+            "rerank_candidate_count_mean": 0.0,
+            "deduped_candidate_count_mean": 0.0,
+            "rerank_recall": 0.0,
+            "deduped_recall": 0.0,
+            "rerank_all_gold_rate": 0.0,
+            "deduped_all_gold_rate": 0.0,
+            "dedupe_drop_rate": 0.0,
+        }
+    count = len(records)
+    return {
+        "count": count,
+        "rerank_candidate_count_mean": sum(
+            row["rerank_candidate_count"] for row in records
+        )
+        / count,
+        "deduped_candidate_count_mean": sum(
+            row["deduped_candidate_count"] for row in records
+        )
+        / count,
+        "rerank_recall": sum(row["rerank_recall"] for row in records) / count,
+        "deduped_recall": sum(row["deduped_recall"] for row in records) / count,
+        "rerank_all_gold_rate": sum(row["rerank_all_gold"] for row in records)
+        / count,
+        "deduped_all_gold_rate": sum(row["deduped_all_gold"] for row in records)
+        / count,
+        "dedupe_drop_rate": sum(
+            int(bool(row["dedupe_dropped_gold_ids"])) for row in records
+        )
+        / count,
+    }
+
+
 def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     if not records:
         return {
@@ -247,6 +431,8 @@ def evaluate_rows(
     if not rows or not top_ks:
         raise AblationError("rows and positive top_ks are required")
     strategy_records: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    strategy_attributions: dict[str, Counter[str]] = defaultdict(Counter)
+    common_pool_records: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     for index, row in enumerate(rows):
         row_id = str(row.get("id") or index)
@@ -263,9 +449,19 @@ def evaluate_rows(
                 or row.get("family_id")
                 or question
             )
+            pool_record, deduped = common_pool_record(
+                row_id=row_id,
+                question=question,
+                family=family,
+                gold=gold,
+                candidates=candidates,
+            )
         except AblationError as exc:
             failures.append({"id": row_id, "error": str(exc)})
             continue
+        common_pool_records.append(pool_record)
+        rerank_ids = {hit_id(item) for item in candidates if hit_id(item)}
+        deduped_ids = {hit_id(item) for item in deduped if hit_id(item)}
         for top_k in top_ks:
             selectors: dict[
                 str, Callable[[], list[dict[str, Any]]]
@@ -293,11 +489,23 @@ def evaluate_rows(
             }
             for name, selector in selectors.items():
                 metrics = selection_metrics(gold, selector())
+                selected_ids = set(metrics["selected_ids"])
+                attribution = coverage_attribution(
+                    gold,
+                    rerank_ids=rerank_ids,
+                    deduped_ids=deduped_ids,
+                    selected_ids=selected_ids,
+                )
+                strategy_attributions[name][attribution] += 1
                 strategy_records[name].append(
                     {
                         "id": row_id,
                         "question": question,
                         "question_family": family,
+                        "coverage_attribution": attribution,
+                        "selector_dropped_gold_ids": sorted(
+                            gold.intersection(deduped_ids) - selected_ids
+                        ),
                         **metrics,
                     }
                 )
@@ -311,10 +519,24 @@ def evaluate_rows(
         "failure_examples": failures[:20],
         "top_ks": top_ks,
         "mmr_lambda": mmr_lambda,
+        "common_pool": {
+            "summary": aggregate_common_pool(common_pool_records),
+            "coverage_attribution": dict(
+                sorted(
+                    Counter(
+                        row["coverage_attribution"] for row in common_pool_records
+                    ).items()
+                )
+            ),
+            "rows": common_pool_records,
+        },
         "strategies": {
             name: {
                 "summary": aggregate(records),
                 "family_macro": family_macro(records),
+                "coverage_attribution": dict(
+                    sorted(strategy_attributions[name].items())
+                ),
                 "rows": records,
             }
             for name, records in sorted(strategy_records.items())
@@ -349,10 +571,17 @@ def main() -> int:
         "rows_total": result["rows_total"],
         "rows_evaluable": result["rows_evaluable"],
         "rows_failed": result["rows_failed"],
+        "common_pool": {
+            "summary": result["common_pool"]["summary"],
+            "coverage_attribution": result["common_pool"][
+                "coverage_attribution"
+            ],
+        },
         "strategies": {
             name: {
                 "summary": value["summary"],
                 "family_macro": value["family_macro"],
+                "coverage_attribution": value["coverage_attribution"],
             }
             for name, value in result["strategies"].items()
         },
