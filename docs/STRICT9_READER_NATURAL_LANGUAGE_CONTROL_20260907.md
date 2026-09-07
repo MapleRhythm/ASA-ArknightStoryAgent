@@ -87,6 +87,8 @@ incorrect；协议不合格且语义未审计的 base 行根据原始输出人�
 - 主要训练优先级仍应是 reader 的主体、说话人、关系方向、时间与对照阅读；
 - 不应通过改成自由自然语言输出来绕开 grounding，也不应据此启动 RLVR。
 
-下一步应直接构造同问题的
+由于同日回查发现历史 clean-SFT 的 strict-v1 judge 只看每个 E-ID 前 600 字，
+下一步要先闭环 326 个截断/冲突 fact 的 full-evidence 复判，再构造同问题的
 `Full / Full + hard distractor / One-edge-missing / Decoy-full` 配对 SFT，
 并把女妖、芙蕾达、莫斯提马、老天师变成最小可解释 hard-negative 模板。
+详见 `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。

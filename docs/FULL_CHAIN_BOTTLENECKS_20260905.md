@@ -14,7 +14,11 @@
 ## 已有证据
 
 - clean-SFT 与 gap-mix 的校准评估：格式提升明显，但 action 与 claim-local binding 没有提升。见 `docs/CALIBRATED_BINDING_EVAL_20260905.md`。
-- binding verifier v2 在“主张→证据”难例上的 AUC 从 v1 的 0.805 提升到 0.904；这是绑定判别器结果，不是问题→候选检索 Recall。见 `docs/BINDING_VERIFIER_AUGMENTED_V2_FINDINGS_20260905.md`。
+- 历史 binding verifier v2 在“主张→证据”难例上的 AUC 从 v1 的 0.805
+  提升到 0.904；2026-09-07 发现其训练/评估标签存在 2000 字截断和
+  `supported_by_some` 复合 claim 污染，因此该数字仅作历史复现，不是发布
+  证据，更不是问题→候选检索 Recall。见
+  `docs/BINDING_VERIFIER_AUGMENTED_V2_FINDINGS_20260905.md`。
 - B1/B2 验证表明重复原查询的新增覆盖为 0，而针对缺失证据构造的查询有明显增益；这说明二轮检索应由“未覆盖证据”驱动，而不是泛化改写。见 `docs/CLEAN_SFT_RETRY_AND_RETRIEVAL_FINDINGS_20260904.md`。
 - GLM set-audit v2 在相同的 8 个问题族上发现：clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none；gap-mix 为 5 complete / 0 contradicted / 1 partial / 2 none。gap-mix 修复了一个反证绑定，但其同题输出夹带了无关、虽被证据支持的事实，说明“证据支持”不能代替“问题相关性”。
 - GLM set-audit v3 增加问题相关性轴后，clean-SFT 为 4 complete / 1 contradicted / 1 partial / 2 none、0 条 irrelevant；gap-mix 为 3 complete / 0 contradicted / 3 partial / 2 none、2 条 irrelevant。v3 证明 gap-mix 的绑定修复伴随回答范围膨胀，不能把 v2 的 5/8 complete 当作最终正确率。

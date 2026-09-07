@@ -22,6 +22,12 @@ clean-SFT adapter，共 `9 个问题族 × 3 种证据条件 × 2 个 reader`。
 也不是约 60 题的正式 P0；9B 资产仍未找到，因此 3-reader 对照尚未完成。
 在正式诊断完成前，不据此改变生产 MiniRAG、top-k、MMR 或检索轮数。
 
+同日回查还发现，当前 clean-SFT adapter 的 strict-v1 训练标签由只看每个
+E-ID 前 600 字的 judge 生成，326/1929 个 fact 因截断或内部冲突被隔离。
+因此下表仍准确描述这个历史 adapter 的输出，但不能再把它解释成“干净标签
+SFT 的能力上限”。详见
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。
+
 后续已在同一 minimal evidence 上完成自然语言短答对照：base 为 3/9
 complete，clean-SFT 为 5/9；对应 Exx 都是 4/9。只有杰克逊被自然语言明确
 救回，女妖、芙蕾达、莫斯提马和老天师的实体/关系错误仍在。因此 Exx 协议

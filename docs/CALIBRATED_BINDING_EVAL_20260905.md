@@ -1,5 +1,11 @@
 # Calibrated binding evaluation (2026-09-05)
 
+> 2026-09-07 correction: this evaluation used strict-v1 recalibration changes
+> whose judge input was capped at 600 characters per E-ID. The model ordering
+> remains a reproducible historical observation, but the absolute
+> “calibrated” binding values are not final gold metrics. See
+> `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`.
+
 ## Scope
 
 This evaluation re-scores the frozen `clean_sft` and `gap_mix` predictions
@@ -62,4 +68,3 @@ Before any RLVR run:
 3. Build a family-held-out set with no duplicate question keys.
 4. Re-evaluate reranker v1/v2 with candidate-pool recall, final-prompt recall,
    and warm p50/p95 latency.
-

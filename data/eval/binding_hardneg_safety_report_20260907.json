@@ -1,0 +1,41 @@
+{
+  "schema_version": "binding_hardneg_safety_v1",
+  "rows": 1706,
+  "unique_fact_keys": 1706,
+  "source_rows": 1005,
+  "source_records_with_evidence": 1005,
+  "candidates": 6718,
+  "candidate_roles": {
+    "hard_negative": 6593,
+    "suspected_missed_positive": 125
+  },
+  "verdicts": {
+    "not_run": 5588,
+    "supported": 125,
+    "unsupported": 1005
+  },
+  "truncated_candidates": 480,
+  "judged_truncated_candidates": 345,
+  "truncated_by_verdict": {
+    "not_run": 135,
+    "supported": 59,
+    "unsupported": 286
+  },
+  "conservative_full_input_by_verdict": {
+    "not_run": 5453,
+    "supported": 66,
+    "unsupported": 719
+  },
+  "quarantined_candidates": 480,
+  "training_gate": {
+    "status": "blocked_pending_full_evidence_rejudge",
+    "policy": "A truncated candidate cannot be a confirmed negative or alternate positive until it is rejudged against full evidence and the evidence_sha256 matches."
+  },
+  "validation_errors": [],
+  "source": {
+    "hardneg": "/home/maplerhythm/ASA/.codex_tmp/binding_hardneg_v2_20260904.jsonl",
+    "hardneg_sha256": "fd3ef76db717cb5c312de3fccf6f83cd2f48e15baf8ce02854455054740127b8",
+    "source_rows": "/home/maplerhythm/ASA/.codex_tmp/gold_recalibrated_v1_strict.jsonl",
+    "source_rows_sha256": "3a2da70987c1413895f3708cb79cc3d95a59d4d690414c3f1ff6689399f0e541"
+  }
+}

@@ -1,10 +1,16 @@
 # Gold evidence-binding ambiguity findings (2026-09-04)
 
+> 2026-09-07 correction: the first-pass judge saw at most 600 characters per
+> E-ID, and this third-pass script saw at most 1800. Three of the 86 rows
+> exceeded 1800 characters. These counts remain historical results, but the
+> sidecar is not a full-evidence training authority. It is superseded by
+> `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`.
+
 ## Scope
 
 The strict recalibration judged 1,929 fact rows with one merged-evidence
-decision and one decision per cited E-ID.  The strict SFT dataset is already
-frozen and is not modified by this audit.
+decision and one decision per cited E-ID. The strict SFT dataset was frozen
+and was not modified by this historical audit.
 
 ## Contradiction audit
 
@@ -46,17 +52,18 @@ Breakdown:
 
 ## Training policy
 
-- Keep the current strict SFT run intact for a controlled comparison.
+- Keep the current strict SFT run intact only as a controlled historical
+  comparison.
 - For the next run, construct an ambiguity-preserving label set:
   - `supported_by_union`: retain the union of cited E-IDs;
-  - `supported_by_some`: retain only adjudicated `keep_eids` and mark the
-    example partial;
+  - `supported_by_some`: exclude the original compound claim from positive
+    training until its supported clause is atomized and independently checked;
   - `ambiguous`: exclude from hard-negative construction, or retain with a
     soft/low weight;
   - `unsupported`: remove cited facts and flip the action only when no
     supported fact remains.
-- Never use the 86 contradiction rows as confirmed negatives without the
-  third-pass label.
+- Never use the 86 contradiction rows as confirmed negatives without a new
+  full-evidence adjudication whose evidence SHA matches the manifest.
 
 The sidecar judgments are stored at
 `/mnt/store/zhb/exx_grounding_v1/data/gold_recalibrated_20260904/ambiguity_adjudications.jsonl`.

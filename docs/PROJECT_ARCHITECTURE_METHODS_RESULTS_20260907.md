@@ -995,6 +995,11 @@ claim-citation hard negative 的构建：
 6. 支持的候选移入 suspected missed positives；
 7. 未跑 GLM 的候选保留 `not_run`，不得视为干净。
 
+2026-09-07 安全复核发现，第 5 步实际判断的是每个 candidate 的前 2000 字。
+6718 个候选中有 480 个被截断；已判的 1130 个候选中有 345 个被截断，
+包括 286 个 `unsupported` 和 59 个 `supported`。因此 hard-negative v2
+只能作为历史构建记录，不能把其 verdict 直接当训练真值。
+
 ### 19.6 Binding verifier
 
 两类 verifier 必须区分：
@@ -1236,7 +1241,7 @@ relevance-aware 的主要收益是减少无关扩写。complete 的总体提升�
 
 ### 22.4 Clean-binding SFT
 
-clean-SFT 相对 baseline：
+历史 clean-SFT 相对 baseline：
 
 - strict JSON：92.4% → 97.5%；
 - schema：57.0% → 77.2%；
@@ -1248,11 +1253,13 @@ clean-SFT 相对 baseline：
 - truncation：0 → 2.5%。
 
 这是有价值但不充分的改进：格式和重复明显改善，绑定仅小幅改善，同时增加
-弃答和截断。
+弃答和截断。2026-09-07 进一步发现其训练标签来自存在 600 字 judge 截断的
+strict-v1 校准集，因此该 adapter 继续保留为历史对照，不能代表“已用干净
+binding 训练”的上限。
 
 ### 22.5 校准 binding 对比
 
-79 行 recalibrated 对比：
+79 行 strict-v1 recalibrated 对比：
 
 | 指标 | clean-SFT | gap-mix |
 | --- | ---: | ---: |
@@ -1262,38 +1269,63 @@ clean-SFT 相对 baseline：
 | fact-text similarity | 0.388 | 0.375 |
 | claim-local binding | 0.616 | 0.595 |
 
-gap-mix 没有隐藏的 binding 增益，不能因部分结构指标更好而替换 clean-SFT。
+在该历史参考上，gap-mix 没有隐藏的 binding 增益，不能因部分结构指标更好
+而替换 clean-SFT；由于参考标签的 full-evidence 门禁未通过，绝对 binding
+数字不能继续当最终校准结果。
 
 ### 22.6 Gold recalibration
 
-全量 1929 facts：
+全量 judging 的 1929 个 fact 确实一一完成，strict-v1 输出为：
 
 | 标签 | 数量 | 比例 |
 | --- | ---: | ---: |
 | clean_support | 1518 | 78.69% |
 | partial | 123 | 6.38% |
 | unsupported | 288 | 14.93% |
-| 清洗后保留 | 1641 | — |
-| 动作翻转题 | 50 | — |
+| strict-v1 清洗后保留 | 1641 | — |
+| strict-v1 动作翻转题 | 50 | — |
 
-多 E-ID fact 共 330，其中 123 个 partial，占 37.27%。这证明原 gold 不能
-未经校准直接视为 claim-local 真值。
+但 judge 对每个 E-ID 只提交前 600 字。247 个 fact 发生截断，其中 172 个被
+判为 unsupported；另有 86 个 merged/individual 冲突项。两类风险去重后隔离
+326 个 fact，完整输入且无冲突的保守候选仅为：
+
+| 标签 | 数量 |
+| --- | ---: |
+| clean_support | 1478 |
+| partial | 88 |
+| unsupported | 37 |
+
+50 个动作翻转中有 46 个依赖隔离项。以上 strict-v1 数字仍可用于复现实验，
+但不能作为 clean truth；完整复核、确定性假阴性、输入/输出 SHA 和复判入口见
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。
 
 ### 22.7 Hard-negative v2
 
-全量：
+历史全量产物：
 
 - 1706 fact rows；
 - 1697 unique claims；
 - 3145 unique evidence chunks；
 - 6718 dense top-4 candidates；
-- 已 GLM 确认 unsupported：1005；
-- suspected missed positives：125；
+- strict-v2 `unsupported`：1005；
+- strict-v2 `supported` / suspected missed positives：125；
 - `not_run`：5588；
-- 前 300 fact rows 的已验证负例纯度：1005/1130 = 88.94%。
+- 历史前 300 fact rows 的 verdict 比例：1005/1130 = 88.94%
+  `unsupported`，不能再称“已验证负例纯度”。
 
-训练只能优先使用 1005 个确认负例。125 个支持候选说明原 exact gold evidence
-存在多解和漏标。
+恢复完整 source prompt 后发现，builder 在 GLM 前执行了 `text[:2000]`：
+
+| verdict | 历史数量 | 输入被截断 | 完整输入候选 |
+| --- | ---: | ---: | ---: |
+| unsupported | 1005 | 286 | 719 |
+| supported | 125 | 59 | 66 |
+| not_run | 5588 | 135 | 5453 |
+
+因此 1005/125 都不是完整证据标签。将负例完整性门禁与 gold 的 600 字截断/
+冲突门禁同时应用后，只能构成 393 个保守 pair、65 个 record group
+（360 train / 33 eval）；该划分仍按 record 而非 question/story family，
+不能作为最终 family-held-out 训练集。确定性尾部假阴性、SHA 与重建命令见
+`docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`。
 
 ### 22.8 4B verifier 与 GLM
 
@@ -1318,9 +1350,9 @@ gap-mix 没有隐藏的 binding 增益，不能因部分结构指标更好而替
 
 它适合作为 RLVR pilot 的软 reward 候选，但不适合作为唯一生产真值。
 
-### 22.9 Augmented binding verifier v2
+### 22.9 历史 augmented binding verifier v2
 
-独立 held-out：
+历史 766-pair 数据集上的 held-out：
 
 | 模型 | clean pair accuracy | missed-positive accuracy | missed-positive AUC |
 | --- | ---: | ---: | ---: |
@@ -1328,8 +1360,11 @@ gap-mix 没有隐藏的 binding 增益，不能因部分结构指标更好而替
 | verifier v1 | 100% | 85.7% | 0.805 |
 | augmented v2 | 100% | 93.9% | 0.904 |
 
-v2 在 difficult missed-positive 上有明显提升，但这是 binding pair 结果，不是
-question-document retrieval 结果，尚不足以切生产 reranker。
+这些数字可复现实验，但训练/评估 pair 都继承了 hard-neg 的 2000 字截断，
+且旧 builder 曾把 `supported_by_some` 的完整复合 claim 当正例。因此
+93.9%/0.904 不能继续作为真实 binding 泛化或发布证据。v2 继续保留为历史
+checkpoint，不切生产；需在 full-evidence、原子化 claim、family-held-out
+数据上重训重测后再评价。
 
 ### 22.10 Dense/sparse 权重扫参
 
@@ -1770,7 +1805,9 @@ M  docs/ANSWER_QUALITY_IMPROVEMENT_PLAN_20260907.md
 | `docs/MULTI_ROUND_TOOL_CALL_DESIGN_20260906.md` | 多轮控制面 |
 | `docs/CALIBRATED_BINDING_EVAL_20260905.md` | 校准 binding 对比 |
 | `docs/BINDING_VERIFIER_AUGMENTED_V2_FINDINGS_20260905.md` | verifier v2 |
-| `docs/CLEAN_SFT_RETRY_AND_RETRIEVAL_FINDINGS_20260904.md` | clean-SFT 与 gap retrieval |
+| `docs/CLEAN_SFT_RETRY_AND_RETRIEVAL_FINDINGS_20260904.md` | 历史 clean-SFT 与 gap retrieval |
+| `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md` | GOLD_RECAL 截断、冲突与训练门禁复核 |
+| `docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md` | hard-negative v2 截断、隔离与安全重建 |
 | `E2E_QWEN06_INTENDED_BASELINE_2026-09-06.md` | 8 题端到端 intended |
 | `E2E_QWEN06_SPARSEHEAVY_2026-09-06.md` | sparse-heavy 对照 |
 | `RETRIEVAL_WEIGHT_SWEEP_2026-09-06.md` | dense/sparse 扫参 |

@@ -1,24 +1,37 @@
 # Binding verifier augmented v2 findings (2026-09-05)
 
+> 2026-09-07 correction: this is a reproducible historical experiment, not a
+> training-safe or release-valid result. The hard-negative builder silently
+> clipped each candidate to 2,000 characters before GLM judging. Of 1,005
+> historical `unsupported` labels, 286 were judged on truncated input; 59 of
+> 125 `supported` candidates were also truncated. The old pair builder
+> additionally retained `supported_by_some` compound claims as positives.
+> See `docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`.
+
 ## What changed
 
-The verifier-pair builder now has two opt-in controls:
+The historical verifier-pair builder added two opt-in controls:
 
 - `--ambiguity <jsonl>` applies the third-pass GLM adjudication.  `supported_by_union`
-  and `supported_by_some` retain their adjudicated E-ID set; `ambiguous` and
-  `unsupported` are excluded.
+  and, incorrectly, `supported_by_some` retained their adjudicated E-ID set;
+  `ambiguous` and `unsupported` were excluded.
 - `--include-suspected-missed-positives` adds candidates that the hard-negative
   audit explicitly judged `supported` as additional positive variants.
 
-The default invocation is unchanged, so the old dataset remains reproducible.
-The new 2026-09-05 dataset is stored on 248 at:
+The 2026-09-05 dataset remains stored on 248 for historical reproduction:
 
 `/mnt/store/zhb/exx_grounding_v1/data/binding_verifier_pairs_augmented_v2_20260905/`
 
-It contains 766 pairs (691 train / 75 internal eval after the trainer's
+It contains 766 historical pairs (691 train / 75 internal eval after the trainer's
 question-group split), including 600 gold pair rows and 166 pair rows generated
 from 73 GLM-confirmed missed-positive variants.  These variants are paired only
-against GLM-confirmed unsupported candidates.
+against candidates then labelled `unsupported`; neither side passed the later
+full-evidence provenance gate.
+
+With the corrected default gates, the same artifacts produce only 393
+conservative pairs from 65 record groups (360 train / 33 eval). This is still
+not a final dataset: the split is record-held-out rather than
+question/story-family-held-out, and no new full-evidence verdicts were fabricated.
 
 ## Training
 
@@ -38,7 +51,7 @@ Configuration:
 Training-state optimizer files were removed after completion; model weights and
 the `checkpoint-174` weights were retained.
 
-## Independent held-out result
+## Historical held-out result
 
 The comparison uses the exact 17 question groups selected by the trainer
 (75 pair rows).  The hard-negative file was filtered to the same 16 source
@@ -50,25 +63,27 @@ records for the missed-positive test.
 | old binding verifier v1 | 100.0% | 14.76 | 85.7% | 0.805 |
 | augmented verifier v2 | 100.0% | 14.52 | **93.9%** | **0.904** |
 
-The clean-pair set is saturated and therefore not a useful release gate.  The
-missed-positive result is the meaningful signal: v2 improves over v1 by
-8.2 percentage points and raises AUC by 0.099 on held-out question groups.
+On the historical labels, v2 improved over v1 by 8.2 percentage points and
+raised AUC by 0.099. Because the held-out pairs inherit the same truncation and
+compound-claim label defects, this is not a trustworthy estimate of true
+binding accuracy and is not a release gate.
 
-On a separately reconstructed listwise pool (37 held-out records, with all
-GLM-confirmed positives and negatives present), both v1 and v2 reached 100%
+On a separately reconstructed historical listwise pool (37 held-out records,
+with the then-labelled positives and negatives present), both v1 and v2 reached 100%
 Top-1/Top-3/Top-5.  v2's positive-vs-best-negative margin was 13.02 versus
 13.23 for v1.  This small, saturated listwise slice shows no regression, but
-does not by itself justify a production switch.
+cannot justify a production switch.
 
 ## Release caution
 
-This is still a candidate, not yet the production default.  Before switching
-the runtime:
+Do not switch this checkpoint into production. Before considering a replacement:
 
-1. run the full listwise retrieval recall evaluation with v1 vs v2;
-2. check runtime latency with `reranker_max_length=1536`;
-3. run a blind manual/GLM audit on newly promoted top-k evidence;
-4. keep v1 as an immediate rollback.
+1. rejudge quarantined gold and hard-negative candidates with complete evidence
+   and matching content fingerprints;
+2. atomize every `supported_by_some` compound claim before positive training;
+3. split by question and story family before training;
+4. rerun blind pairwise/listwise evaluation and full retrieval recall;
+5. check runtime latency with `reranker_max_length=1536`.
 
-The 1536 setting must be carried into the runtime configuration; leaving the
-runtime at 1024 would discard much of the training change.
+The historical 1536 setting is part of that checkpoint's experiment contract,
+but no runtime configuration change is authorized by these results.

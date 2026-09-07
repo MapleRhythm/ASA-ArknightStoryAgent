@@ -1,0 +1,131 @@
+{
+  "schema_version": "gold_recalibration_safety_v1",
+  "facts": 1929,
+  "judgements": 1929,
+  "fact_id_unique": 1929,
+  "judgement_id_unique": 1929,
+  "missing_judgements": 0,
+  "extra_judgements": 0,
+  "strict_labels": {
+    "clean_support": 1518,
+    "partial": 123,
+    "unsupported": 288
+  },
+  "strict_labels_by_split": {
+    "train": {
+      "clean_support": 1341,
+      "partial": 106,
+      "unsupported": 259
+    },
+    "val": {
+      "clean_support": 177,
+      "partial": 17,
+      "unsupported": 29
+    }
+  },
+  "judge_contracts": [
+    {
+      "judge_model": "glm-5.3",
+      "reasoning_effort": "medium",
+      "chunk_chars": "600",
+      "count": 1929
+    }
+  ],
+  "merged_status": [
+    {
+      "status": "ok",
+      "verdict": "supported",
+      "count": 1704
+    },
+    {
+      "status": "ok",
+      "verdict": "unsupported",
+      "count": 225
+    }
+  ],
+  "individual_status": [
+    {
+      "status": "ok",
+      "verdict": "supported",
+      "count": 1797
+    },
+    {
+      "status": "ok",
+      "verdict": "unsupported",
+      "count": 462
+    }
+  ],
+  "truncated_by_strict_label": {
+    "clean_support": 40,
+    "partial": 35,
+    "unsupported": 172
+  },
+  "contradictions": {
+    "merged_supported_no_ind_supported": 63,
+    "merged_unsupported_ind_supported": 23
+  },
+  "quarantined_facts": 326,
+  "conservative_usable_facts": 1603,
+  "conservative_usable_by_label": {
+    "clean_support": 1478,
+    "partial": 88,
+    "unsupported": 37
+  },
+  "query_type_exposure": {
+    "causality": {
+      "facts": 992,
+      "quarantined": 182,
+      "truncated": 139
+    },
+    "fact": {
+      "facts": 445,
+      "quarantined": 77,
+      "truncated": 56
+    },
+    "mystery": {
+      "facts": 61
+    },
+    "reasoning": {
+      "facts": 242,
+      "quarantined": 37,
+      "truncated": 28
+    },
+    "relation": {
+      "facts": 113,
+      "quarantined": 26,
+      "truncated": 23
+    },
+    "reveal": {
+      "facts": 76,
+      "quarantined": 4,
+      "truncated": 1
+    }
+  },
+  "changes": {
+    "rows": 461,
+    "fact_changes": 411,
+    "action_flips": 50,
+    "expected_changed_fact_ids": 411,
+    "actual_changed_fact_ids": 411,
+    "missing_changed_fact_ids": 0,
+    "extra_changed_fact_ids": 0,
+    "action_flip_safety": {
+      "total": 50,
+      "depends_on_quarantined_fact": 46,
+      "conservative_usable": 4
+    }
+  },
+  "training_gate": {
+    "status": "blocked_pending_full_evidence_rejudge",
+    "policy": "Quarantined facts cannot remove gold, flip actions, or become hard training targets until a full-evidence adjudication matches evidence_sha256."
+  },
+  "validation_errors": [],
+  "source": {
+    "facts": "/home/maplerhythm/ASA/.codex_tmp/facts_full.jsonl",
+    "facts_sha256": "f99aa73524a16ccb075f193e21495b128a38da8c1faa2d024d877064f22306f1",
+    "judgements": "/home/maplerhythm/ASA/.codex_tmp/judgements_full.jsonl",
+    "judgements_sha256": "8ebc106c4d2505735992028fa926218ecac7c1f6e0f80f06b92b0da81efb36c6",
+    "changes": "/home/maplerhythm/ASA/.codex_tmp/gold_recalibrated_changes.jsonl",
+    "changes_sha256": "76e8ffcd19a67caaf19d63f8911b9128c06a30e63732febcfff989bf6e53874f"
+  }
+}

@@ -20,10 +20,16 @@
 condition 均经人工确认充分，因此 actual prompt 的失败不能简单归因为
 strict9 召回缺失。
 
+同日后续审计发现，该 clean-SFT adapter 的 strict-v1 标签由只看每个 E-ID
+前 600 字的 judge 生成；326/1929 个 fact 因截断或内部冲突被隔离。因此本
+smoke 的生成结果仍然有效，但它只描述历史 adapter，不能代表 full-evidence
+干净 SFT 的上限。
+
 当前不应启动正式 RLVR，也不应为了这 9 题修改生产 MiniRAG、top-k、MMR、
-chain packing 或自动二次检索。优先构造同题配对的 RAFT 风格 SFT 数据，
-补充主体、说话人、关系方向、时间和否定 hard negatives，再完成约 60 题
-正式 P0。
+chain packing 或自动二次检索。先完成
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md` 定义的 326 项完整证据复判，
+再构造同题配对的 RAFT 风格 SFT 数据，补充主体、说话人、关系方向、时间和
+否定 hard negatives，最后完成约 60 题正式 P0。
 
 ## 实验身份与可追溯性
 
@@ -136,17 +142,19 @@ clean prediction SHA 为
 
 ## 下一步
 
-1. 从 strict9 的失败样式扩成同题配对的
+1. 先完成 GOLD_RECAL 326 个隔离 fact 的 full-evidence 复判，重建带内容
+   指纹的候选正例与动作标签。
+2. 从 strict9 的失败样式扩成同题配对的
    `Full / Full + hard distractor / One-edge-missing / Decoy-full /
    None-or-conflicting` 数据；每个状态保持长度与格式尽量匹配。
-2. 第一轮训练采用 RAFT 风格 paired SFT，重点加入说话人、主体、对象、
+3. 第一轮训练采用 RAFT 风格 paired SFT，重点加入说话人、主体、对象、
    关系方向、时间、否定和职业/种族混淆 hard negatives；保留 clean-SFT
-   作为格式基线。
-3. 在 minimal 失败题上补自然语言短答对照，区分 Exx 协议负担与基础阅读
+   只作为历史格式基线。
+4. 在 minimal 失败题上补自然语言短答对照，区分 Exx 协议负担与基础阅读
    能力；不要把自然语言分数直接混入 Exx 模型排名。
-4. 以约 60 个 family-held-out 开发问题完成正式 3-reader × 3-evidence
+5. 以约 60 个 family-held-out 开发问题完成正式 3-reader × 3-evidence
    P0；只有取得可核验 9B 资产时才加入 9B。
-5. 正式 P0 与独立人工验收完成前，不启动 RLVR，不改生产检索默认。
+6. 正式 P0 与独立人工验收完成前，不启动 RLVR，不改生产检索默认。
 
 ## 后续自然语言对照
 

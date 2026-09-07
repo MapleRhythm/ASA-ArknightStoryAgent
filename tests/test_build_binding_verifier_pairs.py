@@ -39,6 +39,11 @@ def test_classify_with_ambiguity_adjudication() -> None:
         judgement,
         {"label": "ambiguous", "keep_eids": ["E1"]},
     ) == ("ambiguous", [])
+    assert (
+        MODULE.contradiction_kind(judgement)
+        == "merged_unsupported_ind_supported"
+    )
+    assert "supported_by_some" not in MODULE.POSITIVE_GOLD_STATUSES
 
 
 def test_build_includes_confirmed_missed_positive(tmp_path: Path, monkeypatch) -> None:
@@ -66,8 +71,11 @@ def test_build_includes_confirmed_missed_positive(tmp_path: Path, monkeypatch) -
                 "row_id": "row-1",
                 "fact_index": 0,
                 "cited_eids": ["E1"],
-                "merged": {"verdict": "supported"},
-                "individual": {"E1": {"verdict": "supported"}},
+                "chunk_chars": 100,
+                "merged": {"status": "ok", "verdict": "supported"},
+                "individual": {
+                    "E1": {"status": "ok", "verdict": "supported"}
+                },
             }
         ],
     )
@@ -133,3 +141,152 @@ def test_build_includes_confirmed_missed_positive(tmp_path: Path, monkeypatch) -
         "suspected_missed_positive",
     }
     assert {tuple(row["positive_chain"]) for row in pairs} == {("E1",), ("E2",)}
+
+
+def test_build_drops_gold_when_judge_input_was_truncated(
+    tmp_path: Path, monkeypatch
+) -> None:
+    hardneg = tmp_path / "hardneg.jsonl"
+    manifest = tmp_path / "manifest.jsonl"
+    judgements = tmp_path / "judgements.jsonl"
+    out_dir = tmp_path / "out"
+    write_jsonl(
+        manifest,
+        [
+            {
+                "row_id": "row-1",
+                "fact_index": 0,
+                "claim": "甲导致乙",
+                "cited_eids": ["E1"],
+                "cited_texts": {"E1": "前文" * 400 + "甲导致乙"},
+            }
+        ],
+    )
+    write_jsonl(
+        judgements,
+        [
+            {
+                "fact_id": "fact-1",
+                "row_id": "row-1",
+                "fact_index": 0,
+                "cited_eids": ["E1"],
+                "chunk_chars": 600,
+                "merged": {"verdict": "supported"},
+                "individual": {"E1": {"verdict": "supported"}},
+            }
+        ],
+    )
+    write_jsonl(
+        hardneg,
+        [
+            {
+                "record_id": "row-1",
+                "fact_index": 0,
+                "claim": "甲导致乙",
+                "hard_negatives": [
+                    {
+                        "eid": "E9",
+                        "text": "无关证据",
+                        "glm_verdict": "unsupported",
+                    }
+                ],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(SCRIPT_PATH),
+            "--hardneg",
+            str(hardneg),
+            "--manifest",
+            str(manifest),
+            "--judgements",
+            str(judgements),
+            "--out-dir",
+            str(out_dir),
+        ],
+    )
+
+    assert MODULE.main() == 0
+    assert MODULE.read_jsonl(out_dir / "pairwise.jsonl") == []
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["stats"]["dropped_gold:judge_input_truncated"] == 1
+
+
+def test_full_adjudication_requires_matching_evidence_fingerprint() -> None:
+    task = {
+        "claim": "甲导致乙",
+        "cited_eids": ["E1"],
+        "cited_texts": {"E1": "完整证据"},
+    }
+    valid = {
+        "status": "ok",
+        "full_evidence": True,
+        "evidence_sha256": MODULE.evidence_fingerprint(task),
+        "label": "supported_by_union",
+        "keep_eids": ["E1"],
+    }
+
+    assert MODULE.full_adjudication_matches(task, valid)
+    assert not MODULE.full_adjudication_matches(
+        task, {**valid, "evidence_sha256": "stale"}
+    )
+    assert not MODULE.full_adjudication_matches(
+        task, {**valid, "label": "invalid"}
+    )
+    assert not MODULE.full_adjudication_matches(
+        task,
+        {
+            **valid,
+            "label": "supported_by_union",
+            "keep_eids": [],
+        },
+    )
+    assert not MODULE.full_adjudication_matches(
+        task,
+        {
+            **valid,
+            "label": "supported_by_union",
+            "keep_eids": ["E9"],
+        },
+    )
+
+
+def test_legacy_2000_character_negative_is_not_training_safe() -> None:
+    candidate = {
+        "eid": "E9",
+        "text": "负" * 2000,
+        "glm_verdict": "unsupported",
+    }
+    assert (
+        MODULE.negative_candidate_coverage_issue(
+            "row-1", 0, "甲导致乙", candidate
+        )
+        == "judge_input_truncated"
+    )
+    trusted = {
+        **candidate,
+        "full_evidence": True,
+    }
+    trusted["evidence_sha256"] = MODULE.negative_evidence_fingerprint(
+        "row-1", 0, "甲导致乙", trusted
+    )
+    assert (
+        MODULE.negative_candidate_coverage_issue(
+            "row-1", 0, "甲导致乙", trusted
+        )
+        is None
+    )
+
+
+def test_non_ok_gold_judgement_is_not_training_safe() -> None:
+    judgement = {
+        "cited_eids": ["E1"],
+        "merged": {"status": "error", "verdict": "supported"},
+        "individual": {"E1": {"status": "ok", "verdict": "supported"}},
+    }
+    assert MODULE.judgement_status_issues(judgement) == [
+        "merged_status_not_ok"
+    ]

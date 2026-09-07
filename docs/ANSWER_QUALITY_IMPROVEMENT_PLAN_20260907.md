@@ -144,9 +144,14 @@ SFT/KTO 已显著改善 schema 和重复输出，但仍存在：
 - partial evidence 被写成完整 fact；
 - 主语、身份、因果和多子句绑定错误。
 
-GOLD_RECAL 的 1929 个 fact 中，只有 1518（78.69%）为 clean support，
-288（14.93%）unsupported，50 道题因事实被删除而发生动作翻转。原 gold
-不能未经 set-level 复核就直接用于 SFT 正例。
+GOLD_RECAL strict-v1 的 1929 个 fact 曾得到 1518 `clean_support`、123
+`partial`、288 `unsupported` 和 50 次动作翻转，但 2026-09-07 回查发现 judge
+对每个 E-ID 只看前 600 字。247 个 fact 被截断，其中 172 个落入
+`unsupported`；再合并 86 个内部冲突后，共 326 个 fact 必须隔离。当前完整
+输入且无冲突的保守候选为 1478 clean、88 partial、37 unsupported；50 个动作
+翻转只有 4 个不依赖隔离项。详见
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。原 gold 和 strict-v1
+都不能未经 full-evidence 与 set-level 复核就直接作为下一轮 SFT 真值。
 
 ## 4. 实验路线（按 ROI 排序）
 
@@ -388,8 +393,13 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 - 从完整 gold chain 删除一个必需链环，生成反事实
   `retrieve_more + missing_slot` 样本；
 - 增加身份/主语归属、因果、否定、多子问、无关但真实事实 hard negative；
-- 只使用已 GLM 确认的 1005 条 hard negative；
-- 5588 条 `not_run` 仅作 provisional 候选，不能作为干净负例；
+- 历史 1005 个 `unsupported` 候选中有 286 个只看了 2000 字前缀；负例侧
+  仅 719 个看到了完整 candidate。再与无截断、无冲突的 gold 正例取交集，
+  当前只能重建 393 个保守 pair（65 个 record group），仍需二次抽检；
+- 5588 条 `not_run` 中另有 135 条输入被截断，全部只作 provisional 候选，
+  不能作为干净负例；
+- 125 个历史 `supported` 候选中 59 个输入被截断；不能把 125 全部直接当
+  alternate positive；
 - 按 question-family 做 train/val/test 隔离。
 
 **训练顺序**
@@ -406,7 +416,8 @@ e2e 集和 20 秒预算内复测后才能考虑默认启用第二轮策略。
 全部条件必须满足：
 
 1. E0 面板完成，且训练/验证/测试问题族无泄漏；
-2. gold recalibration 的原始 judgement、变更和 set-level 复核可追溯；
+2. gold recalibration 的 full-evidence judgement、内容指纹、变更和 set-level
+   复核可追溯，且 326 个隔离项已闭环；
 3. 本地 verifier 只作为离线审计或 pilot reward，不能把 91.2% agreement、
    AUC 0.937 当作事实正确率；
 4. verifier 在 fact/relation 正例难例上有独立验证，尤其处理主体、身份、

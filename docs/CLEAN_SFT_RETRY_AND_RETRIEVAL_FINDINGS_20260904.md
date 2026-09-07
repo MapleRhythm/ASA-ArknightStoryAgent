@@ -1,5 +1,13 @@
 # Clean-binding SFT retry and retrieval-reward findings (2026-09-04)
 
+> 2026-09-07 correction: the recalibrated training set used here was built
+> from a judge that saw only the first 600 characters of each cited E-ID.
+> This adapter remains a useful historical formatting/action baseline, but it
+> is not evidence for the effect of a fully clean binding dataset. Do not
+> start RLVR from its labels before the 326 quarantined facts are rejudged
+> against full evidence. See
+> `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`.
+
 ## Clean-binding SFT retry
 
 The retry run used the recalibrated binding set (910 train rows, 95 validation
@@ -78,7 +86,8 @@ Validation log:
 
 ## Recommended next step
 
-Start a small RLVR smoke from the clean-SFT adapter only after adding:
+Historical recommendation, now superseded: a small RLVR smoke had been
+proposed after adding:
 
 1. a repetition/length penalty for `follow_up_hypothesis.entities` and
    `keywords`;
@@ -86,5 +95,7 @@ Start a small RLVR smoke from the clean-SFT adapter only after adding:
 3. a local 4B binding-verifier reward (GLM remains offline-only);
 4. gap-conditioned B1+B2 reward using the uncovered-E-ID set.
 
-Compare the smoke adapter against both the original baseline and clean-SFT on
-the same 79-row validation set before launching a full RL run.
+The current gate is stricter: first complete full-evidence gold rejudging and
+rebuild the paired SFT reference. Only then compare a candidate adapter
+against both the original baseline and historical clean-SFT on a
+family-held-out set.

@@ -50,7 +50,9 @@ retrieval snapshot 和同 rerank 池 prompt-selection ablation。实验没有调
 
 - 626 条 Exx task；
 - family-held-out KTO val 的 25 行、12 个正例 task；
-- 1005 条 GLM gold recalibration。
+- 1005 条历史 strict-v1 GLM gold-recalibrated record；该文件后来发现 600 字
+  judge 截断，只用于定位候选，9 题证据已另行逐题人工复核，不能把 1005 条
+  整体称为 clean gold。
 
 过滤结果：
 
