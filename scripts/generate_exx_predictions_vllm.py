@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate fixed-evidence Exx predictions for one or more LoRA adapters.
+"""Generate fixed-evidence Exx predictions for base and/or LoRA readers.
 
 The input is a LLaMA-Factory JSON array. Only grounded_action_generation
 rows are evaluated. Prompts exactly follow the qwen3_nothink formatter used
@@ -27,6 +27,28 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def model_asset_manifest(model_dir: Path) -> dict[str, Any]:
+    files = sorted(path for path in model_dir.iterdir() if path.is_file())
+    if not files:
+        raise ValueError(f"base model directory has no files: {model_dir}")
+    records = []
+    aggregate = hashlib.sha256()
+    for path in files:
+        digest = sha256_file(path)
+        size = path.stat().st_size
+        aggregate.update(path.name.encode("utf-8"))
+        aggregate.update(b"\0")
+        aggregate.update(str(size).encode("ascii"))
+        aggregate.update(b"\0")
+        aggregate.update(digest.encode("ascii"))
+        aggregate.update(b"\n")
+        records.append({"name": path.name, "bytes": size, "sha256": digest})
+    return {
+        "aggregate_sha256": aggregate.hexdigest(),
+        "files": records,
+    }
 
 
 def render_prompt(row: dict) -> str:
@@ -161,6 +183,7 @@ def main() -> int:
         "gold": str(args.gold),
         "gold_sha256": sha256_file(args.gold),
         "base_model": str(args.base_model),
+        "base_model_assets": model_asset_manifest(args.base_model),
         "base_reader": args.base_reader,
         "adapters": [
             {
@@ -223,7 +246,7 @@ def main() -> int:
         skip_special_tokens=False,
     )
 
-    timings = {"engine_init_seconds": engine_seconds, "adapters": {}}
+    timings = {"engine_init_seconds": engine_seconds, "readers": {}}
     adapter_ids = {
         name: adapter_id
         for adapter_id, (name, _) in enumerate(args.adapter, start=1)
@@ -260,13 +283,13 @@ def main() -> int:
         output_path.write_text(
             json.dumps(predictions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        timings["adapters"][name] = {
+        timings["readers"][name] = {
             "seconds": time.monotonic() - adapter_started,
             "output": str(output_path),
             "output_sha256": sha256_file(output_path),
             "truncated_rows": truncated_rows,
         }
-        print(json.dumps({"completed": name, **timings["adapters"][name]}, ensure_ascii=False))
+        print(json.dumps({"completed": name, **timings["readers"][name]}, ensure_ascii=False))
 
     timings["total_seconds"] = time.monotonic() - started
     (args.output_dir / "timings.json").write_text(

@@ -68,3 +68,18 @@ def test_prediction_row_preserves_diagnostic_metadata() -> None:
 
     assert result["diagnostic"] == row["diagnostic"]
     assert result["hit_max_new_tokens"] is False
+
+
+def test_model_asset_manifest_hashes_top_level_checkpoint_files(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "config.json").write_text('{"model_type":"test"}', encoding="utf-8")
+    (tmp_path / "model.safetensors").write_bytes(b"weights")
+
+    manifest = MODULE.model_asset_manifest(tmp_path)
+
+    assert len(manifest["aggregate_sha256"]) == 64
+    assert {item["name"] for item in manifest["files"]} == {
+        "config.json",
+        "model.safetensors",
+    }
