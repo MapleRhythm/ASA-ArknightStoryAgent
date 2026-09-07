@@ -22,9 +22,16 @@ clean-SFT adapter，共 `9 个问题族 × 3 种证据条件 × 2 个 reader`。
 也不是约 60 题的正式 P0；9B 资产仍未找到，因此 3-reader 对照尚未完成。
 在正式诊断完成前，不据此改变生产 MiniRAG、top-k、MMR 或检索轮数。
 
+后续已在同一 minimal evidence 上完成自然语言短答对照：base 为 3/9
+complete，clean-SFT 为 5/9；对应 Exx 都是 4/9。只有杰克逊被自然语言明确
+救回，女妖、芙蕾达、莫斯提马和老天师的实体/关系错误仍在。因此 Exx 协议
+负担只得到局部支持，不能作为主要失败解释。详见
+`docs/STRICT9_READER_NATURAL_LANGUAGE_CONTROL_20260907.md`。
+
 新增旁路工具：
 
 - `scripts/build_reader_evidence_diagnostic.py`
+- `scripts/build_reader_natural_language_control.py`
 - `scripts/generate_exx_predictions_vllm.py` 的 base-reader 支持
 - `scripts/summarize_reader_evidence_diagnostic.py`
 

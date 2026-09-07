@@ -23,6 +23,13 @@
 > over-retrieve 问题；它仍只是流程 smoke，不是系统正确率或正式约 60 题
 > P0。Qwen3.5-9B 因资产缺失未运行。结论与 provenance 见
 > `docs/STRICT9_READER_EVIDENCE_FINDINGS_20260907.md`。
+>
+> 自然语言协议对照补记（2026-09-07）：同一 strict9 minimal evidence
+> 去掉 Exx schema/action/E-ID 后，base 为 3/9 complete，clean-SFT 为
+> 5/9；对应 Exx 均为 4/9。只有杰克逊题被两个 reader 明确救回，女妖、
+> 芙蕾达、莫斯提马与老天师的主体/关系错误仍存在。因此协议负担是局部瓶颈，
+> 当前主优先级仍是 reader hard negatives 与配对证据状态 SFT。详见
+> `docs/STRICT9_READER_NATURAL_LANGUAGE_CONTROL_20260907.md`。
 
 **1．如何解读现有证据**
 

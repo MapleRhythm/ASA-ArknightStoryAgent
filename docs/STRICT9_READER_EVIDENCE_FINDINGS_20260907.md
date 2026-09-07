@@ -147,3 +147,18 @@ clean prediction SHA 为
 4. 以约 60 个 family-held-out 开发问题完成正式 3-reader × 3-evidence
    P0；只有取得可核验 9B 资产时才加入 9B。
 5. 正式 P0 与独立人工验收完成前，不启动 RLVR，不改生产检索默认。
+
+## 后续自然语言对照
+
+上述第 3 项已在同一 strict9 minimal evidence 上完成。人工结果为：
+
+| Reader | Exx minimal complete | 自然语言 minimal complete |
+| --- | ---: | ---: |
+| Qwen3.5-4B base | 4/9 | 3/9 |
+| clean-SFT | 4/9 | 5/9 |
+
+只有杰克逊题被两个 reader 的自然语言输出明确救回；莫斯提马、老天师、
+女妖和芙蕾达等核心实体/关系错误仍存在。因而协议负担是局部问题而非当前
+主瓶颈，训练优先级仍是主体/说话人/关系方向 hard negatives 与配对证据状态
+SFT。完整逐题分析见
+`docs/STRICT9_READER_NATURAL_LANGUAGE_CONTROL_20260907.md`。
