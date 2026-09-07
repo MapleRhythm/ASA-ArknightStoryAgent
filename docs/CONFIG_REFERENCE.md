@@ -19,7 +19,7 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
   "reranker_model_path": "model/reranker/bge-reranker-v2-m3-rank-mix-v6-small-patch",
   "dense_top_k": 80,
   "sparse_top_k": 80,
-  "enable_minirag": false,
+  "enable_minirag": true,
   "minirag_index_path": "indexes/arknights_story_minirag_v3/graph.json",
   "fusion_top_k": 50,
   "rerank_top_k": 20,
@@ -36,9 +36,9 @@ configs/runtime_cpu_api_no_reranker.json         # CPU，本地检索 + 远程 A
 - `reranker_model_path`：reranker 模型目录，仅 `enable_reranker=true` 时需要。
 - `dense_top_k`：FAISS dense 召回数量。
 - `sparse_top_k`：BM25 召回数量。
-- `enable_minirag`：是否启用 MiniRAG 图召回。三个推荐配置默认关闭；只有显式旁路实验才应开启。
-- `minirag_index_path`：MiniRAG 图路径，发布版已内置；默认关闭时不会加载。
-- `fusion_top_k`：dense/BM25（以及显式启用时的 MiniRAG）融合后保留的候选数。
+- `enable_minirag`：是否启用 MiniRAG 图召回。
+- `minirag_index_path`：MiniRAG 图路径，发布版已内置。
+- `fusion_top_k`：dense/BM25/MiniRAG 融合后保留的候选数。
 - `rerank_top_k`：最终进入证据选择的候选数；无 reranker 时仍作为融合截断上限使用。
 - `rerank_batch_size`：reranker batch size，仅开启 reranker 时影响明显。
 - `reranker_max_length`：reranker 输入长度。
@@ -168,8 +168,7 @@ CPU/API：
 ## 调参建议
 
 - CPU 慢：降低 `dense_top_k`、`sparse_top_k`、`fusion_top_k`，关闭 `enable_crag_refinement`。
-- 召回不够：先提高 `dense_top_k`/`sparse_top_k` 到 120；MiniRAG 只在独立
-  gold Recall、端到端正确率和延迟 A/B 通过后作为显式实验开启。
+- 召回不够：提高 `dense_top_k`/`sparse_top_k` 到 120，保持 MiniRAG 开启。
 - reranker 显存不足：降低 `rerank_batch_size` 或 `reranker_max_length`。
 - API 不支持 JSON mode：把 `response_format_json` 设为 `false`。
 - 生成太短：提高 `generator.max_tokens`。

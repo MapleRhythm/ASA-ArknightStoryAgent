@@ -216,7 +216,7 @@ python scripts/build_minirag_index.py --progress --output indexes/arknights_stor
 - `retrieval.device`：检索侧设备，`cpu` 或 `cuda`。
 - `retrieval.enable_reranker`：是否加载 reranker。GPU 默认开启，CPU/API 默认关闭。
 - `retrieval.dense_top_k` / `retrieval.sparse_top_k`：dense 和 BM25 初召回数量。
-- `retrieval.enable_minirag`：是否启用 MiniRAG 图召回。推荐配置默认关闭，仅用于显式旁路实验。
+- `retrieval.enable_minirag`：是否启用 MiniRAG 图召回。
 - `retrieval.minirag_index_path`：MiniRAG 图路径。
 - `retrieval.fusion_top_k`：多路召回融合后保留的候选数。
 - `retrieval.rerank_top_k`：最终进入证据选择的候选数。
@@ -317,11 +317,11 @@ GPU 本地标准链路：
 ```text
 用户问题
 -> user_question_hypothesis_generation
--> dense + BM25 混合召回
--> 可选 MiniRAG / 章节隔离 / 图扩展旁路实验（默认关闭）
+-> dense + BM25 + MiniRAG v3 混合召回
+-> MiniRAG 章节隔离 / 图扩展 / scoped second-pass retrieval
 -> storyline sparse scope
 -> 可选 neighbor expansion / web context
--> RRF fusion + reranker
+-> fusion + reranker
 -> prompt evidence 去重、降权、截断
 -> minimal conclusion_generation
 -> answer_directly / retrieve_more / clarify_user / abstain

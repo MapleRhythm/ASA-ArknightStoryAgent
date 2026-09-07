@@ -1,9 +1,10 @@
 # ASA 当前项目架构、方法与结果说明
 
 > 隔离警告（2026-09-07）：本文由另一并发模型生成，尚未完成逐项源码复核，
-> 不纳入当前提交，也不能作为最新实验结论。第 23、26.5、29、31、33 节仍
+> 只能作为待审参考，不能作为最新实验结论。第 23、26.5、29、31、33 节仍
 > 声称 strict9 snapshot/metrics/selection ablation 不存在，但这些产物已于
-> 2026-09-07 09:44 完成。最新审计以
+> 2026-09-07 09:44 完成；第 8.3、33 节关于 MiniRAG“默认关闭”的描述也与
+> 本文基准提交中的三个推荐 GPU/CPU/API runtime 配置不一致。最新审计以
 > `docs/STRICT9_RETRIEVAL_SMOKE_FINDINGS_20260907.md` 和
 > `docs/ANSWER_QUALITY_IMPROVEMENT_PLAN_20260907.md` 为准。
 
@@ -411,7 +412,7 @@ missing-slot-driven retrieval。
 - 支持 storyline scope；
 - 支持 chapter scope。
 
-### 8.3 MiniRAG lane（默认关闭）
+### 8.3 MiniRAG lane（配置分流）
 
 - 根据实体、别名、关系和图传播召回；
 - query type 可调整 MiniRAG 权重；
@@ -420,8 +421,10 @@ missing-slot-driven retrieval。
 - 支持第一轮后的图引导二次检索。
 
 截至 2026-09-07，MiniRAG 尚无可信的回答正确率增益证据，而图扩展和章节
-二次检索有明确延迟成本，因此所有推荐 runtime 配置均关闭该 lane。代码与图
-索引继续保留，只用于独立 gold Recall、端到端正确率和延迟 A/B。
+二次检索有明确延迟成本。但在本文基准提交中，三个推荐 GPU/CPU/API runtime
+配置开启该 lane，两个 evidence-id 旁路配置关闭它。现有证据不足以支持向任一
+方向修改默认值；应冻结基准配置，另做独立 gold Recall、端到端正确率和延迟
+A/B。
 
 ### 8.4 多 query 合并
 
@@ -1670,7 +1673,7 @@ E0 归因面板
 | parallel retrieval | 默认 1 worker | GPU backend 线程安全和真实延迟未验证 |
 | set coverage selection | 旁路 | 尚无 strict snapshot 和 e2e 传导结果 |
 | top-16 prompt | 旁路 | token、延迟和 irrelevant 风险 |
-| MiniRAG + 章节二次检索 | 默认关闭 | 正确率增益未证实，延迟成本明确 |
+| MiniRAG + 章节二次检索 | 基准推荐配置开启；evidence-id 旁路关闭 | 正确率增益未证实，延迟成本明确；冻结现状并做 A/B |
 | compact graph query | 旁路 | 仅在 MiniRAG 实验中有意义；候选集合变化，样本仅 7 |
 | CRAG refinement | 默认关闭 | 可能切掉关系上下文 |
 | evidence pinning | 默认关闭 | 可能把启发式证据强行塞入 prompt |
