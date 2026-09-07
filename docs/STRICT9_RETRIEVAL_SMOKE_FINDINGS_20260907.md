@@ -79,10 +79,17 @@ retrieval snapshot 和同 rerank 池 prompt-selection ablation。实验没有调
 | retrieval metrics | `079d2bdc9c7d77a76e19b81af87c3693e44e3500e2f7809c7dee9d0905b7016f` |
 | selection ablation v1 | `1f752a453cab07a4603cfb5d4bfc2ba6f46629d8742a8f235fb8c966e30cc406` |
 | selection ablation v2 | `95f19e56aaae11a816b47b08f1436c3ab6b6398bcf7a658072052d11138be3c8` |
+| snapshots v3 | `5fc3420576571d2a05b24263c8ced33af24b77ccaa1709001ebcc7ba1a857777` |
+| retrieval metrics v3 | `8269231b55155ace7a02cb3c7c46e7b496d47c8b3511ed0ac5e094d68bad344d` |
+| selection ablation v3 | `d1d582581eb5a46deb7f765bc536a7cbd2d3fe762a9aaa2344b7a35c6881bcc9` |
 
 fact-group manifest v2 保留 34 条 `supported_facts`，其中 2 条事实有多引用。
 将 v1 和 v2 投影到题目、family、query type、gold IDs、hypothesis 和 source
 后逐行比较无差异，所以现有冻结 snapshot 仍可用于本轮诊断。
+
+v3 snapshot 与 v1 snapshot 的每题 query 以及 dense、sparse、fusion、
+rerank、prompt 文档 ID 顺序逐项一致；v3 只新增 fact group 和 chain member
+审计元数据，没有改变检索结果。
 
 ## 3. 运行配置
 
@@ -146,6 +153,17 @@ snapshot 9/9 成功，0 failure。
 | rerank 原池 | 100% | 100% | 32.0 |
 | 公共去重后 | 87.0% | 66.7% | 25.3 |
 
+v3 使用真实 `evidence_chain_member_ids` 后：
+
+| 策略/池 | chain-visible Recall | chain-visible 全 gold |
+| --- | ---: | ---: |
+| 公共去重后 | 96.3% | 88.9% |
+| top-score@10 | 92.6% | 77.8% |
+| MMR@10 | 92.6% | 77.8% |
+| coverage@10 | 92.6% | 77.8% |
+| top-score/MMR/coverage@16 | 92.6% | 77.8% |
+| oracle@16 after common dedupe | 96.3% | 88.9% |
+
 选择归因：
 
 - `dedupe_drop`：3/9；
@@ -204,18 +222,19 @@ all-gold coverage 要求每个文档都出现。原始校准标签表明：
 2. `build_retrieval_stage_snapshots.py` v2 透传并校验 fact citation group；
 3. `evaluate_prompt_selection_ablation.py` v2 分开报告 rerank 原池、公共去重、
    selector，并解释 dedupe-drop 的保留文档和内容重合度。
-4. 后续 v3 工具在 chain model scoring 时保存真实
+4. v3 工具在 chain model scoring 时保存真实
    `evidence_chain_member_ids`，snapshot 和 selection ablation 可精确报告
    outer-ID coverage 与 chain-visible coverage。
+5. strict9 v3 snapshot 已完成 9/9、0 failure，并验证所有阶段文档顺序与 v1
+   完全一致。
 
 这些都是离线评估改动，不修改生产默认。
 
 尚未完成但必须补充：
 
-1. 用 v3 工具重新生成 snapshot，固化精确 chain-member coverage 产物；
-2. 为 supported fact 标注 `answer_essential / supporting / redundant`，不能由
+1. 为 supported fact 标注 `answer_essential / supporting / redundant`，不能由
    citation 数自动猜测；
-3. 在更大的无泄漏集上计算 fact coverage，并用实际生成验证它是否传导到
+2. 在更大的无泄漏集上计算 fact coverage，并用实际生成验证它是否传导到
    complete/support。
 
 ## 9. 提升方案排序
@@ -223,7 +242,8 @@ all-gold coverage 要求每个文档都出现。原始校准标签表明：
 下一步优先级：
 
 1. 扩大 strict family-held-out manifest；9 题不足以比较策略。
-2. 完成 chain-member-aware、fact-group-aware evaluator，先修正评估假阴性。
+2. 在 chain-member-aware 基础上加入 answer-essential fact 标注，继续修正
+   fact-level 评估假阴性。
 3. 对每题人工/双模型标注最小充分事实，再构造
    Full/One-edge-missing/None/Decoy-full。
 4. 在冻结 snapshot 上运行答案生成器，报告用户可见 complete、support、
