@@ -12,8 +12,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
+from typing import Any
+
+
+READER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def sha256_file(path: Path) -> str:
@@ -37,21 +42,76 @@ def render_prompt(row: dict) -> str:
     return "".join(parts)
 
 
+def validate_reader_name(name: str) -> str:
+    if not READER_NAME_RE.fullmatch(name):
+        raise argparse.ArgumentTypeError(
+            "reader name must contain only letters, numbers, dot, underscore, or hyphen"
+        )
+    return name
+
+
 def parse_adapter(value: str) -> tuple[str, Path]:
     if "=" not in value:
         raise argparse.ArgumentTypeError("adapter must have NAME=/absolute/path form")
     name, raw_path = value.split("=", 1)
     path = Path(raw_path)
-    if not name or not path.is_absolute():
+    validate_reader_name(name)
+    if not path.is_absolute():
         raise argparse.ArgumentTypeError("adapter must have NAME=/absolute/path form")
     return name, path
+
+
+def reader_specs(
+    base_reader: str | None,
+    adapters: list[tuple[str, Path]],
+) -> list[tuple[str, Path | None]]:
+    readers: list[tuple[str, Path | None]] = []
+    if base_reader:
+        readers.append((validate_reader_name(base_reader), None))
+    readers.extend(adapters)
+    names = [name for name, _ in readers]
+    if len(names) != len(set(names)):
+        raise ValueError("reader names must be unique")
+    return readers
+
+
+def prediction_row(
+    *,
+    row: dict[str, Any],
+    text: str,
+    prompt_token_count: int,
+    generated_token_count: int,
+    finish_reason: str,
+) -> dict[str, Any]:
+    result = {
+        "id": row.get("id"),
+        "task_type": row.get("task_type"),
+        "system": row.get("system"),
+        "conversations": [
+            row["conversations"][0],
+            {"from": "gpt", "value": text},
+        ],
+        "raw_output": text,
+        "prompt_token_count": prompt_token_count,
+        "generated_token_count": generated_token_count,
+        "finish_reason": finish_reason,
+        "hit_max_new_tokens": finish_reason == "length",
+    }
+    if isinstance(row.get("diagnostic"), dict):
+        result["diagnostic"] = row["diagnostic"]
+    return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gold", required=True, type=Path)
     parser.add_argument("--base-model", required=True, type=Path)
-    parser.add_argument("--adapter", action="append", required=True, type=parse_adapter)
+    parser.add_argument(
+        "--base-reader",
+        type=validate_reader_name,
+        help="Also evaluate the base model without a LoRA, using this output name.",
+    )
+    parser.add_argument("--adapter", action="append", default=[], type=parse_adapter)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=12000)
@@ -65,6 +125,12 @@ def main() -> int:
         parser.error(f"output directory must be empty or absent: {args.output_dir}")
     if not args.gold.is_file() or not args.base_model.is_dir():
         parser.error("gold or base model path does not exist")
+    try:
+        readers = reader_specs(args.base_reader, args.adapter)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not readers:
+        parser.error("at least one --base-reader or --adapter is required")
     for name, path in args.adapter:
         if not (path / "adapter_model.safetensors").is_file():
             parser.error(f"missing adapter_model.safetensors for {name}: {path}")
@@ -95,6 +161,7 @@ def main() -> int:
         "gold": str(args.gold),
         "gold_sha256": sha256_file(args.gold),
         "base_model": str(args.base_model),
+        "base_reader": args.base_reader,
         "adapters": [
             {
                 "name": name,
@@ -131,13 +198,11 @@ def main() -> int:
     )
 
     started = time.monotonic()
-    llm = LLM(
+    engine_kwargs = dict(
         model=str(args.base_model),
         tokenizer=str(args.base_model),
         trust_remote_code=True,
-        enable_lora=True,
-        max_lora_rank=64,
-        max_loras=1,
+        enable_lora=bool(args.adapter),
         max_model_len=args.max_model_len,
         max_num_batched_tokens=args.max_num_batched_tokens,
         gpu_memory_utilization=args.gpu_memory_utilization,
@@ -145,6 +210,9 @@ def main() -> int:
         disable_log_stats=True,
         enforce_eager=args.enforce_eager,
     )
+    if args.adapter:
+        engine_kwargs.update(max_lora_rank=64, max_loras=1)
+    llm = LLM(**engine_kwargs)
     engine_seconds = time.monotonic() - started
     sampling = SamplingParams(
         temperature=0.0,
@@ -156,14 +224,18 @@ def main() -> int:
     )
 
     timings = {"engine_init_seconds": engine_seconds, "adapters": {}}
-    for adapter_id, (name, path) in enumerate(args.adapter, start=1):
+    adapter_ids = {
+        name: adapter_id
+        for adapter_id, (name, _) in enumerate(args.adapter, start=1)
+    }
+    for name, path in readers:
         adapter_started = time.monotonic()
-        outputs = llm.generate(
-            prompts,
-            sampling,
-            use_tqdm=True,
-            lora_request=LoRARequest(name, adapter_id, str(path)),
-        )
+        generation_kwargs = {}
+        if path is not None:
+            generation_kwargs["lora_request"] = LoRARequest(
+                name, adapter_ids[name], str(path)
+            )
+        outputs = llm.generate(prompts, sampling, use_tqdm=True, **generation_kwargs)
         predictions = []
         truncated_rows = 0
         for row, prompt, output in zip(rows, prompts, outputs, strict=True):
@@ -172,24 +244,17 @@ def main() -> int:
             hit_max_tokens = finish_reason == "length"
             truncated_rows += int(hit_max_tokens)
             predictions.append(
-                {
-                    "id": row.get("id"),
-                    "task_type": row.get("task_type"),
-                    "system": row.get("system"),
-                    "conversations": [
-                        row["conversations"][0],
-                        {"from": "gpt", "value": text},
-                    ],
-                    "raw_output": text,
-                    "prompt_token_count": len(
+                prediction_row(
+                    row=row,
+                    text=text,
+                    prompt_token_count=len(
                         tokenizer(prompt, add_special_tokens=False).input_ids
                     ),
-                    "generated_token_count": len(output.outputs[0].token_ids)
-                    if output.outputs
-                    else 0,
-                    "finish_reason": finish_reason,
-                    "hit_max_new_tokens": hit_max_tokens,
-                }
+                    generated_token_count=(
+                        len(output.outputs[0].token_ids) if output.outputs else 0
+                    ),
+                    finish_reason=finish_reason,
+                )
             )
         output_path = args.output_dir / f"{name}.predictions.json"
         output_path.write_text(
