@@ -103,6 +103,7 @@ def test_build_snapshot_records_all_required_stages(monkeypatch: pytest.MonkeyPa
     sparse = [_hit("sparse-b", 0.7)]
     fused = [_hit("gold-a", 0.9), _hit("gold-b", 0.8)]
     reranked = [_hit("gold-b", 1.0), _hit("gold-a", 0.9)]
+    reranked[0]["evidence_chain_member_ids"] = ["gold-a", "gold-b"]
     prompt = [reranked[0]]
 
     monkeypatch.setattr(
@@ -157,6 +158,10 @@ def test_build_snapshot_records_all_required_stages(monkeypatch: pytest.MonkeyPa
     assert [item["id"] for item in result["stages"]["rerank"]] == [
         "gold-b",
         "gold-a",
+    ]
+    assert result["stages"]["rerank"][0]["evidence_chain_member_ids"] == [
+        "gold-a",
+        "gold-b",
     ]
     assert [item["id"] for item in result["stages"]["prompt"]] == ["gold-b"]
     assert result["gold_supported_facts"] == [

@@ -119,6 +119,7 @@ def test_common_dedupe_reports_dropped_gold_and_kept_document() -> None:
             "reason": "text_similarity",
             "kept_id": "decoy",
             "similarity": 1.0,
+            "dropped_id_in_kept_chain_members": False,
             "dropped_clean_text_fully_preserved": True,
             "dropped_clean_text_token_recall": 1.0,
         }
@@ -126,3 +127,24 @@ def test_common_dedupe_reports_dropped_gold_and_kept_document() -> None:
     assert result["strategies"]["oracle@2"]["coverage_attribution"] == {
         "dedupe_drop": 1
     }
+
+
+def test_visible_metrics_include_exact_chain_member_ids() -> None:
+    outer = _candidate("outer", "包含两个证据的链。", 10.0)
+    outer["evidence_chain_member_ids"] = ["outer", "gold"]
+    row = {
+        "id": "q-chain",
+        "question": "链中是否包含答案？",
+        "question_family": "family-chain",
+        "gold_evidence_ids": ["gold"],
+        "stages": {"rerank": [outer, _candidate("other", "其他内容。", 1.0)]},
+    }
+
+    result = MODULE.evaluate_rows([row], top_ks=[1], mmr_lambda=0.72)
+
+    pool = result["common_pool"]["summary"]
+    assert pool["deduped_recall"] == 0.0
+    assert pool["deduped_visible_recall"] == 1.0
+    strategy = result["strategies"]["top_score@1"]
+    assert strategy["summary"]["recall"] == 0.0
+    assert strategy["visible_summary"]["recall"] == 1.0

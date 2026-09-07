@@ -186,6 +186,11 @@ GOLD_RECAL 的 1929 个 fact 中，只有 1518（78.69%）为 clean support，
 
 只新增离线报告和测试，不改变任何默认配置。E0 未完成前不启动训练或 RLVR。
 
+当前工具已能在 chain model scoring 中保存真实
+`evidence_chain_member_ids`，并在 selection ablation 中分开报告 outer-ID 与
+chain-visible coverage；仍需用 v3 snapshot 在更大无泄漏集上重跑后，才算
+完成该项指标校正。
+
 ### E1：集合级 prompt evidence coverage（最高优先级）
 
 **假设**

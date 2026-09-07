@@ -204,16 +204,18 @@ all-gold coverage 要求每个文档都出现。原始校准标签表明：
 2. `build_retrieval_stage_snapshots.py` v2 透传并校验 fact citation group；
 3. `evaluate_prompt_selection_ablation.py` v2 分开报告 rerank 原池、公共去重、
    selector，并解释 dedupe-drop 的保留文档和内容重合度。
+4. 后续 v3 工具在 chain model scoring 时保存真实
+   `evidence_chain_member_ids`，snapshot 和 selection ablation 可精确报告
+   outer-ID coverage 与 chain-visible coverage。
 
 这些都是离线评估改动，不修改生产默认。
 
 尚未完成但必须补充：
 
-1. evidence-chain 构造时保存 `evidence_chain_member_ids`；
-2. 分开报告 outer evidence ID coverage、chain-member coverage 和内容覆盖；
-3. 为 supported fact 标注 `answer_essential / supporting / redundant`，不能由
+1. 用 v3 工具重新生成 snapshot，固化精确 chain-member coverage 产物；
+2. 为 supported fact 标注 `answer_essential / supporting / redundant`，不能由
    citation 数自动猜测；
-4. 在更大的无泄漏集上计算 fact coverage，并用实际生成验证它是否传导到
+3. 在更大的无泄漏集上计算 fact coverage，并用实际生成验证它是否传导到
    complete/support。
 
 ## 9. 提升方案排序

@@ -43,7 +43,7 @@ from asa_arknight_story_agent.inference.planning.query_understanding import (  #
 )
 
 
-ABLATION_VERSION = "asa_prompt_selection_ablation_v2"
+ABLATION_VERSION = "asa_prompt_selection_ablation_v3"
 DEDUPE_SIMILARITY_THRESHOLD = 0.82
 
 
@@ -137,6 +137,7 @@ def candidate_from_snapshot(value: dict[str, Any], index: int) -> dict[str, Any]
         "evidence_chain_score",
         "evidence_chain_model_score",
         "evidence_chain_roles",
+        "evidence_chain_member_ids",
         "evidence_chain_text",
         "supplemental_source",
     ):
@@ -171,6 +172,16 @@ def gold_ids(row: dict[str, Any]) -> list[str]:
 
 def hit_id(item: dict[str, Any]) -> str:
     return str((item.get("document") or {}).get("id") or "").strip()
+
+
+def visible_ids(items: list[dict[str, Any]]) -> set[str]:
+    result = {hit_id(item) for item in items if hit_id(item)}
+    for item in items:
+        members = item.get("evidence_chain_member_ids")
+        if not isinstance(members, list):
+            continue
+        result.update(str(member).strip() for member in members if str(member).strip())
+    return result
 
 
 def oracle_select(
@@ -283,6 +294,8 @@ def dedupe_drop_explanations(
                         "reason": "text_similarity",
                         "kept_id": hit_id(kept_item),
                         "similarity": score,
+                        "dropped_id_in_kept_chain_members": item_id
+                        in visible_ids([kept_item]),
                         "dropped_clean_text_fully_preserved": bool(
                             normalized_dropped
                             and normalized_dropped in normalized_kept
@@ -311,8 +324,10 @@ def common_pool_record(
     deduped = dedupe_prompt_evidence_candidates(candidates)
     rerank_ids = {hit_id(item) for item in candidates if hit_id(item)}
     deduped_ids = {hit_id(item) for item in deduped if hit_id(item)}
+    deduped_visible_ids = visible_ids(deduped)
     rerank_gold_ids = sorted(gold.intersection(rerank_ids))
     deduped_gold_ids = sorted(gold.intersection(deduped_ids))
+    deduped_visible_gold_ids = sorted(gold.intersection(deduped_visible_ids))
     dropped_gold_ids = set(rerank_gold_ids) - set(deduped_gold_ids)
     return (
         {
@@ -331,6 +346,15 @@ def common_pool_record(
             "deduped_gold_ids": deduped_gold_ids,
             "deduped_recall": len(deduped_gold_ids) / len(gold),
             "deduped_all_gold": int(len(deduped_gold_ids) == len(gold)),
+            "deduped_visible_gold_hit_count": len(deduped_visible_gold_ids),
+            "deduped_visible_gold_ids": deduped_visible_gold_ids,
+            "deduped_visible_recall": len(deduped_visible_gold_ids) / len(gold),
+            "deduped_visible_all_gold": int(
+                len(deduped_visible_gold_ids) == len(gold)
+            ),
+            "dedupe_content_dropped_gold_ids": sorted(
+                set(rerank_gold_ids) - set(deduped_visible_gold_ids)
+            ),
             "dedupe_dropped_gold_ids": sorted(dropped_gold_ids),
             "dedupe_drop_explanations": dedupe_drop_explanations(
                 candidates, dropped_gold_ids
@@ -355,7 +379,10 @@ def aggregate_common_pool(records: list[dict[str, Any]]) -> dict[str, Any]:
             "deduped_recall": 0.0,
             "rerank_all_gold_rate": 0.0,
             "deduped_all_gold_rate": 0.0,
+            "deduped_visible_recall": 0.0,
+            "deduped_visible_all_gold_rate": 0.0,
             "dedupe_drop_rate": 0.0,
+            "dedupe_content_drop_rate": 0.0,
         }
     count = len(records)
     return {
@@ -374,10 +401,39 @@ def aggregate_common_pool(records: list[dict[str, Any]]) -> dict[str, Any]:
         / count,
         "deduped_all_gold_rate": sum(row["deduped_all_gold"] for row in records)
         / count,
+        "deduped_visible_recall": sum(
+            row["deduped_visible_recall"] for row in records
+        )
+        / count,
+        "deduped_visible_all_gold_rate": sum(
+            row["deduped_visible_all_gold"] for row in records
+        )
+        / count,
         "dedupe_drop_rate": sum(
             int(bool(row["dedupe_dropped_gold_ids"])) for row in records
         )
         / count,
+        "dedupe_content_drop_rate": sum(
+            int(bool(row["dedupe_content_dropped_gold_ids"])) for row in records
+        )
+        / count,
+    }
+
+
+def aggregate_visible(records: list[dict[str, Any]]) -> dict[str, Any]:
+    if not records:
+        return {
+            "count": 0,
+            "recall": 0.0,
+            "any_hit_rate": 0.0,
+            "all_gold_rate": 0.0,
+        }
+    count = len(records)
+    return {
+        "count": count,
+        "recall": sum(row["visible_recall"] for row in records) / count,
+        "any_hit_rate": sum(row["visible_any_hit"] for row in records) / count,
+        "all_gold_rate": sum(row["visible_all_gold"] for row in records) / count,
     }
 
 
@@ -488,8 +544,10 @@ def evaluate_rows(
                 ),
             }
             for name, selector in selectors.items():
-                metrics = selection_metrics(gold, selector())
+                selected = selector()
+                metrics = selection_metrics(gold, selected)
                 selected_ids = set(metrics["selected_ids"])
+                selected_visible_ids = visible_ids(selected)
                 attribution = coverage_attribution(
                     gold,
                     rerank_ids=rerank_ids,
@@ -505,6 +563,19 @@ def evaluate_rows(
                         "coverage_attribution": attribution,
                         "selector_dropped_gold_ids": sorted(
                             gold.intersection(deduped_ids) - selected_ids
+                        ),
+                        "visible_gold_hit_count": len(
+                            gold.intersection(selected_visible_ids)
+                        ),
+                        "visible_recall": len(
+                            gold.intersection(selected_visible_ids)
+                        )
+                        / len(gold),
+                        "visible_any_hit": int(
+                            bool(gold.intersection(selected_visible_ids))
+                        ),
+                        "visible_all_gold": int(
+                            gold.issubset(selected_visible_ids)
                         ),
                         **metrics,
                     }
@@ -533,6 +604,7 @@ def evaluate_rows(
         "strategies": {
             name: {
                 "summary": aggregate(records),
+                "visible_summary": aggregate_visible(records),
                 "family_macro": family_macro(records),
                 "coverage_attribution": dict(
                     sorted(strategy_attributions[name].items())
@@ -580,6 +652,7 @@ def main() -> int:
         "strategies": {
             name: {
                 "summary": value["summary"],
+                "visible_summary": value["visible_summary"],
                 "family_macro": value["family_macro"],
                 "coverage_attribution": value["coverage_attribution"],
             }

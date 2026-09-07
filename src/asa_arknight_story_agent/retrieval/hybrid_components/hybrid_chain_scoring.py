@@ -31,6 +31,13 @@ class HybridEvidenceChainScoringMixin:
             if len(member_indices) < 2 or member_indices in seen_chain_keys:
                 continue
             seen_chain_keys.add(member_indices)
+            member_document_ids = list(
+                dict.fromkeys(
+                    str(member["item"]["document"].get("id") or "").strip()
+                    for member in member_items
+                    if str(member["item"]["document"].get("id") or "").strip()
+                )
+            )
             chain_text = self._render_chain_text(chain)
             if not chain_text:
                 continue
@@ -49,6 +56,7 @@ class HybridEvidenceChainScoringMixin:
                 {
                     "chain": chain,
                     "member_indices": member_indices,
+                    "member_document_ids": member_document_ids,
                     "chain_text": chain_text,
                 }
             )
@@ -118,6 +126,9 @@ class HybridEvidenceChainScoringMixin:
                     float(score),
                 )
                 item["evidence_chain_roles"] = sorted(member["roles"])
+                item["evidence_chain_member_ids"] = list(
+                    payload["member_document_ids"]
+                )
                 item["evidence_chain_text"] = payload["chain_text"]
         return True
 

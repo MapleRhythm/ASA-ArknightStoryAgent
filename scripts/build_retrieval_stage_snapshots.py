@@ -74,7 +74,7 @@ from asa_arknight_story_agent.runtime_config import (  # noqa: E402
 )
 
 
-SNAPSHOT_VERSION = "asa_retrieval_stage_snapshot_v2"
+SNAPSHOT_VERSION = "asa_retrieval_stage_snapshot_v3"
 HYPOTHESIS_FIELDS = (
     "question",
     "intent",
@@ -260,6 +260,7 @@ def simplify_hit(item: dict[str, Any]) -> dict[str, Any]:
         "evidence_chain_score": item.get("evidence_chain_score"),
         "evidence_chain_model_score": item.get("evidence_chain_model_score"),
         "evidence_chain_roles": item.get("evidence_chain_roles"),
+        "evidence_chain_member_ids": item.get("evidence_chain_member_ids"),
         "supplemental_source": item.get("supplemental_source"),
     }
 
