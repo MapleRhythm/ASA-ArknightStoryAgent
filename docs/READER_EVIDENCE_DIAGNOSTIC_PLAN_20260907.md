@@ -5,12 +5,22 @@
 ## 当前状态
 
 依据 `ASA_Architecture_Training_Optimization_20260907` 的首个未完成 P0，
-本轮已经补齐离线诊断框架，但尚未生成 4B/9B 的质量结果。
+离线诊断框架已经补齐，并已在 241 的三张 RTX 4090 上完成 strict9
+流程 smoke：同一 Qwen3.5-4B 基座分别运行 untouched base 与当前
+clean-SFT adapter，共 `9 个问题族 × 3 种证据条件 × 2 个 reader`。
+所有 54 次生成均未截断；矩阵中的 27 行均经人工确认当前证据充分。
 
-当前工作站只有 8GB RTX 5060，且历史实验使用的 `/mnt/store`、
-241/248 模型与评测资产未挂载。因此本地不能在不改变模型量化和执行条件的
-情况下诚实复现 Qwen3.5-4B、当前 clean-SFT adapter 和 Qwen3.5-9B 对照。
-本轮没有把本机低显存降级结果混入回答正确率。
+这次 smoke 的人工修正完整回答率为：
+
+| Reader | 最小充分证据 | + hard distractor | 实际 prompt |
+| --- | ---: | ---: | ---: |
+| Qwen3.5-4B base | 4/9 = 44.4% | 0/9 | 2/9 = 22.2% |
+| clean-SFT | 4/9 = 44.4% | 1/9 = 11.1% | 1/9 = 11.1% |
+
+详细 provenance、自动 GLM 读数、两条人工 override 和被排除实验见
+`docs/STRICT9_READER_EVIDENCE_FINDINGS_20260907.md`。这不是线上系统正确率，
+也不是约 60 题的正式 P0；9B 资产仍未找到，因此 3-reader 对照尚未完成。
+在正式诊断完成前，不据此改变生产 MiniRAG、top-k、MMR 或检索轮数。
 
 新增旁路工具：
 
@@ -114,6 +124,10 @@ python3 scripts/generate_exx_predictions_vllm.py \
 
 两次运行都使用 non-thinking 的 canonical Exx prompt、temperature 0，并记录
 模型/adapter SHA256、prompt token、生成 token、finish reason 和截断状态。
+vLLM runner 通过 checkpoint tokenizer 的 `apply_chat_template` 显式传入
+`enable_thinking=false`；对当前 Qwen3.5 template，这会在 assistant 起始处
+写入空的 `<think></think>` 块。不能再用手写的空 assistant prefix 冒充
+canonical non-thinking prompt，否则 base reader 会进入长 thinking 并失配。
 
 若机器已有 Transformers/PEFT 但没有 vLLM，可分别运行同一矩阵；base reader
 必须省略 `--adapter`，不要用空目录或伪 adapter 代替：

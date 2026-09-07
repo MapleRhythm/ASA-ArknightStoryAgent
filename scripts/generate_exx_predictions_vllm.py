@@ -2,9 +2,10 @@
 """Generate fixed-evidence Exx predictions for base and/or LoRA readers.
 
 The input is a LLaMA-Factory JSON array. Only grounded_action_generation
-rows are evaluated. Prompts exactly follow the qwen3_nothink formatter used
-during SFT: system and user messages followed by an empty assistant prefix,
-without a thinking preamble.
+rows are evaluated. Prompts are rendered by the checkpoint tokenizer's
+canonical chat template with an explicit thinking mode. Qwen3.5's
+non-thinking template includes an empty ``<think>...</think>`` block; merely
+omitting a thinking preamble is not equivalent.
 """
 
 from __future__ import annotations
@@ -51,17 +52,30 @@ def model_asset_manifest(model_dir: Path) -> dict[str, Any]:
     }
 
 
-def render_prompt(row: dict) -> str:
+def chat_messages(row: dict[str, Any]) -> list[dict[str, str]]:
     conversations = row.get("conversations") or []
     if not conversations:
         raise ValueError(f"row {row.get('id')} has no conversations")
-    user = str(conversations[0].get("value") or "")
-    system = str(row.get("system") or "")
-    parts = []
-    if system:
-        parts.append(f"<|im_start|>system\n{system}<|im_end|>\n")
-    parts.append(f"<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n")
-    return "".join(parts)
+    return [
+        {"role": "system", "content": str(row.get("system") or "")},
+        {"role": "user", "content": str(conversations[0].get("value") or "")},
+    ]
+
+
+def render_prompt(
+    row: dict[str, Any],
+    tokenizer: Any,
+    *,
+    enable_thinking: bool = False,
+) -> str:
+    return str(
+        tokenizer.apply_chat_template(
+            chat_messages(row),
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=enable_thinking,
+        )
+    )
 
 
 def validate_reader_name(name: str) -> str:
@@ -141,6 +155,11 @@ def main() -> int:
     parser.add_argument("--max-num-batched-tokens", type=int, default=32768)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.88)
     parser.add_argument("--enforce-eager", action="store_true")
+    parser.add_argument(
+        "--enable-thinking",
+        action="store_true",
+        help="Explicitly enable the model's thinking template and reasoning mode.",
+    )
     args = parser.parse_args()
 
     if args.output_dir.exists() and any(args.output_dir.iterdir()):
@@ -161,15 +180,18 @@ def main() -> int:
     rows = [row for row in rows if row.get("task_type") == "grounded_action_generation"]
     if args.limit > 0:
         rows = rows[: args.limit]
-    prompts = [render_prompt(row) for row in rows]
-    if not prompts:
-        parser.error("no grounded_action_generation rows selected")
 
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
     from vllm.lora.request import LoRARequest
 
     tokenizer = AutoTokenizer.from_pretrained(str(args.base_model), trust_remote_code=True)
+    prompts = [
+        render_prompt(row, tokenizer, enable_thinking=args.enable_thinking)
+        for row in rows
+    ]
+    if not prompts:
+        parser.error("no grounded_action_generation rows selected")
     prompt_lengths = [len(tokens) for tokens in tokenizer(prompts, add_special_tokens=False).input_ids]
     longest = max(prompt_lengths)
     if longest + args.max_tokens > args.max_model_len:
@@ -195,7 +217,11 @@ def main() -> int:
         ],
         "selected_rows": len(rows),
         "selection": "task_type == grounded_action_generation; source order preserved",
-        "prompt_template": "qwen3_nothink",
+        "prompt_template": "tokenizer.apply_chat_template",
+        "thinking": {
+            "enabled": args.enable_thinking,
+            "explicit": True,
+        },
         "decoding": {
             "temperature": 0.0,
             "top_p": 1.0,

@@ -13,17 +13,42 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def test_render_prompt_matches_qwen3_nothink_prefix() -> None:
+class FakeTokenizer:
+    def apply_chat_template(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+        enable_thinking: bool,
+    ) -> str:
+        assert tokenize is False
+        assert add_generation_prompt is True
+        prefix = (
+            "<|im_start|>system\n只输出 JSON。<|im_end|>\n"
+            "<|im_start|>user\n问题与证据<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+        return prefix + (
+            "<think>\n" if enable_thinking else "<think>\n\n</think>\n\n"
+        )
+
+
+def test_render_prompt_uses_explicit_qwen3_thinking_mode() -> None:
     row = {
         "id": "x",
         "system": "只输出 JSON。",
         "conversations": [{"from": "human", "value": "问题与证据"}],
     }
 
-    assert MODULE.render_prompt(row) == (
+    tokenizer = FakeTokenizer()
+    assert MODULE.render_prompt(row, tokenizer, enable_thinking=False) == (
         "<|im_start|>system\n只输出 JSON。<|im_end|>\n"
         "<|im_start|>user\n问题与证据<|im_end|>\n"
-        "<|im_start|>assistant\n"
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    )
+    assert MODULE.render_prompt(row, tokenizer, enable_thinking=True).endswith(
+        "<|im_start|>assistant\n<think>\n"
     )
 
 

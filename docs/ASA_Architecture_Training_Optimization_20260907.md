@@ -14,6 +14,16 @@
 > 独立正确率 A/B 支持改成默认关闭，P0 reader 诊断期间应冻结 `c692f28`
 > 既有配置，不改变任一方向的生产默认。
 
+> Reader P0 补记（2026-09-07）：随后已用人工复核的 strict9 构造
+> 9 个问题族 × 3 个 evidence condition，并在同一 Qwen3.5-4B 基座上公平
+> 对照 untouched base 与当前 clean-SFT。人工修正后，base/clean-SFT 在
+> 最小充分证据上均为 4/9，加入真实 hard distractor 后分别为 0/9 与 1/9，
+> 实际 prompt 分别为 2/9 与 1/9。该结果证明 clean-SFT 的格式改善没有在
+> 这 9 题上传导成语义改善，并暴露出明显的抗干扰、主体/关系绑定和
+> over-retrieve 问题；它仍只是流程 smoke，不是系统正确率或正式约 60 题
+> P0。Qwen3.5-9B 因资产缺失未运行。结论与 provenance 见
+> `docs/STRICT9_READER_EVIDENCE_FINDINGS_20260907.md`。
+
 **1．如何解读现有证据**
 
 上传文档顶部明确标记：它由另一并发模型生成，尚未逐项源码复核；strict9 snapshot、metrics、selection ablation 已在 2026-09-07 09:44 完成。正文第 23、26.5、29、31、33 节的“尚未完成”描述不能继续沿用。最新应以 `docs/STRICT9_RETRIEVAL_SMOKE_FINDINGS_20260907.md`、`docs/ANSWER_QUALITY_IMPROVEMENT_PLAN_20260907.md` 为准，但这两份文件未附在本次材料里。
@@ -280,7 +290,7 @@ retrieval 仍保存五阶段列表，但 gold 应支持“多种合法证明集�
 | 优先级 | 实验 | 固定什么 | 需要看到什么 |
 | --- | --- | --- | --- |
 | P0 | 获取已有 strict9 新审计、冻结真实运行配置 | 模型和索引资产 | 消除过时结论，不重复已完成工作 |
-| P0 | 3 reader × 3 evidence 诊断；输出前后对照 | 同一问题、prompt 契约、评分 | 定位容量、adapter、干扰或校验损失 |
+| P0 | 3 reader × 3 evidence 诊断；strict9 已完成 2-reader 流程 smoke，正式约 60 题与 9B 待完成 | 同一问题、prompt 契约、评分 | 定位容量、adapter、干扰或校验损失 |
 | P1 | child→parent 与来源明确的上下文前缀 | 同一 reader、相同 token 预算 | 身份/因果错误减少，候选充分支持改善 |
 | P1 | slot/bundle packing 对照 top-score/MMR | 同一候选 snapshot | 充分支持进入 prompt，并传导到 complete |
 | P1 | 4B 的 RAFT 风格证据状态 SFT | 固定检索与 renderer | Full 抗干扰提升，Missing 不抢答，over-abstain 受控 |
