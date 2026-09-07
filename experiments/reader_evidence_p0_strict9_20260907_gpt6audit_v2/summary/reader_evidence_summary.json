@@ -1,0 +1,1620 @@
+{
+  "protocol": "asa_reader_evidence_diagnostic_summary_v1",
+  "gold_rows": 27,
+  "readers": {
+    "qwen35_4b_base": {
+      "actual_prompt": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 0,
+            "schema_valid": 0,
+            "generation_truncated": 9,
+            "invalid_e_id": 0,
+            "duplicate_fact": 0,
+            "action_correct": 0,
+            "over_retrieve": 0,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 0.0,
+            "schema_valid": 0.0,
+            "generation_truncated": 1.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.0,
+            "action_correct": 0.0,
+            "over_retrieve": 0.0,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "invalid": 9
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ineligible": 9
+          },
+          "valid": 0,
+          "audit_coverage": 0.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {},
+          "context_sufficiency": {},
+          "action_appropriateness": {},
+          "complete_per_all_rows": 0.0,
+          "complete_per_valid_audit": null,
+          "complete_per_reference_sufficient": null,
+          "reference_condition_success_per_all_rows": 0.0,
+          "reference_condition_success_per_valid_audit": null,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": null,
+          "answer_rows": 0,
+          "answer_level_rates": {
+            "any_nonentailed_fact": null,
+            "any_unsupported_or_contradicted": null,
+            "any_irrelevant_fact": null,
+            "any_critical_unsupported": null
+          }
+        }
+      },
+      "minimal_sufficient": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 0,
+            "schema_valid": 0,
+            "generation_truncated": 9,
+            "invalid_e_id": 0,
+            "duplicate_fact": 0,
+            "action_correct": 0,
+            "over_retrieve": 0,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 0.0,
+            "schema_valid": 0.0,
+            "generation_truncated": 1.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.0,
+            "action_correct": 0.0,
+            "over_retrieve": 0.0,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "invalid": 9
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ineligible": 9
+          },
+          "valid": 0,
+          "audit_coverage": 0.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {},
+          "context_sufficiency": {},
+          "action_appropriateness": {},
+          "complete_per_all_rows": 0.0,
+          "complete_per_valid_audit": null,
+          "complete_per_reference_sufficient": null,
+          "reference_condition_success_per_all_rows": 0.0,
+          "reference_condition_success_per_valid_audit": null,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": null,
+          "answer_rows": 0,
+          "answer_level_rates": {
+            "any_nonentailed_fact": null,
+            "any_unsupported_or_contradicted": null,
+            "any_irrelevant_fact": null,
+            "any_critical_unsupported": null
+          }
+        }
+      },
+      "sufficient_with_distractors": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 0,
+            "schema_valid": 0,
+            "generation_truncated": 9,
+            "invalid_e_id": 0,
+            "duplicate_fact": 0,
+            "action_correct": 0,
+            "over_retrieve": 0,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 0.0,
+            "schema_valid": 0.0,
+            "generation_truncated": 1.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.0,
+            "action_correct": 0.0,
+            "over_retrieve": 0.0,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "invalid": 9
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ineligible": 9
+          },
+          "valid": 0,
+          "audit_coverage": 0.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {},
+          "context_sufficiency": {},
+          "action_appropriateness": {},
+          "complete_per_all_rows": 0.0,
+          "complete_per_valid_audit": null,
+          "complete_per_reference_sufficient": null,
+          "reference_condition_success_per_all_rows": 0.0,
+          "reference_condition_success_per_valid_audit": null,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": null,
+          "answer_rows": 0,
+          "answer_level_rates": {
+            "any_nonentailed_fact": null,
+            "any_unsupported_or_contradicted": null,
+            "any_irrelevant_fact": null,
+            "any_critical_unsupported": null
+          }
+        }
+      }
+    },
+    "clean_sft": {
+      "actual_prompt": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 9,
+            "schema_valid": 5,
+            "generation_truncated": 0,
+            "invalid_e_id": 0,
+            "duplicate_fact": 4,
+            "action_correct": 9,
+            "over_retrieve": 0,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 1.0,
+            "schema_valid": 0.555556,
+            "generation_truncated": 0.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.444444,
+            "action_correct": 1.0,
+            "over_retrieve": 0.0,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "answer_directly": 9
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ok": 9
+          },
+          "valid": 9,
+          "audit_coverage": 1.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {
+            "complete": 3,
+            "contradicted": 1,
+            "partial": 5
+          },
+          "context_sufficiency": {
+            "sufficient": 9
+          },
+          "action_appropriateness": {
+            "appropriate": 9
+          },
+          "complete_per_all_rows": 0.333333,
+          "complete_per_valid_audit": 0.333333,
+          "complete_per_reference_sufficient": 0.333333,
+          "reference_condition_success_per_all_rows": 0.333333,
+          "reference_condition_success_per_valid_audit": 0.333333,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": 1.0,
+          "answer_rows": 9,
+          "answer_level_rates": {
+            "any_nonentailed_fact": 0.444444,
+            "any_unsupported_or_contradicted": 0.444444,
+            "any_irrelevant_fact": 0.111111,
+            "any_critical_unsupported": 0.333333
+          }
+        }
+      },
+      "minimal_sufficient": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 9,
+            "schema_valid": 8,
+            "generation_truncated": 0,
+            "invalid_e_id": 0,
+            "duplicate_fact": 1,
+            "action_correct": 7,
+            "over_retrieve": 2,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 1.0,
+            "schema_valid": 0.888889,
+            "generation_truncated": 0.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.111111,
+            "action_correct": 0.777778,
+            "over_retrieve": 0.222222,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "answer_directly": 7,
+            "retrieve_more": 2
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ok": 9
+          },
+          "valid": 9,
+          "audit_coverage": 1.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {
+            "complete": 2,
+            "contradicted": 1,
+            "none": 2,
+            "partial": 4
+          },
+          "context_sufficiency": {
+            "sufficient": 9
+          },
+          "action_appropriateness": {
+            "appropriate": 7,
+            "inappropriate": 2
+          },
+          "complete_per_all_rows": 0.222222,
+          "complete_per_valid_audit": 0.222222,
+          "complete_per_reference_sufficient": 0.222222,
+          "reference_condition_success_per_all_rows": 0.222222,
+          "reference_condition_success_per_valid_audit": 0.222222,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": 1.0,
+          "answer_rows": 7,
+          "answer_level_rates": {
+            "any_nonentailed_fact": 0.428571,
+            "any_unsupported_or_contradicted": 0.428571,
+            "any_irrelevant_fact": 0.285714,
+            "any_critical_unsupported": 0.285714
+          }
+        }
+      },
+      "sufficient_with_distractors": {
+        "rows": 9,
+        "protocol": {
+          "counts": {
+            "strict_json": 9,
+            "schema_valid": 6,
+            "generation_truncated": 0,
+            "invalid_e_id": 0,
+            "duplicate_fact": 3,
+            "action_correct": 7,
+            "over_retrieve": 2,
+            "over_abstain": 0,
+            "premature_answer": 0
+          },
+          "rates": {
+            "strict_json": 1.0,
+            "schema_valid": 0.666667,
+            "generation_truncated": 0.0,
+            "invalid_e_id": 0.0,
+            "duplicate_fact": 0.333333,
+            "action_correct": 0.777778,
+            "over_retrieve": 0.222222,
+            "over_abstain": 0.0,
+            "premature_answer": 0.0
+          },
+          "actions": {
+            "answer_directly": 7,
+            "retrieve_more": 2
+          },
+          "expected_actions": {
+            "answer_directly": 9
+          }
+        },
+        "semantic": {
+          "status": {
+            "ok": 9
+          },
+          "valid": 9,
+          "audit_coverage": 1.0,
+          "reference_sufficiency": {
+            "sufficient": 9
+          },
+          "set_support": {
+            "complete": 2,
+            "contradicted": 1,
+            "none": 2,
+            "partial": 4
+          },
+          "context_sufficiency": {
+            "sufficient": 9
+          },
+          "action_appropriateness": {
+            "appropriate": 6,
+            "inappropriate": 3
+          },
+          "complete_per_all_rows": 0.222222,
+          "complete_per_valid_audit": 0.222222,
+          "complete_per_reference_sufficient": 0.222222,
+          "reference_condition_success_per_all_rows": 0.222222,
+          "reference_condition_success_per_valid_audit": 0.222222,
+          "appropriate_action_per_reference_insufficient": null,
+          "reference_context_agreement_per_valid_audit": 1.0,
+          "answer_rows": 7,
+          "answer_level_rates": {
+            "any_nonentailed_fact": 0.571429,
+            "any_unsupported_or_contradicted": 0.285714,
+            "any_irrelevant_fact": 0.428571,
+            "any_critical_unsupported": 0.142857
+          }
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "reader": "qwen35_4b_base",
+      "id": "0e1af55ad0be76e075ed1169::minimal_sufficient",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "0e1af55ad0be76e075ed1169::sufficient_with_distractors",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "0e1af55ad0be76e075ed1169::actual_prompt",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "3c4ca0be007bfbbb7dfde508::minimal_sufficient",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "3c4ca0be007bfbbb7dfde508::sufficient_with_distractors",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "3c4ca0be007bfbbb7dfde508::actual_prompt",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "42dcaacc6867aefabc75eb5b::minimal_sufficient",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "42dcaacc6867aefabc75eb5b::sufficient_with_distractors",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "42dcaacc6867aefabc75eb5b::actual_prompt",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "60cb10813e52f206ff5c105e::minimal_sufficient",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "60cb10813e52f206ff5c105e::sufficient_with_distractors",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "60cb10813e52f206ff5c105e::actual_prompt",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "9af639a51c9a8d7bf0cfb860::minimal_sufficient",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "9af639a51c9a8d7bf0cfb860::sufficient_with_distractors",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "9af639a51c9a8d7bf0cfb860::actual_prompt",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "dd12b4f52b9911c60a70a9dd::minimal_sufficient",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "dd12b4f52b9911c60a70a9dd::sufficient_with_distractors",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "dd12b4f52b9911c60a70a9dd::actual_prompt",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ea4793e93e179b3feec13eb6::minimal_sufficient",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ea4793e93e179b3feec13eb6::sufficient_with_distractors",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ea4793e93e179b3feec13eb6::actual_prompt",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "eb0d4f1233fa9a6d571b8f2f::minimal_sufficient",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "eb0d4f1233fa9a6d571b8f2f::sufficient_with_distractors",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "eb0d4f1233fa9a6d571b8f2f::actual_prompt",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ffc93a494808c61623543ea9::minimal_sufficient",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ffc93a494808c61623543ea9::sufficient_with_distractors",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "id": "ffc93a494808c61623543ea9::actual_prompt",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "invalid",
+      "expected_action": "answer_directly",
+      "strict_json": false,
+      "schema_valid": false,
+      "problems": [
+        "invalid_json"
+      ],
+      "semantic": {
+        "status": "ineligible",
+        "reference_sufficiency": "sufficient"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "0e1af55ad0be76e075ed1169::minimal_sufficient",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "0e1af55ad0be76e075ed1169::sufficient_with_distractors",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "0e1af55ad0be76e075ed1169::actual_prompt",
+      "source_id": "0e1af55ad0be76e075ed1169",
+      "question_family": "activities/act29side|obt/memory/story_excu_1_1|obt/memory/story_slchan_2_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "3c4ca0be007bfbbb7dfde508::minimal_sufficient",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "3c4ca0be007bfbbb7dfde508::sufficient_with_distractors",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "3c4ca0be007bfbbb7dfde508::actual_prompt",
+      "source_id": "3c4ca0be007bfbbb7dfde508",
+      "question_family": "activities/act5d0",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "42dcaacc6867aefabc75eb5b::minimal_sufficient",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "42dcaacc6867aefabc75eb5b::sufficient_with_distractors",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_3_duplicate",
+        "fact_4_duplicate",
+        "fact_5_duplicate",
+        "fact_6_duplicate",
+        "fact_7_duplicate",
+        "fact_8_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "42dcaacc6867aefabc75eb5b::actual_prompt",
+      "source_id": "42dcaacc6867aefabc75eb5b",
+      "question_family": "activities/act19mini",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "60cb10813e52f206ff5c105e::minimal_sufficient",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "60cb10813e52f206ff5c105e::sufficient_with_distractors",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "60cb10813e52f206ff5c105e::actual_prompt",
+      "source_id": "60cb10813e52f206ff5c105e",
+      "question_family": "activities/act31side|moegirl/老天师_明日方舟-efd17bc40567|obt/memory/story_nothin_1_1|obt/memory/story_wang_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_3_duplicate",
+        "fact_4_duplicate",
+        "fact_5_duplicate",
+        "fact_6_duplicate",
+        "fact_7_duplicate",
+        "fact_8_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "9af639a51c9a8d7bf0cfb860::minimal_sufficient",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "9af639a51c9a8d7bf0cfb860::sufficient_with_distractors",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_6_duplicate",
+        "fact_7_duplicate",
+        "fact_8_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "9af639a51c9a8d7bf0cfb860::actual_prompt",
+      "source_id": "9af639a51c9a8d7bf0cfb860",
+      "question_family": "obt/main/level_main_07-05_end|obt/main/level_main_07-11_beg|obt/main/level_main_07-15_end|obt/main/level_main_08-09_end|obt/main/level_st_08-04",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "complete",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": true,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "dd12b4f52b9911c60a70a9dd::minimal_sufficient",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "retrieve_more",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "none",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "inappropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "retrieve_more",
+        "protocol_action": "retrieve_more"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "dd12b4f52b9911c60a70a9dd::sufficient_with_distractors",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "retrieve_more",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "none",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "inappropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "retrieve_more",
+        "protocol_action": "retrieve_more"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "dd12b4f52b9911c60a70a9dd::actual_prompt",
+      "source_id": "dd12b4f52b9911c60a70a9dd",
+      "question_family": "activities/act25side",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_4_duplicate",
+        "fact_5_duplicate",
+        "fact_6_duplicate",
+        "fact_7_duplicate",
+        "fact_8_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ea4793e93e179b3feec13eb6::minimal_sufficient",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ea4793e93e179b3feec13eb6::sufficient_with_distractors",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ea4793e93e179b3feec13eb6::actual_prompt",
+      "source_id": "ea4793e93e179b3feec13eb6",
+      "question_family": "activities/act13side|obt/main/level_main_08-05_beg|obt/main/level_main_08-14_end|obt/main/level_main_16-07_beg|obt/memory/story_bibeak_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "eb0d4f1233fa9a6d571b8f2f::minimal_sufficient",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "retrieve_more",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "none",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "inappropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "retrieve_more",
+        "protocol_action": "retrieve_more"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "eb0d4f1233fa9a6d571b8f2f::sufficient_with_distractors",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "retrieve_more",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": true,
+      "problems": [],
+      "semantic": {
+        "status": "ok",
+        "set_support": "none",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "inappropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "retrieve_more",
+        "protocol_action": "retrieve_more"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "eb0d4f1233fa9a6d571b8f2f::actual_prompt",
+      "source_id": "eb0d4f1233fa9a6d571b8f2f",
+      "question_family": "activities/act47side",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_2_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "partial",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ffc93a494808c61623543ea9::minimal_sufficient",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "minimal_sufficient",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_2_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "contradicted",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ffc93a494808c61623543ea9::sufficient_with_distractors",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "sufficient_with_distractors",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_2_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "contradicted",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "inappropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    },
+    {
+      "reader": "clean_sft",
+      "id": "ffc93a494808c61623543ea9::actual_prompt",
+      "source_id": "ffc93a494808c61623543ea9",
+      "question_family": "obt/main/level_main_13-09_beg|obt/main/level_main_13-10_beg|obt/memory/story_nowell_1_1",
+      "condition": "actual_prompt",
+      "reference_sufficiency": "sufficient",
+      "action": "answer_directly",
+      "expected_action": "answer_directly",
+      "strict_json": true,
+      "schema_valid": false,
+      "problems": [
+        "fact_2_duplicate",
+        "fact_3_duplicate",
+        "fact_4_duplicate",
+        "fact_5_duplicate",
+        "fact_6_duplicate",
+        "fact_7_duplicate",
+        "fact_8_duplicate"
+      ],
+      "semantic": {
+        "status": "ok",
+        "set_support": "contradicted",
+        "context_sufficiency": "sufficient",
+        "action_appropriateness": "appropriate",
+        "reference_sufficiency": "sufficient",
+        "context_matches_reference": true,
+        "reference_success": false,
+        "audit_action": "answer_directly",
+        "protocol_action": "answer_directly"
+      }
+    }
+  ],
+  "interpretation": {
+    "reference_condition_success_per_all_rows_is_primary": true,
+    "complete_per_all_rows_is_a_lower_bound": true,
+    "complete_is_only_answer_success_for_reference_sufficient_rows": true,
+    "insufficient_rows_use_appropriate_action_as_success": true,
+    "semantic_not_run_is_not_counted_as_verified_success": true,
+    "schema_or_action_accuracy_is_not_answer_correctness": true
+  },
+  "inputs": {
+    "gold": "/home/maplerhythm/ASA/ASA-ArknightStoryAgent/experiments/reader_evidence_p0_strict9_20260907_gpt6audit_v2/input/reader_evidence_matrix.json",
+    "predictions": {
+      "qwen35_4b_base": "/home/maplerhythm/ASA/ASA-ArknightStoryAgent/experiments/reader_evidence_p0_strict9_20260907_gpt6audit_v2/predictions/qwen35_4b_base.predictions.json",
+      "clean_sft": "/home/maplerhythm/ASA/ASA-ArknightStoryAgent/experiments/reader_evidence_p0_strict9_20260907_gpt6audit_v2/predictions/clean_sft.predictions.json"
+    },
+    "audits": {
+      "qwen35_4b_base": "/home/maplerhythm/ASA/ASA-ArknightStoryAgent/experiments/reader_evidence_p0_strict9_20260907_gpt6audit_v2/audits/qwen35_4b_base.set-audit.json",
+      "clean_sft": "/home/maplerhythm/ASA/ASA-ArknightStoryAgent/experiments/reader_evidence_p0_strict9_20260907_gpt6audit_v2/audits/clean_sft.set-audit.json"
+    }
+  }
+}

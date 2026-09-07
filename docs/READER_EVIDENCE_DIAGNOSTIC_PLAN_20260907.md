@@ -115,6 +115,28 @@ python3 scripts/generate_exx_predictions_vllm.py \
 两次运行都使用 non-thinking 的 canonical Exx prompt、temperature 0，并记录
 模型/adapter SHA256、prompt token、生成 token、finish reason 和截断状态。
 
+若机器已有 Transformers/PEFT 但没有 vLLM，可分别运行同一矩阵；base reader
+必须省略 `--adapter`，不要用空目录或伪 adapter 代替：
+
+```bash
+python3 scripts/generate_exx_predictions_transformers.py \
+  --gold /path/to/reader_evidence_matrix_20260907/reader_evidence_matrix.json \
+  --base-model /path/to/Qwen3.5-4B \
+  --reader-name qwen35_4b_base \
+  --output /path/to/qwen35_4b_base.predictions.json
+
+python3 scripts/generate_exx_predictions_transformers.py \
+  --gold /path/to/reader_evidence_matrix_20260907/reader_evidence_matrix.json \
+  --base-model /path/to/Qwen3.5-4B \
+  --adapter /path/to/clean-sft-adapter \
+  --reader-name clean_sft \
+  --output /path/to/clean_sft.predictions.json
+```
+
+Transformers runner 与 vLLM runner 都保留每行 `diagnostic` 元数据，并对基座
+目录顶层资产逐文件记录 SHA256 和聚合哈希。两种 reader 必须写入不同的新
+输出文件，runner 会拒绝覆盖已有预测或 metadata。
+
 ## 语义审计与汇总
 
 对三个 prediction 文件分别运行现有 evidence-only set audit：

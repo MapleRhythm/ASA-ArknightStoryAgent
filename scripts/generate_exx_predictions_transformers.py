@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Generate deterministic fixed-evidence Exx predictions with Transformers."""
+"""Generate deterministic fixed-evidence Exx predictions with Transformers.
+
+The same entry point supports either the untouched base reader or one LoRA
+adapter.  This is the low-dependency fallback for hosts where vLLM is not
+installed.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,28 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def model_asset_manifest(model_dir: Path) -> dict[str, Any]:
+    files = sorted(path for path in model_dir.iterdir() if path.is_file())
+    if not files:
+        raise ValueError(f"base model directory has no files: {model_dir}")
+    records = []
+    aggregate = hashlib.sha256()
+    for path in files:
+        digest = sha256_file(path)
+        size = path.stat().st_size
+        aggregate.update(path.name.encode("utf-8"))
+        aggregate.update(b"\0")
+        aggregate.update(str(size).encode("ascii"))
+        aggregate.update(b"\0")
+        aggregate.update(digest.encode("ascii"))
+        aggregate.update(b"\n")
+        records.append({"name": path.name, "bytes": size, "sha256": digest})
+    return {
+        "aggregate_sha256": aggregate.hexdigest(),
+        "files": records,
+    }
 
 
 def chat_messages(row: dict[str, Any]) -> list[dict[str, str]]:
@@ -43,11 +70,46 @@ def generation_hit_token_limit(
     return int(completion_ids[-1].item()) not in eos_ids
 
 
+def prediction_row(
+    *,
+    row: dict[str, Any],
+    text: str,
+    prompt_token_count: int,
+    generated_token_count: int,
+    hit_max_new_tokens: bool,
+) -> dict[str, Any]:
+    result = {
+        "id": row.get("id"),
+        "task_type": row.get("task_type"),
+        "system": row.get("system"),
+        "conversations": [
+            row["conversations"][0],
+            {"from": "gpt", "value": text},
+        ],
+        "raw_output": text,
+        "prompt_token_count": prompt_token_count,
+        "generated_token_count": generated_token_count,
+        "finish_reason": "length" if hit_max_new_tokens else "stop",
+        "hit_max_new_tokens": hit_max_new_tokens,
+    }
+    if isinstance(row.get("diagnostic"), dict):
+        result["diagnostic"] = row["diagnostic"]
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gold", type=Path, required=True)
     parser.add_argument("--base-model", type=Path, required=True)
-    parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument(
+        "--adapter",
+        type=Path,
+        help="Optional LoRA adapter. Omit it to evaluate the untouched base reader.",
+    )
+    parser.add_argument(
+        "--reader-name",
+        help="Stable reader label recorded in metadata.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-new-tokens", type=int, default=768)
     parser.add_argument("--limit", type=int, default=0)
@@ -57,12 +119,18 @@ def main() -> int:
         parser.error(f"refusing to overwrite output: {args.output}")
     if not args.gold.is_file() or not args.base_model.is_dir():
         parser.error("gold or base model path does not exist")
-    adapter_model = args.adapter / "adapter_model.safetensors"
-    if not adapter_model.is_file():
+    metadata_path = args.output.with_suffix(args.output.suffix + ".metadata.json")
+    if metadata_path.exists():
+        parser.error(f"refusing to overwrite metadata: {metadata_path}")
+    adapter_model = (
+        args.adapter / "adapter_model.safetensors"
+        if args.adapter is not None
+        else None
+    )
+    if adapter_model is not None and not adapter_model.is_file():
         parser.error(f"missing adapter weights: {adapter_model}")
 
     import torch
-    from peft import PeftModel
     from transformers import AutoModelForImageTextToText, AutoTokenizer
 
     rows = json.loads(args.gold.read_text(encoding="utf-8"))
@@ -73,7 +141,12 @@ def main() -> int:
     model = AutoModelForImageTextToText.from_pretrained(
         str(args.base_model), trust_remote_code=True, dtype=torch.bfloat16, device_map="cuda"
     )
-    model = PeftModel.from_pretrained(model, str(args.adapter), is_trainable=False)
+    if args.adapter is not None:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(
+            model, str(args.adapter), is_trainable=False
+        )
     model.eval()
 
     predictions = []
@@ -109,20 +182,13 @@ def main() -> int:
         )
         truncated_rows += int(hit_max_new_tokens)
         predictions.append(
-            {
-                "id": row.get("id"),
-                "task_type": row.get("task_type"),
-                "system": row.get("system"),
-                "conversations": [
-                    row["conversations"][0],
-                    {"from": "gpt", "value": text},
-                ],
-                "raw_output": text,
-                "prompt_token_count": prompt_tokens,
-                "generated_token_count": int(completion_ids.shape[-1]),
-                "finish_reason": "length" if hit_max_new_tokens else "stop",
-                "hit_max_new_tokens": hit_max_new_tokens,
-            }
+            prediction_row(
+                row=row,
+                text=text,
+                prompt_token_count=prompt_tokens,
+                generated_token_count=int(completion_ids.shape[-1]),
+                hit_max_new_tokens=hit_max_new_tokens,
+            )
         )
         if index == 1 or index % 10 == 0 or index == len(rows):
             print(json.dumps({"completed": index, "total": len(rows)}), flush=True)
@@ -131,12 +197,18 @@ def main() -> int:
     args.output.write_text(
         json.dumps(predictions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    metadata = {
+    metadata: dict[str, Any] = {
         "gold": str(args.gold),
         "gold_sha256": sha256_file(args.gold),
         "base_model": str(args.base_model),
-        "adapter": str(args.adapter),
-        "adapter_sha256": sha256_file(adapter_model),
+        "base_model_assets": model_asset_manifest(args.base_model),
+        "reader_name": args.reader_name
+        or ("lora_adapter" if args.adapter is not None else "base"),
+        "reader_type": "lora_adapter" if args.adapter is not None else "base",
+        "adapter": str(args.adapter) if args.adapter is not None else None,
+        "adapter_sha256": (
+            sha256_file(adapter_model) if adapter_model is not None else None
+        ),
         "output": str(args.output),
         "output_sha256": sha256_file(args.output),
         "rows": len(predictions),
@@ -144,8 +216,8 @@ def main() -> int:
         "seconds": time.monotonic() - started,
         "decoding": {"do_sample": False, "max_new_tokens": args.max_new_tokens},
         "evidence_truncated": False,
+        "diagnostic_metadata_preserved": True,
     }
-    metadata_path = args.output.with_suffix(args.output.suffix + ".metadata.json")
     metadata_path.write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

@@ -42,7 +42,7 @@ def test_reader_specs_rejects_duplicate_or_unsafe_names() -> None:
             "reader",
             [("reader", Path("/models/adapter"))],
         )
-    with pytest.raises(Exception, match="reader name"):
+    with pytest.raises(MODULE.argparse.ArgumentTypeError, match="reader name"):
         MODULE.validate_reader_name("../escape")
 
 
