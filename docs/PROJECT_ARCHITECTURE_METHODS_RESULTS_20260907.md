@@ -61,11 +61,11 @@ ASA，即 ArknightStoryAgent，是一个面向《明日方舟》剧情问答的�
 
 当前系统的核心思想可以概括为：
 
-> 先由生成模型把问题结构化成检索假设，再用 dense 和 BM25 形成默认候选池，
-> 经 RRF、可选邻接扩展和证据链 reranker 排序后选出有限
-> 证据，最后由 4B/远程模型在有限动作协议中回答、续检索或弃答，并通过
-> 引用校验约束输出。MiniRAG、章节隔离和图引导二次检索保留为显式旁路实验，
-> 推荐配置默认关闭。
+> 先由生成模型把问题结构化成检索假设，再用 dense、BM25 和基准配置中的
+> MiniRAG 形成候选池，经 RRF、可选邻接扩展和证据链 reranker 排序后选出
+> 有限证据，最后由 4B/远程模型在有限动作协议中回答、续检索或弃答，并通过
+> 引用校验约束输出。两个 evidence-id 配置关闭 MiniRAG 作为旁路对照；是否
+> 修改基准默认仍需独立正确率/延迟 A/B，当前不外推。
 
 当前系统尚未达到生产级回答正确率。现阶段最成熟的是工程链路、结构化协议和
 离线审计能力；最薄弱的是“完整证据集合是否进入 prompt”和“证据到位后是否
@@ -481,23 +481,24 @@ dense 120 + sparse 120 → fusion 80 → rerank 32
 
 ### 9.1 第一轮章节隔离与二次检索
 
-所有推荐配置当前均为：
+三个冻结的 GPU/CPU/API 推荐配置当前均为：
 
-- `enable_minirag=false`
-- `minirag_chapter_isolation=false`
-- `minirag_auto_second_retrieval=false`
+- `enable_minirag=true`
+- `minirag_chapter_isolation=true`
+- `minirag_auto_second_retrieval=true`
 
-因此以下流程不进入默认运行，只保留为显式旁路实验：
+两个 evidence-id 旁路配置将 `enable_minirag` 设为 `false`，但保留其余图检索
+开关字段，便于做隔离对照。基准推荐配置中的流程为：
 
-1. 先不使用 MiniRAG 做 dense + sparse 首检；
-2. 从首检结果估计章节和 storyline scope；
-3. 在 scope 内做 MiniRAG；
-4. 基于图命中构造第二次检索；
-5. 合并首检和二检；
-6. 重新融合和 rerank。
+1. 先以 dense + sparse 做首检并估计章节和 storyline scope；
+2. 在 scope 内运行 MiniRAG；
+3. 基于图命中构造第二次检索；
+4. 合并首检和二检；
+5. 重新融合和 rerank。
 
 该流程会显著改变候选集合，但尚未证明能提高 gold Recall 或用户回答正确率；
-已有 7 题延迟实验表明它是当前首轮检索延迟的主要来源。
+已有 7 题延迟实验表明它是当前首轮检索延迟的主要来源。因此应冻结当前基准，
+另做独立 A/B，而不是仅凭 strict9 smoke 改默认。
 
 ### 9.2 Scoped chapter search
 
@@ -906,7 +907,7 @@ Web UI 是本地调试和演示界面，不是多租户生产服务。当前没�
 | generator | vLLM Qwen3.5-4B + LoRA | llama.cpp 合并 LoRA GGUF | OpenAI-compatible API |
 | retrieval device | CUDA | CPU | CPU |
 | dense/sparse top-k | 120 / 120 | 80 / 80 | 80 / 80 |
-| MiniRAG | 关 | 关 | 关 |
+| MiniRAG | 开 | 开 | 开 |
 | nominal fusion top-k | 80 | 50 | 50 |
 | actual candidate default | `reranker_candidate_top_k=120` | 120 | 120 |
 | reranker | 开，top-32 | 关，截到 20 | 关，截到 20 |
