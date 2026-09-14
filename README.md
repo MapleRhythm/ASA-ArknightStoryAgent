@@ -1,6 +1,36 @@
 # ASA-ArknightStoryAgent
 
-这里是 ASA（ArknightStoryAgent）！这个项目旨在搭建一个可以纯本地离线部署的 ai agent。项目采用RAG检索+微调Qwen 3.5 4b模型，明日方舟游戏文本数据以及萌娘百科设定数据作为检索对象，旨在从千万级文本内容中对剧情细节进行挖掘以及对复杂情节进行推理，项目配套有交互式前端以及一键环境配置脚本！（温蒂赛高！）
+ASA（ArknightStoryAgent）是《明日方舟》的剧情研读助手：先检索原文，再回答人物关系、事件因果和剧情细节。
+
+## 当前交付：API 固定版 `api-v1.0.0`
+
+默认网页现在使用 **DeepSeek Flash API**，不加载本地 4B，也不在失败时切换模型。
+前端提供会话记录、中文输入法支持、复制与 Markdown 导出、完整原文面板、处理状态、
+停止与手动重试，并适配手机屏幕。网页不收集密钥。
+
+```bash
+bash scripts/setup_cpu_api_no_reranker.sh
+source .venv-api/bin/activate
+# 按下节准备游戏数据后：
+python scripts/build_retrieval_index.py --device cpu
+bash scripts/run_web_ui.sh --ask-key
+```
+
+终端会隐藏输入密钥，浏览器打开 `http://127.0.0.1:7860`。
+也可以提前在服务进程环境中设置 `DEEPSEEK_API_KEY`，省略 `--ask-key`。
+缺少索引、模型或密钥时，网页会显示准备步骤，不会把缺配置误报成“服务就绪”。
+
+固定配置：`configs/runtime_api_stable.json`。命令行入口：
+
+```bash
+bash scripts/run_api_stable.sh "霜星为什么不再压抑自己的力量？"
+```
+
+版本约束与验证说明见 [API 固定版说明](docs/API_RELEASE_V1.md)。
+该发布版使用 CPU 混合检索、无重排器；它不是远端 GPU 评测的同一份管线，
+**不能直接套用历史20题的70%正确率**。完整原文指选中的检索 chunk，不是整章文本。
+
+下面保留本地模型和通用 API 的历史运行方式，供研究使用；它们不是当前网页的默认入口。
 
 ## 配置要求
 
@@ -8,7 +38,7 @@
 
 | 模式 | 适用场景 | 最低建议 |
 | --- | --- | --- |
-| GPU 本地 | 质量优先，本地 Qwen3.5 4B + LoRA + reranker | Linux/WSL2、NVIDIA GPU、CUDA、16GB+ 显存 |
+| GPU 本地 | 研究模式，本地 Qwen3.5 4B + LoRA + reranker | Linux/WSL2、NVIDIA GPU、CUDA、16GB+ 显存 |
 | CPU 本地 | 纯本地离线，llama.cpp + 合并 LoRA GGUF，无 reranker | Linux/WSL2/macOS、16GB+ 内存 |
 | CPU API | 本地只做检索，生成阶段调用 OpenAI 兼容 API | Linux/WSL2/macOS、8GB+ 内存、API key |
 
@@ -115,12 +145,12 @@ bash scripts/run_cpu_api_no_reranker.sh "炎景公主一事具体指什么"
 configs/runtime_cpu_api_no_reranker.json
 ```
 
-### 5. Web UI
+### 5. Web UI（当前固定为 DeepSeek API）
 
-任一环境准备完成并建好索引后，可启动本地前端：
+准备好 API 环境、检索模型和索引后，可启动本地前端（不再切换本地 4B）：
 
 ```bash
-bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860
+bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860 --ask-key
 ```
 
 浏览器打开：

@@ -34,6 +34,7 @@ class CPUInferencePipeline(
         prompt_evidence_top_k: int = 8,
         prompt_evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
         prompt_conclusion_evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
+        prompt_evidence_require_full_documents: bool = False,
         enable_mmr: bool = False,
         mmr_lambda: float = 0.72,
         enable_pyramid_order: bool = False,
@@ -73,6 +74,12 @@ class CPUInferencePipeline(
             self.prompt_evidence_max_chars_per_doc,
             prompt_conclusion_evidence_max_total_chars,
         )
+        self.prompt_evidence_require_full_documents = prompt_evidence_require_full_documents
+        if prompt_evidence_require_full_documents:
+            self.prompt_evidence_max_chars_per_doc = None
+            self.prompt_conclusion_evidence_max_total_chars = None
+            if enable_crag_refinement:
+                raise ValueError("Full evidence mode cannot use CRAG text refinement")
         self.enable_mmr = enable_mmr
         self.mmr_lambda = min(1.0, max(0.0, mmr_lambda))
         self.enable_pyramid_order = enable_pyramid_order

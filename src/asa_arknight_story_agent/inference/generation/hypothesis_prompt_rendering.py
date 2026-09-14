@@ -46,6 +46,7 @@ def build_follow_up_hypothesis_prompt(
     max_retrieval_rounds: int,
     prompt_evidence_top_k: int,
     prompt_evidence: list[dict[str, Any]] | None = None,
+    require_full_documents: bool = False,
 ) -> str:
     rendered_dialogue_context = truncate_text(
         render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
@@ -61,8 +62,8 @@ def build_follow_up_hypothesis_prompt(
             evidence,
             prompt_evidence_top_k=prompt_evidence_top_k,
         ),
-        max_chars_per_doc=260,
-        max_total_chars=1200,
+        max_chars_per_doc=None if require_full_documents else 260,
+        max_total_chars=None if require_full_documents else 1200,
     )
     user_prompt = "\n".join(
         [

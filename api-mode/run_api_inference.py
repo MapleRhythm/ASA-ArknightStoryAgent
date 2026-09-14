@@ -159,23 +159,37 @@ def build_revision_prompt(question: str, initial_answer: str, evidence_text: str
 最终校正答案："""
 
 
-def chatml_prompt_to_messages(prompt: str) -> list[dict[str, str]]:
+def chatml_prompt_to_messages(prompt: str, *, append_system: bool = True) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     system_appendix = API_MODE_SYSTEM_APPENDIX if prompt_wants_json(prompt) else API_MODE_QA_SYSTEM_APPENDIX
-    for role, content in CHATML_MESSAGE_RE.findall(prompt):
-        cleaned = content.strip()
-        if not cleaned:
+    # The shared templates have exactly one system/user pair and a trailing
+    # assistant prefill. Parse their outer boundaries, not markers inside story
+    # text or the user's question (which must never create new system messages).
+    prefix = "<|im_start|>system\n"
+    middle = "<|im_end|>\n<|im_start|>user\n"
+    suffix = "<|im_end|>\n<|im_start|>assistant\n"
+    if prompt.startswith(prefix) and middle in prompt and suffix in prompt:
+        system, _, tail = prompt[len(prefix):].partition(middle)
+        user, _, _prefill = tail.rpartition(suffix)
+        parsed_messages = [("system", system), ("user", user)]
+    else:
+        parsed_messages = CHATML_MESSAGE_RE.findall(prompt)
+    for role, content in parsed_messages:
+        cleaned = content
+        if not cleaned.strip():
             continue
         # Local-model prompts end with an assistant prefill like "{" or
         # "<think>...</think>". Chat APIs generally do not support prefill, and
         # the user prompt already states the output format.
         if role == "assistant":
             continue
-        if role == "system":
+        if role == "system" and append_system:
             cleaned = cleaned + "\n\n" + system_appendix
         messages.append({"role": role, "content": cleaned})
     if messages:
         return messages
+    if not append_system:
+        return [{"role": "user", "content": prompt}]
     return [
         {"role": "system", "content": system_appendix},
         {"role": "user", "content": prompt},
@@ -282,6 +296,7 @@ class OpenAICompatibleAPIRunner:
         response_format_json: bool = True,
         extra_body: dict[str, Any] | None = None,
         request_log_dir: Path | None = None,
+        prompt_appendix: bool = True,
     ) -> None:
         self.api_base_url = normalize_chat_completions_url(api_base_url)
         self.api_key = api_key
@@ -296,6 +311,7 @@ class OpenAICompatibleAPIRunner:
         self.extra_body = extra_body or {}
         self.request_log_dir = request_log_dir
         self._request_index = 0
+        self.prompt_appendix = prompt_appendix
 
     def describe_runtime(self) -> dict[str, Any]:
         return {
@@ -371,13 +387,9 @@ class OpenAICompatibleAPIRunner:
         repeat_penalty: float | None = None,
     ) -> str:
         del repeat_penalty
-        messages = chatml_prompt_to_messages(prompt)
+        messages = chatml_prompt_to_messages(prompt, append_system=self.prompt_appendix)
         wants_json = prompt_wants_json(prompt)
         requested_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
-        if wants_json:
-            # The shared pipeline uses small local-4B budgets for JSON tasks.
-            # Remote models may emit longer valid JSON, so keep a safer floor.
-            requested_max_tokens = max(requested_max_tokens, self.max_tokens, 4096)
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -394,14 +406,13 @@ class OpenAICompatibleAPIRunner:
             self._write_request_log(payload=payload, response=response)
         except RuntimeError as exc:
             self._write_request_log(payload=payload, error=str(exc))
-            # Some OpenAI-compatible providers do not implement response_format.
-            if "response_format" not in payload:
-                raise
-            payload.pop("response_format", None)
-            response = self._post_chat_completion(payload)
-            self._write_request_log(payload=payload, response=response)
+            # Never silently repeat a paid request on auth, quota or transport errors.
+            raise
 
         try:
+            finish_reason = response["choices"][0].get("finish_reason")
+            if finish_reason != "stop":
+                raise RuntimeError(f"API answer did not complete: finish_reason={finish_reason}")
             message = response["choices"][0]["message"]
             content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -419,31 +430,6 @@ class OpenAICompatibleAPIRunner:
                 ) from exc
             raise RuntimeError(f"Unexpected chat completion response: {json.dumps(response, ensure_ascii=False)[:1000]}") from exc
         if not isinstance(content, str) or not content.strip():
-            reasoning = message.get("reasoning_content") if isinstance(message, dict) else None
-            if reasoning:
-                retry_payload = dict(payload)
-                retry_messages = list(payload.get("messages") or [])
-                retry_messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "上一条响应没有 assistant content。请只输出符合 schema 的单个 JSON 对象，不要解释。"
-                            if wants_json
-                            else "上一条响应没有 assistant content。请只输出最终答案正文，不要解释推理过程。"
-                        ),
-                    }
-                )
-                retry_payload["messages"] = retry_messages
-                retry_response = self._post_chat_completion(retry_payload)
-                self._write_request_log(payload=retry_payload, response=retry_response)
-                try:
-                    retry_content = retry_response["choices"][0]["message"]["content"]
-                except (KeyError, IndexError, TypeError) as exc:
-                    raise RuntimeError(
-                        f"Unexpected chat completion retry response: {json.dumps(retry_response, ensure_ascii=False)[:1000]}"
-                    ) from exc
-                if isinstance(retry_content, str) and retry_content.strip():
-                    return retry_content.strip()
             raise RuntimeError(f"API returned empty content: {json.dumps(response, ensure_ascii=False)[:1000]}")
         return content.strip()
 
@@ -762,6 +748,7 @@ def main() -> None:
         response_format_json=bool(generator_cfg.get("response_format_json", True)) and not args.no_json_response_format,
         extra_body=generator_cfg.get("extra_body") if isinstance(generator_cfg.get("extra_body"), dict) else None,
         request_log_dir=run_log_dir,
+        prompt_appendix=bool(generator_cfg.get("prompt_appendix", True)),
     )
 
     from asa_arknight_story_agent.inference import CPUInferencePipeline  # noqa: E402
@@ -802,11 +789,14 @@ def main() -> None:
             neighbor_story_window=neighbor_story_window,
             neighbor_activity_story_sort_window=neighbor_activity_story_sort_window,
             rerank_batch_size=rerank_batch_size,
+            enable_scoped_chapter_search=bool(retrieval_cfg.get("enable_scoped_chapter_search", True)),
+            enable_same_story_sweep=bool(retrieval_cfg.get("enable_same_story_sweep", True)),
         ),
         max_retrieval_rounds=max_retrieval_rounds,
         prompt_evidence_top_k=prompt_evidence_top_k,
         prompt_evidence_max_chars_per_doc=prompt_evidence_max_chars_per_doc,
         prompt_conclusion_evidence_max_total_chars=prompt_conclusion_evidence_max_total_chars,
+        prompt_evidence_require_full_documents=bool(inference_cfg.get("prompt_evidence_require_full_documents", False)),
         enable_mmr=enable_mmr,
         mmr_lambda=mmr_lambda,
         enable_pyramid_order=enable_pyramid_order,

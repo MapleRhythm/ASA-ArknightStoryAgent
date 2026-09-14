@@ -45,6 +45,11 @@ def prepare_prompt_evidence(
     hypothesis: HypothesisDocument,
     evidence: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if getattr(pipeline, "prompt_evidence_require_full_documents", False):
+        return [
+            {**item, "prompt_prefer_clean_text": True}
+            for item in evidence[:pipeline.prompt_evidence_top_k]
+        ]
     forced_evidence = [
         item
         for item in evidence

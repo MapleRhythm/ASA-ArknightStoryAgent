@@ -63,8 +63,8 @@ def render_evidence_blocks(
 def render_short_evidence_brief(
     evidence: list[dict[str, Any]],
     *,
-    max_chars_per_doc: int = 260,
-    max_total_chars: int = 2200,
+    max_chars_per_doc: int | None = 260,
+    max_total_chars: int | None = 2200,
 ) -> str:
     lines: list[str] = []
     total_chars = 0
@@ -73,16 +73,17 @@ def render_short_evidence_brief(
         doc = item.get("document") or {}
         doc_id = str(doc.get("id") or item.get("doc_index") or "").strip()
         text = best_prompt_text(item, prefer_direct=bool(item.get("prompt_prefer_clean_text")))
-        text = re.sub(r"\s+", " ", strip_internal_evidence_meta(text)).strip()
+        text = strip_internal_evidence_meta(text).strip()
         if not text:
             continue
         key = doc_id or text[:160]
         if key in seen:
             continue
         seen.add(key)
-        text = truncate_text(text, max_chars_per_doc)
+        if max_chars_per_doc is not None:
+            text = truncate_text(text, max_chars_per_doc)
         line = f"{len(lines) + 1}. {doc_id or '<unknown>'}: {text}"
-        if lines and total_chars + len(line) > max_total_chars:
+        if max_total_chars is not None and lines and total_chars + len(line) > max_total_chars:
             break
         lines.append(line)
         total_chars += len(line)

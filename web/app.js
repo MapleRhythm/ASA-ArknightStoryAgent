@@ -1,287 +1,753 @@
-const chat = document.querySelector("#chat");
-const form = document.querySelector("#composer");
-const input = document.querySelector("#message");
-const sendBtn = document.querySelector("#sendBtn");
-const clearBtn = document.querySelector("#clearBtn");
-const trace = document.querySelector("#trace");
-const latency = document.querySelector("#latency");
-const health = document.querySelector("#health");
-const maxRounds = document.querySelector("#maxRounds");
-const maxTokens = document.querySelector("#maxTokens");
-const timeoutInput = document.querySelector("#timeout");
-const startServiceBtn = document.querySelector("#startServiceBtn");
-const stopServiceBtn = document.querySelector("#stopServiceBtn");
+"use strict";
 
-const messages = [];
-let serviceRunning = false;
+const $ = (selector) => document.querySelector(selector);
+const STORAGE_KEY = "asa.api.v1.conversations";
+const ACTIVE_KEY = "asa.api.v1.active";
+const shell = $(".app-shell");
+const input = $("#message");
+let sessions = loadSessions();
+let activeId = readStorage(ACTIVE_KEY);
+let active =
+  sessions.find((session) => session.id === activeId) || createSession();
+let busy = false;
+let controller = null;
+let ready = false;
+let lastHealth = null;
+let sourceItems = [];
+let toastTimer;
+let elapsedTimer;
 
-function selectedMode() {
-  return document.querySelector('input[name="mode"]:checked')?.value || "cpu-local";
-}
-
-function setTrace(lines, title = "运行轨迹") {
-  trace.textContent = Array.isArray(lines) ? lines.join("\n") : String(lines || "");
-  latency.textContent = title;
-  trace.scrollTop = trace.scrollHeight;
-}
-
-function compactText(value, maxLength = 260) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (!text || text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1).trim()}…`;
-}
-
-function renderConclusionQuoteLines(result) {
-  const retrievalTrace = result?.retrieval_trace;
-  if (!Array.isArray(retrievalTrace) || retrievalTrace.length === 0) return [];
-
-  const lines = ["[conclusion_quotes]"];
-  for (const step of retrievalTrace) {
-    if (!step || typeof step !== "object") continue;
-    const round = step.round ?? "?";
-    const conclusion = step.conclusion;
-    if (!conclusion || typeof conclusion !== "object") {
-      lines.push(`[round ${round}] no conclusion payload`);
-      continue;
-    }
-
-    const action = compactText(conclusion.next_action || step.planner_action || "unknown", 80);
-    lines.push(`[round ${round}] action=${action}`);
-
-    const facts = Array.isArray(conclusion.supported_facts) ? conclusion.supported_facts : [];
-    let quoteCount = 0;
-    facts.forEach((fact, factIndex) => {
-      if (!fact || typeof fact !== "object") return;
-      const factText = compactText(fact.fact, 180);
-      if (factText) lines.push(`  [fact ${factIndex + 1}] ${factText}`);
-
-      const refs = Array.isArray(fact.evidence_refs) ? fact.evidence_refs : [];
-      refs.forEach((ref, refIndex) => {
-        if (!ref || typeof ref !== "object") return;
-        const quote = compactText(ref.quote, 320);
-        if (!quote) return;
-        quoteCount += 1;
-        const evidenceId = compactText(ref.evidence_id || ref.id || "", 120);
-        const label = evidenceId ? `quote ${factIndex + 1}.${refIndex + 1} ${evidenceId}` : `quote ${factIndex + 1}.${refIndex + 1}`;
-        lines.push(`  [${label}] ${quote}`);
-      });
-    });
-
-    if (quoteCount === 0) {
-      lines.push("  [quotes] none");
-    }
-  }
-  return lines;
-}
-
-function removeEmptyState() {
-  const empty = chat.querySelector(".empty-state");
-  if (empty) empty.remove();
-}
-
-function addMessage(role, content) {
-  removeEmptyState();
-  const node = document.createElement("article");
-  node.className = `message ${role}`;
-  const avatar = document.createElement("div");
-  avatar.className = "avatar";
-  avatar.textContent = role === "user" ? "你" : "A";
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = content;
-  node.append(avatar, bubble);
-  chat.append(node);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-function setBusy(busy) {
-  sendBtn.disabled = busy;
-  input.disabled = busy;
-  sendBtn.textContent = busy ? "运行中" : "发送";
-}
-
-function setServiceBusy(busy) {
-  startServiceBtn.disabled = busy || serviceRunning;
-  stopServiceBtn.disabled = busy || !serviceRunning;
-}
-
-async function checkHealth() {
+function readStorage(key) {
   try {
-    const response = await fetch("/api/health");
-    const data = await response.json();
-    serviceRunning = Boolean(data.service?.running);
-    const rows = Object.entries(data.modes || {}).map(([key, mode]) => {
-      return `${mode.available ? "OK" : "MISS"} ${mode.label}`;
-    });
-    const serviceLine = serviceRunning
-      ? `RUN 服务已启动 · ${data.service.mode} · pid=${data.service.pid} · ${data.service.uptime}s`
-      : "STOP 服务未启动";
-    health.textContent = [serviceLine, ...rows].join("\n") || "服务可用";
-    startServiceBtn.textContent = serviceRunning ? "服务运行中" : "启动服务";
-    setServiceBusy(false);
-  } catch (error) {
-    health.textContent = `无法连接后端：${error.message}`;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
 }
 
-function requestPayload(question) {
+function loadSessions() {
+  try {
+    const data = JSON.parse(readStorage(STORAGE_KEY) || "[]");
+    if (!Array.isArray(data)) return [];
+    return data
+      .filter((s) => s && typeof s.id === "string" && Array.isArray(s.messages))
+      .slice(0, 30)
+      .map((s) => ({
+        id: s.id,
+        title: typeof s.title === "string" ? s.title : "研读记录",
+        updated: Number(s.updated) || 0,
+        messages: s.messages
+          .filter(
+            (m) =>
+              m &&
+              ["user", "assistant"].includes(m.role) &&
+              typeof m.content === "string",
+          )
+          .map((m) => ({
+            ...m,
+            status: m.status === "error" ? "error" : "complete",
+            evidence: Array.isArray(m.evidence)
+              ? m.evidence.filter((e) => e && typeof e === "object")
+              : [],
+          })),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function createSession() {
   return {
-    mode: selectedMode(),
-    message: question,
-    history: messages.slice(-10),
-    max_retrieval_rounds: Number(maxRounds.value || 3),
-    max_tokens: Number(maxTokens.value || 1024),
-    timeout: Number(timeoutInput.value || 900),
-    use_persistent_service: true,
+    id: crypto.randomUUID(),
+    title: "新的研读",
+    updated: Date.now(),
+    messages: [],
   };
 }
 
-async function startService() {
-  setServiceBusy(true);
-  setTrace("[service] starting persistent inference service...", "启动中");
+function persist() {
+  if (active.messages.length && !sessions.some((s) => s.id === active.id))
+    sessions.unshift(active);
+  active.updated = Date.now();
+  sessions.sort((a, b) => b.updated - a.updated);
   try {
-    const response = await fetch("/api/service/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: selectedMode(), timeout: Number(timeoutInput.value || 900) }),
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.message || data.error || "服务启动失败");
-    serviceRunning = true;
-    setTrace([
-      "[service] started",
-      data.service?.command ? `[command] ${data.service.command.join(" ")}` : "",
-      data.service?.pid ? `[pid] ${data.service.pid}` : "",
-    ].filter(Boolean), "已启动");
-    await checkHealth();
-  } catch (error) {
-    setTrace(`[error] ${error.stack || error.message}`, "启动失败");
-  } finally {
-    setServiceBusy(false);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    localStorage.setItem(ACTIVE_KEY, active.id);
+  } catch {
+    notify("浏览器存储已满或不可用。本次对话仍可使用，建议导出保存。");
   }
 }
 
-async function stopService() {
-  setServiceBusy(true);
-  try {
-    const response = await fetch("/api/service/stop", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.message || data.error || "服务关闭失败");
-    serviceRunning = false;
-    setTrace("[service] stopped", "已关闭");
-    await checkHealth();
-  } catch (error) {
-    setTrace(`[error] ${error.stack || error.message}`, "关闭失败");
-  } finally {
-    setServiceBusy(false);
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = String(text ?? "");
+  return node;
+}
+
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("icon");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function button(label, iconName, callback) {
+  const node = element("button", "text-button");
+  node.type = "button";
+  node.append(icon(iconName), document.createTextNode(label));
+  node.addEventListener("click", callback);
+  return node;
+}
+
+function notify(text) {
+  clearTimeout(toastTimer);
+  $("#toast").textContent = text;
+  $("#toast").hidden = false;
+  toastTimer = setTimeout(() => {
+    $("#toast").hidden = true;
+  }, 5000);
+}
+
+function renderSessions() {
+  const list = $("#sessions");
+  list.replaceChildren();
+  $("#sessionCount").textContent = String(sessions.length).padStart(2, "0");
+  const query = $("#sessionSearch").value.trim().toLowerCase();
+  const shown = sessions.filter((s) => s.title.toLowerCase().includes(query));
+  if (!shown.length)
+    list.append(
+      element(
+        "p",
+        "session-empty",
+        query ? "没有找到这段记录。" : "还没有研读记录。\n从一个问题开始吧。",
+      ),
+    );
+  for (const session of shown) {
+    const item = element(
+      "button",
+      `session-item${session.id === active.id ? " active" : ""}`,
+    );
+    item.type = "button";
+    item.disabled = busy;
+    item.title = session.title;
+    item.setAttribute(
+      "aria-current",
+      session.id === active.id ? "true" : "false",
+    );
+    item.append(icon("chat"), element("span", "", session.title));
+    item.addEventListener("click", () => {
+      if (busy) return;
+      active = session;
+      try {
+        localStorage.setItem(ACTIVE_KEY, active.id);
+      } catch {
+        /* memory-only still works */
+      }
+      closeSidebar();
+      closeSources();
+      input.value = "";
+      resizeInput();
+      renderConversation();
+    });
+    list.append(item);
   }
+}
+
+// A deliberately small, safe renderer: no HTML insertion or executable links.
+function inlineText(parent, text) {
+  for (const part of text.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/g)) {
+    if (part.startsWith("**") && part.endsWith("**"))
+      parent.append(element("strong", "", part.slice(2, -2)));
+    else if (part.startsWith("`") && part.endsWith("`"))
+      parent.append(element("code", "", part.slice(1, -1)));
+    else parent.append(document.createTextNode(part));
+  }
+}
+
+function renderAnswer(parent, text) {
+  let paragraph = [];
+  let list = null;
+  const flush = () => {
+    if (paragraph.length) {
+      const p = element("p");
+      inlineText(p, paragraph.join("\n"));
+      parent.append(p);
+      paragraph = [];
+    }
+  };
+  for (const line of text.split("\n")) {
+    const heading = line.match(/^#{1,4}\s+(.+)$/);
+    const bullet = line.match(/^\s*(?:[-*]|\d+[.)、])\s+(.+)$/);
+    if (heading) {
+      flush();
+      list = null;
+      const h = element("h3");
+      inlineText(h, heading[1]);
+      parent.append(h);
+    } else if (bullet) {
+      flush();
+      const tag = /^\s*\d/.test(line) ? "ol" : "ul";
+      if (!list || list.tagName.toLowerCase() !== tag) {
+        list = element(tag);
+        parent.append(list);
+      }
+      const item = element("li");
+      inlineText(item, bullet[1]);
+      list.append(item);
+    } else if (!line.trim()) {
+      flush();
+      list = null;
+    } else {
+      list = null;
+      paragraph.push(line);
+    }
+  }
+  flush();
+}
+
+async function copyAnswer(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify("回答已复制。");
+  } catch {
+    notify("浏览器不允许自动复制，请选中回答后复制。");
+  }
+}
+
+function renderMessage(message, index) {
+  const article = element(
+    "article",
+    `message ${message.role}${message.status === "error" ? " error" : ""}`,
+  );
+  const heading = element("div", "message-heading");
+  heading.append(
+    element("span", "message-avatar", message.role === "user" ? "你" : "A"),
+  );
+  heading.append(
+    document.createTextNode(message.role === "user" ? "博士" : "ASA"),
+  );
+  if (message.role === "assistant")
+    heading.append(element("span", "message-badge", "DEEPSEEK FLASH"));
+  article.append(heading);
+  const body = element("div", "message-body");
+  if (message.role === "user" || message.status === "error")
+    body.append(element("p", "", message.content));
+  else renderAnswer(body, message.content);
+  article.append(body);
+  if (message.role === "assistant") {
+    const actions = element("div", "message-actions");
+    if (message.status === "error") {
+      if (
+        index === active.messages.length - 1 &&
+        active.messages[index - 1]?.role === "user"
+      ) {
+        const retry = button("重新提问", "retry", () => retryLast());
+        retry.disabled = busy;
+        actions.append(retry);
+      }
+    } else {
+      actions.append(
+        button("复制回答", "copy", () => copyAnswer(message.content)),
+      );
+      if (message.evidence?.length)
+        actions.append(
+          button(`查看 ${message.evidence.length} 段原文`, "book", () =>
+            openSources(message.evidence),
+          ),
+        );
+      if (Number.isFinite(message.elapsed))
+        actions.append(
+          element(
+            "span",
+            "message-timing",
+            `${message.elapsed.toFixed(1)}s${message.rounds ? ` · ${message.rounds} 轮检索` : ""}`,
+          ),
+        );
+    }
+    article.append(actions);
+  }
+  return article;
+}
+
+function renderConversation() {
+  $("#messages").replaceChildren(...active.messages.map(renderMessage));
+  $("#welcome").hidden = active.messages.length > 0;
+  $("#exportBtn").disabled = !active.messages.length;
+  $("#deleteBtn").disabled = !active.messages.length || busy;
+  $("#deleteSidebar").disabled = !active.messages.length || busy;
+  sourceItems =
+    [...active.messages]
+      .reverse()
+      .find((m) => m.status !== "error" && m.evidence?.length)?.evidence || [];
+  $("#sourceCount").textContent = String(sourceItems.length);
+  renderSessions();
+  if (active.messages.length) scrollToLatest();
+  else requestAnimationFrame(() => { $("#chatScroll").scrollTop = 0; });
+}
+
+function scrollToLatest() {
+  requestAnimationFrame(() => {
+    $("#chatScroll").scrollTop = $("#chatScroll").scrollHeight;
+  });
+}
+
+function setBusy(value) {
+  busy = value;
+  input.readOnly = value;
+  $("#sendBtn").hidden = value;
+  $("#stopBtn").hidden = !value;
+  $("#requestStatus").hidden = !value;
+  $("#newChat").disabled = value;
+  $("#deleteBtn").disabled = value || !active.messages.length;
+  $("#deleteSidebar").disabled = value || !active.messages.length;
+  renderSessions();
+  resizeInput();
+}
+
+function resizeInput() {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  $("#charCount").textContent = `${input.value.length} / 4000`;
+  $("#sendBtn").disabled = busy || !input.value.trim();
+}
+
+function renderSources() {
+  const query = $("#sourceSearch").value.trim().toLowerCase();
+  const list = $("#sourceList");
+  list.replaceChildren();
+  const shown = sourceItems.filter((s) =>
+    [s.story_name, s.activity_name, s.clean_text].some((text) =>
+      String(text || "")
+        .toLowerCase()
+        .includes(query),
+    ),
+  );
+  if (!shown.length) {
+    list.append(
+      element(
+        "p",
+        "source-empty",
+        query
+          ? "这批原文中没有匹配内容。"
+          : "还没有检索原文。\n发送问题后，可以在这里核对出处。",
+      ),
+    );
+    return;
+  }
+  for (const source of shown) {
+    const card = element("details", "source-card");
+    const summary = element("summary");
+    const number = String(sourceItems.indexOf(source) + 1).padStart(2, "0");
+    summary.append(
+      element(
+        "small",
+        "",
+        `${number} / ${source.stage_code || "STORY ARCHIVE"}`,
+      ),
+    );
+    summary.append(
+      element(
+        "strong",
+        "",
+        [source.activity_name, source.story_name].filter(Boolean).join(" · ") ||
+          "剧情原文",
+      ),
+    );
+    card.append(
+      summary,
+      element(
+        "div",
+        "source-text",
+        source.clean_text || "此条检索结果没有返回正文。",
+      ),
+    );
+    card.append(element("div", "source-id", source.id || ""));
+    list.append(card);
+  }
+}
+
+function openSources(items = sourceItems) {
+  sourceItems = items;
+  $("#sourceCount").textContent = String(items.length);
+  $("#sourceSearch").value = "";
+  $("#sourcesPanel").hidden = false;
+  shell.classList.add("sources-open");
+  $("#sourcesBtn").setAttribute("aria-expanded", "true");
+  renderSources();
+  $("#closeSources").focus();
+}
+
+function closeSources() {
+  $("#sourcesPanel").hidden = true;
+  shell.classList.remove("sources-open");
+  $("#sourcesBtn").setAttribute("aria-expanded", "false");
+}
+
+function openSidebar() {
+  $("#sidebar").classList.add("open");
+  $("#scrim").hidden = false;
+  $("#menuBtn").setAttribute("aria-expanded", "true");
+  $(".workspace").inert = true;
+  $("#sourcesPanel").inert = true;
+  $("#newChat").focus();
+}
+
+function closeSidebar() {
+  $("#sidebar").classList.remove("open");
+  $("#scrim").hidden = true;
+  $("#menuBtn").setAttribute("aria-expanded", "false");
+  $(".workspace").inert = false;
+  $("#sourcesPanel").inert = false;
+}
+
+async function checkHealth() {
+  $("#refreshHealth").disabled = true;
+  try {
+    const response = await fetch("/api/health", {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) throw new Error("health");
+    const data = await response.json();
+    lastHealth = data;
+    ready = data.ready === true;
+    $("#healthLabel").textContent = ready ? "配置就绪" : "待配置";
+    $("#healthDot").className = `status-dot${ready ? " ready" : ""}`;
+    $("#healthDetails").replaceChildren();
+    const labels = {
+      api_key: "API 密钥",
+      index: "剧情索引",
+      embedding: "检索模型",
+      dependencies: "Python 环境",
+    };
+    for (const [key, ok] of Object.entries(data.checks || {})) {
+      const message = data.issues?.find((issue) => issue.id === key)?.message;
+      $("#healthDetails").append(
+        element(
+          "div",
+          ok ? "health-ok" : "health-issue",
+          `${ok ? "✓" : "○"} ${labels[key] || key}${ok ? "：已配置" : `：${message || "未就绪"}`}`,
+        ),
+      );
+    }
+  } catch {
+    ready = false;
+    lastHealth = null;
+    $("#healthLabel").textContent = "未连接";
+    $("#healthDot").className = "status-dot offline";
+    $("#healthDetails").replaceChildren(
+      element(
+        "p",
+        "health-issue",
+        "无法连接本地服务。请确认 Web 服务仍在运行，再重新检查。",
+      ),
+    );
+  } finally {
+    $("#refreshHealth").disabled = false;
+  }
+}
+
+function showSettings() {
+  closeSidebar();
+  if (!$("#settingsDialog").open) $("#settingsDialog").showModal();
+  checkHealth();
 }
 
 async function sendQuestion(question) {
-  const trimmed = question.trim();
-  if (!trimmed) return;
-  if (selectedMode() === "cpu-local" && !serviceRunning) {
-    addMessage("assistant", "服务未启动。请先点击左侧“启动服务”，模型加载完成后再发送问题。");
-    setTrace("[service] not running", "待启动");
+  if (busy || !question.trim()) return;
+  if (!ready) {
+    notify(
+      lastHealth
+        ? "请先完成本地配置；不会发送付费请求。"
+        : "尚未连接服务，请检查连接。",
+    );
+    showSettings();
     return;
   }
-  messages.push({ role: "user", content: trimmed });
-  addMessage("user", trimmed);
+  if (sessions.length >= 30 && !sessions.includes(active)) {
+    notify("最多保存30段对话，请先导出并删除不需要的记录。");
+    return;
+  }
+  if (question.length > 4000) {
+    notify("问题不能超过4000字。");
+    return;
+  }
+  // Failed answers and unanswered user turns are not factual conversation context.
+  const history = [];
+  for (let i = 0; i < active.messages.length - 1; i += 1) {
+    const user = active.messages[i],
+      answer = active.messages[i + 1];
+    if (
+      user.role === "user" &&
+      answer.role === "assistant" &&
+      answer.status !== "error"
+    ) {
+      history.push(
+        { role: "user", content: user.content },
+        { role: "assistant", content: answer.content },
+      );
+      i += 1;
+    }
+  }
+  const bounded = history.slice(-10);
+  // Do not silently truncate a turn to meet the server's request contract.
+  if (
+    bounded.some((item) => item.content.length > 12000) ||
+    new TextEncoder().encode(
+      JSON.stringify({ message: question, history: bounded }),
+    ).length >
+      128 * 1024
+  ) {
+    notify("当前上下文过长，请开启新对话；原记录会保留。");
+    return;
+  }
+  const trimmed = question.trim();
+  active.messages.push({ role: "user", content: trimmed, status: "complete" });
+  if (active.messages.length === 1) active.title = trimmed;
   input.value = "";
-  input.style.height = "auto";
+  persist();
+  closeSources();
+  renderConversation();
   setBusy(true);
+  const pending = element("div", "pending-message");
+  pending.append(
+    element("span", "spinner"),
+    document.createTextNode("正在循着线索查阅原文…"),
+  );
+  $("#messages").append(pending);
+  scrollToLatest();
   const started = performance.now();
-  setTrace([
-    `[mode] ${selectedMode()}`,
-    "[stage] queued",
-    "[stage] loading/retrieval/generation may take several minutes on CPU",
-  ], "运行中");
-
+  $("#stageText").textContent = "正在连接检索服务";
+  elapsedTimer = setInterval(() => {
+    $("#elapsed").textContent =
+      `${((performance.now() - started) / 1000).toFixed(1)}s`;
+  }, 100);
+  controller = new AbortController();
+  const requestTimeout = setTimeout(() => controller?.abort("timeout"), 310000);
+  let completed = false;
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestPayload(trimmed)),
+      body: JSON.stringify({ message: trimmed, history: bounded }),
+      signal: controller.signal,
     });
-    const data = await response.json();
-    const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const logLines = [];
-    if (data.command) logLines.push(`[command] ${data.command.join(" ")}`);
-    if (data.service?.running) logLines.push(`[service] pid=${data.service.pid} uptime=${data.service.uptime}s`);
-    if (data.stages?.length) logLines.push(`[stages] ${data.stages.join(" -> ")}`);
-    const conclusionQuoteLines = renderConclusionQuoteLines(data.result);
-    if (conclusionQuoteLines.length) logLines.push(...conclusionQuoteLines);
-    if (data.stderr_lines?.length) logLines.push(...data.stderr_lines);
-    if (!data.ok && data.message) logLines.push(`[error] ${data.message}`);
-    if (!data.ok && data.stderr && !data.stderr_lines?.length) logLines.push(data.stderr);
-    setTrace(logLines.length ? logLines : "无额外日志。", `${seconds}s`);
-
-    const answer = data.answer || data.message || "没有生成有效回答。";
-    messages.push({ role: "assistant", content: answer });
-    addMessage("assistant", answer);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(
+        error.message || `请求失败（HTTP ${response.status}），请稍后重试。`,
+      );
+    }
+    if (
+      !response.body ||
+      !response.headers.get("Content-Type")?.includes("application/x-ndjson")
+    )
+      throw new Error("服务返回了无法识别的数据格式。");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const receive = (line) => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line);
+      if (event.type === "stage") $("#stageText").textContent = event.message;
+      if (event.type === "error")
+        throw new Error(event.message || "生成失败，请重试。");
+      if (event.type === "result" && !completed) {
+        if (
+          !event.ok ||
+          typeof event.answer !== "string" ||
+          !event.answer.trim()
+        )
+          throw new Error("服务未返回有效答案。");
+        active.messages.push({
+          role: "assistant",
+          status: "complete",
+          content: event.answer,
+          evidence: Array.isArray(event.evidence) ? event.evidence : [],
+          elapsed: Number(event.elapsed),
+          rounds: event.rounds,
+        });
+        completed = true;
+      }
+    };
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        if (buffer.trim()) receive(buffer);
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf("\n")) !== -1) {
+        receive(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+      }
+    }
+    if (!completed) throw new Error("连接提前结束，没有收到完整答案。");
   } catch (error) {
-    const seconds = ((performance.now() - started) / 1000).toFixed(1);
-    const answer = `请求失败：${error.message}`;
-    messages.push({ role: "assistant", content: answer });
-    addMessage("assistant", answer);
-    setTrace(`[error] ${error.stack || error.message}`, `${seconds}s`);
+    if (!completed) {
+      let text = error.message || "请求失败，请稍后重试。";
+      if (controller.signal.aborted)
+        text =
+          controller.signal.reason === "timeout"
+            ? "等待超时，已断开本地请求。已发出的 API 调用仍可能产生费用。"
+            : "已停止本次请求。已发出的 API 调用仍可能继续处理或产生费用。";
+      active.messages.push({
+        role: "assistant",
+        status: "error",
+        content: text,
+        evidence: [],
+      });
+    }
+    controller.abort();
   } finally {
+    clearTimeout(requestTimeout);
+    clearInterval(elapsedTimer);
+    pending.remove();
+    controller = null;
     setBusy(false);
+    persist();
+    renderConversation();
     input.focus();
   }
 }
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
+function retryLast() {
+  if (busy || !ready) {
+    if (!ready) showSettings();
+    return;
+  }
+  const last = active.messages.at(-1),
+    previous = active.messages.at(-2);
+  if (last?.status !== "error" || previous?.role !== "user") return;
+  const question = previous.content;
+  active.messages.splice(-2);
+  sendQuestion(question);
+}
+
+function newChat() {
+  if (busy) return;
+  active = createSession();
+  input.value = "";
+  resizeInput();
+  closeSidebar();
+  closeSources();
+  renderConversation();
+  input.focus();
+}
+
+function exportChat() {
+  if (!active.messages.length) return;
+  const body = [
+    "# ASA 剧情研读记录",
+    "",
+    "版本：api-v1.0.0 · deepseek-flash",
+    "",
+    ...active.messages.flatMap((m) => [
+      `## ${m.role === "user" ? "博士" : "ASA"}${m.status === "error" ? "（未完成）" : ""}`,
+      "",
+      m.content,
+      "",
+      ...(m.evidence || []).flatMap((e, i) => [
+        `### 检索原文 ${i + 1}：${e.story_name || e.id || ""}`,
+        `来源：${e.activity_name || ""} ${e.stage_code || ""}`,
+        "",
+        String(e.clean_text || ""),
+        "",
+      ]),
+    ]),
+  ].join("\n");
+  const url = URL.createObjectURL(
+    new Blob([body], { type: "text/markdown;charset=utf-8" }),
+  );
+  const a = element("a");
+  a.href = url;
+  a.download = `ASA-${new Date().toISOString().slice(0, 10)}.md`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  notify("对话与检索原文已导出。");
+}
+
+$("#composer").addEventListener("submit", (e) => {
+  e.preventDefault();
   sendQuestion(input.value);
 });
-
-input.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    form.requestSubmit();
+input.addEventListener("input", resizeInput);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+    e.preventDefault();
+    if (!busy) sendQuestion(input.value);
   }
 });
-
-input.addEventListener("input", () => {
-  input.style.height = "auto";
-  input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+$("#stopBtn").addEventListener("click", () => controller?.abort("user"));
+$("#newChat").addEventListener("click", newChat);
+$("#sessionSearch").addEventListener("input", renderSessions);
+$("#sourceSearch").addEventListener("input", renderSources);
+$("#sourcesBtn").addEventListener("click", () =>
+  $("#sourcesPanel").hidden ? openSources() : closeSources(),
+);
+$("#closeSources").addEventListener("click", () => {
+  closeSources();
+  $("#sourcesBtn").focus();
 });
-
-clearBtn.addEventListener("click", () => {
-  messages.splice(0, messages.length);
-  chat.innerHTML = `
-    <div class="empty-state">
-      <div class="empty-card">
-        <span class="empty-kicker">示例问题</span>
-        <button data-example="凯尔希在14章中为什么似乎死了？">凯尔希在14章中为什么似乎死了？</button>
-        <button data-example="炎景公主一事具体指什么？">炎景公主一事具体指什么？</button>
-        <button data-example="真龙为什么不愿轻易启动不反？">真龙为什么不愿轻易启动不反？</button>
-      </div>
-    </div>
-  `;
-  setTrace("等待问题输入。", "待机");
+$("#menuBtn").addEventListener("click", openSidebar);
+$("#scrim").addEventListener("click", () => {
+  closeSidebar();
+  $("#menuBtn").focus();
 });
-
-startServiceBtn.addEventListener("click", startService);
-stopServiceBtn.addEventListener("click", stopService);
-
-document.addEventListener("click", (event) => {
-  const target = event.target;
-  if (target instanceof HTMLButtonElement && target.dataset.example) {
-    input.value = target.dataset.example;
+$("#settingsBtn").addEventListener("click", showSettings);
+$("#healthBtn").addEventListener("click", showSettings);
+$("#closeSettings").addEventListener("click", () =>
+  $("#settingsDialog").close(),
+);
+$("#refreshHealth").addEventListener("click", checkHealth);
+$("#exportBtn").addEventListener("click", exportChat);
+$("#deleteBtn").addEventListener("click", () => $("#deleteDialog").showModal());
+$("#deleteSidebar").addEventListener("click", () => {
+  closeSidebar();
+  $("#deleteDialog").showModal();
+});
+$("#cancelDelete").addEventListener("click", () => $("#deleteDialog").close());
+$("#confirmDelete").addEventListener("click", () => {
+  sessions = sessions.filter((s) => s.id !== active.id);
+  $("#deleteDialog").close();
+  newChat();
+  persist();
+  notify("当前对话已从此浏览器删除，无法撤销；其他记录保留。");
+});
+for (const suggestion of document.querySelectorAll("[data-example]")) {
+  suggestion.addEventListener("click", () => {
+    input.value = suggestion.dataset.example;
+    resizeInput();
     input.focus();
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeSidebar();
+    closeSources();
+  }
+  if (
+    e.key.toLowerCase() === "n" &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey &&
+    !["INPUT", "TEXTAREA"].includes(e.target.tagName) &&
+    !document.querySelector("dialog[open]")
+  ) {
+    e.preventDefault();
+    newChat();
   }
 });
-
-document.querySelectorAll(".mode-card").forEach((card) => {
-  card.addEventListener("click", () => {
-    document.querySelectorAll(".mode-card").forEach((item) => item.classList.remove("active"));
-    card.classList.add("active");
-    checkHealth();
-  });
-});
-
+window
+  .matchMedia("(max-width: 700px)")
+  .addEventListener("change", () => closeSidebar());
+renderConversation();
+resizeInput();
 checkHealth();
-setInterval(checkHealth, 5000);
-input.focus();

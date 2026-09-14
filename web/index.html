@@ -3,105 +3,467 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ASA-ArknightStoryAgent</title>
+    <meta name="theme-color" content="#202623" />
+    <meta
+      name="description"
+      content="ASA 明日方舟剧情研读室。用剧情原文寻找线索，让每一个回答都有迹可循。"
+    />
+    <title>ASA · 剧情研读室</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
   </head>
   <body>
-    <div class="shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-mark">A</div>
-          <div>
-            <div class="brand-title">ASA</div>
-            <div class="brand-subtitle">Arknight Story Agent</div>
+    <svg
+      class="icon-library"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M7 17 17 7M7 7h10v10" />
+      </symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z" />
+        <path d="M7 9h8M7 13h5" />
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 24 24">
+        <path
+          d="M12 5v16M12 5C8 2 3 3 2 4v15c4-2 7-1 10 2 3-3 6-4 10-2V4c-1-1-6-2-10 1Z"
+        />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6.5" />
+        <path d="m16 16 5 5" />
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 6h16M4 12h16M4 18h16" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="m6 6 12 12M6 18 18 6" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="12" height="13" rx="2" />
+        <path d="M16 8V3H3v13h5" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" />
+      </symbol>
+      <symbol id="i-retry" viewBox="0 0 24 24">
+        <path d="M3 11a9 9 0 1 1 3 8M3 4v7h7" />
+      </symbol>
+      <symbol id="i-send" viewBox="0 0 24 24">
+        <path d="M12 20V4m-7 7 7-7 7 7" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2" />
+      </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <rect x="5" y="10" width="14" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v6m0-10v1" />
+      </symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3Z" />
+      </symbol>
+    </svg>
+    <a href="#message" class="skip-link">跳到提问输入框</a>
+    <button
+      id="scrim"
+      class="scrim"
+      type="button"
+      aria-label="关闭侧栏"
+      hidden
+    ></button>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="对话导航">
+        <a class="brand" href="/" aria-label="ASA 首页">
+          <span class="brand-mark" aria-hidden="true">A<span>／</span></span>
+          <span
+            ><strong>ASA<span class="brand-dot">.</span></strong
+            ><small>ARKNIGHTS STORY AGENT</small></span
+          >
+        </a>
+        <button id="newChat" class="new-chat" type="button">
+          <svg class="icon"><use href="#i-plus" /></svg>开启新对话<span
+            class="key-hint"
+            >N</span
+          >
+        </button>
+        <label class="session-search"
+          ><svg class="icon"><use href="#i-search" /></svg
+          ><input
+            id="sessionSearch"
+            type="search"
+            placeholder="查找对话"
+            aria-label="查找对话"
+        /></label>
+        <div class="section-label">
+          我的研读记录 <span id="sessionCount">00</span>
+        </div>
+        <nav id="sessions" class="sessions" aria-label="历史对话"></nav>
+        <div class="sidebar-bottom">
+          <div class="edition-card">
+            <div class="edition-heading">
+              <span class="edition-dot"></span>API 固定版<svg class="icon">
+                <use href="#i-lock" />
+              </svg>
+            </div>
+            <strong>DeepSeek Flash</strong>
+            <p>本地检索 · 云端生成<br />每轮最多 20 条完整证据</p>
+            <span class="edition-version"
+              >API V1.0.0 <span>NON-THINKING</span></span
+            >
+          </div>
+          <button
+            id="deleteSidebar"
+            class="sidebar-link mobile-delete"
+            type="button"
+            disabled
+          >
+            <svg class="icon"><use href="#i-trash" /></svg>删除当前对话
+          </button>
+          <button id="settingsBtn" class="sidebar-link" type="button">
+            <svg class="icon"><use href="#i-info" /></svg>连接与配置<span
+              >↗</span
+            >
+          </button>
+          <div class="sidebar-footer">
+            <span>把答案交还给故事。</span><span>ASA / 01</span>
           </div>
         </div>
-
-        <section class="panel">
-          <div class="panel-title">运行模式</div>
-          <label class="mode-card active">
-            <input type="radio" name="mode" value="cpu-local" checked />
-            <span>
-              <b>CPU 本地 4B</b>
-              <small>GGUF + LoRA，无 reranker</small>
-            </span>
-          </label>
-          <label class="mode-card">
-            <input type="radio" name="mode" value="cpu-api" />
-            <span>
-              <b>CPU + API</b>
-              <small>本地检索，远程教师/大模型生成</small>
-            </span>
-          </label>
-          <label class="mode-card">
-            <input type="radio" name="mode" value="gpu-reranker" />
-            <span>
-              <b>GPU 完整模式</b>
-              <small>reranker + vLLM 4B LoRA</small>
-            </span>
-          </label>
-        </section>
-
-        <section class="panel compact">
-          <div class="panel-title">推理设置</div>
-          <label class="field">
-            <span>最大检索轮次</span>
-            <input id="maxRounds" type="number" min="1" max="5" value="3" />
-          </label>
-          <label class="field">
-            <span>最大输出 tokens</span>
-            <input id="maxTokens" type="number" min="256" max="8192" step="128" value="1024" />
-          </label>
-          <label class="field">
-            <span>超时秒数</span>
-            <input id="timeout" type="number" min="60" max="3600" step="30" value="900" />
-          </label>
-        </section>
-
-        <section class="panel compact status-panel">
-          <div class="panel-title">系统状态</div>
-          <div class="service-controls">
-            <button id="startServiceBtn" type="button">启动服务</button>
-            <button id="stopServiceBtn" type="button" class="danger-btn">关闭服务</button>
-          </div>
-          <div id="health" class="health">正在检查...</div>
-        </section>
       </aside>
 
       <main class="workspace">
         <header class="topbar">
-          <div>
-            <div class="eyebrow">Local RAG Console</div>
-            <h1>明日方舟剧情问答</h1>
-          </div>
-          <button id="clearBtn" class="ghost-btn">清空对话</button>
-        </header>
-
-        <section id="chat" class="chat">
-          <div class="empty-state">
-            <div class="empty-card">
-              <span class="empty-kicker">示例问题</span>
-              <button data-example="凯尔希在14章中为什么似乎死了？">凯尔希在14章中为什么似乎死了？</button>
-              <button data-example="炎景公主一事具体指什么？">炎景公主一事具体指什么？</button>
-              <button data-example="真龙为什么不愿轻易启动不反？">真龙为什么不愿轻易启动不反？</button>
+          <div class="topbar-title">
+            <button
+              id="menuBtn"
+              class="icon-button mobile-only"
+              type="button"
+              aria-label="打开对话导航"
+              aria-expanded="false"
+              aria-controls="sidebar"
+            >
+              <svg class="icon"><use href="#i-menu" /></svg>
+            </button>
+            <div>
+              <span class="eyebrow">THE STORY READING ROOM</span>
+              <h1>剧情研读室</h1>
             </div>
           </div>
-        </section>
-
-        <section class="trace-dock">
-          <div class="trace-header">
-            <span>运行轨迹</span>
-            <small id="latency">待机</small>
+          <div class="topbar-actions">
+            <button id="healthBtn" class="connection-state" type="button" aria-label="查看连接状态与配置">
+              <span id="healthDot" class="status-dot"></span
+              ><span id="healthLabel">检查配置中</span>
+            </button>
+            <span class="topbar-divider"></span>
+            <button
+              id="exportBtn"
+              class="icon-button"
+              type="button"
+              aria-label="导出当前对话"
+              title="导出当前对话"
+            >
+              <svg class="icon"><use href="#i-download" /></svg>
+            </button>
+            <button
+              id="deleteBtn"
+              class="icon-button"
+              type="button"
+              aria-label="删除当前对话"
+              title="删除当前对话"
+            >
+              <svg class="icon"><use href="#i-trash" /></svg>
+            </button>
+            <button
+              id="sourcesBtn"
+              class="source-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="sourcesPanel"
+            >
+              <svg class="icon"><use href="#i-book" /></svg><span>原文</span
+              ><span id="sourceCount">0</span>
+            </button>
           </div>
-          <pre id="trace">等待问题输入。</pre>
-        </section>
+        </header>
 
-        <form id="composer" class="composer">
-          <textarea id="message" rows="1" placeholder="输入剧情问题，Enter 发送，Shift+Enter 换行"></textarea>
-          <button id="sendBtn" type="submit">发送</button>
-        </form>
+        <div id="chatScroll" class="chat-scroll">
+          <section id="welcome" class="welcome" aria-label="开始研读">
+            <div class="welcome-meta">
+              <span class="mini-line"></span>从一条线索开始<span
+                class="archive-code"
+                >TERRA ARCHIVE / 001</span
+              >
+            </div>
+            <div class="hero">
+              <div class="hero-copy">
+                <div class="hero-kicker">你好，博士。</div>
+                <h2>那些未完的故事，<br />我们一起<span>读懂。</span></h2>
+                <p>
+                  追溯人物的选择，厘清事件的来由。<br />让每一个回答，都能回到剧情原文。
+                </p>
+              </div>
+              <div class="archive-art" aria-hidden="true">
+                <div class="orbit orbit-one"></div>
+                <div class="orbit orbit-two"></div>
+                <div class="archive-sheet sheet-back">
+                  <span>RHODES ISLAND</span>
+                </div>
+                <div class="archive-sheet sheet-front">
+                  <span class="sheet-index">01 / ARCHIVE</span>
+                  <div class="sheet-emblem">A<span>／</span></div>
+                  <div class="sheet-rule"></div>
+                  <div class="sheet-rule short"></div>
+                  <span class="sheet-footer">每条线索，皆有出处。</span>
+                </div>
+                <span class="art-coordinate">1097° / TERRA</span
+                ><span class="art-plus">+</span>
+              </div>
+            </div>
+            <div class="suggestions-heading">
+              <h3>不妨从这里问起</h3>
+              <span
+                >选一个方向，深入故事 <span aria-hidden="true">↙</span></span
+              >
+            </div>
+            <div class="suggestions">
+              <button
+                class="suggestion"
+                type="button"
+                data-example="薇卡和真理是什么关系？真理为什么一直留着那个娃娃？"
+              >
+                <span class="suggestion-label"
+                  ><span class="suggestion-number">01</span>人物关系</span
+                ><strong>一个被留住的名字</strong
+                ><span class="suggestion-question"
+                  >薇卡与真理之间，有怎样的故事？</span
+                ><svg class="icon"><use href="#i-arrow" /></svg>
+              </button>
+              <button
+                class="suggestion"
+                type="button"
+                data-example="霜星为什么在最后的战斗中不再压抑自己的力量？"
+              >
+                <span class="suggestion-label"
+                  ><span class="suggestion-number">02</span>事件因果</span
+                ><strong>一次不再保留的选择</strong
+                ><span class="suggestion-question"
+                  >霜星为何不再压抑自己的力量？</span
+                ><svg class="icon"><use href="#i-arrow" /></svg>
+              </button>
+              <button
+                class="suggestion"
+                type="button"
+                data-example="苏茜为什么想买下绿意火花？她为什么想把它改成理发店？"
+              >
+                <span class="suggestion-label"
+                  ><span class="suggestion-number">03</span>情节回溯</span
+                ><strong>一家小店，一种新生活</strong
+                ><span class="suggestion-question"
+                  >苏茜为什么想买下绿意火花？</span
+                ><svg class="icon"><use href="#i-arrow" /></svg>
+              </button>
+              <button
+                class="suggestion"
+                type="button"
+                data-example="格拉尼为什么代替可萝尔使用钥匙？剩下的宝藏后来用在了哪里？"
+              >
+                <span class="suggestion-label"
+                  ><span class="suggestion-number">04</span>线索串联</span
+                ><strong>钥匙与宝藏的另一面</strong
+                ><span class="suggestion-question"
+                  >格拉尼做了什么，宝藏又去了哪里？</span
+                ><svg class="icon"><use href="#i-arrow" /></svg>
+              </button>
+            </div>
+            <div class="reading-note">
+              <svg class="icon"><use href="#i-book" /></svg>
+              <p>
+                这里不是标准答案集。遇到证据不足，我们会保留疑问。<br /><span
+                  >回答可能有误；涉及剧情细节，请结合右侧原文核对。</span
+                >
+              </p>
+            </div>
+          </section>
+          <section
+            id="messages"
+            class="messages"
+            role="log"
+            aria-label="对话内容"
+            aria-live="polite"
+            aria-relevant="additions text"
+          ></section>
+        </div>
+
+        <div class="composer-dock">
+          <div class="composer-width">
+            <div id="requestStatus" class="request-status" role="status" hidden>
+              <span class="spinner"></span><span id="stageText">正在准备</span
+              ><span id="elapsed">0.0s</span>
+            </div>
+            <form id="composer" class="composer">
+              <label class="sr-only" for="message">你的剧情问题</label>
+              <textarea
+                id="message"
+                rows="2"
+                maxlength="4000"
+                placeholder="想读懂哪一段故事？可以告诉我人物、章节或一个细节…"
+                required
+              ></textarea>
+              <div class="composer-toolbar">
+                <div class="composer-model">
+                  <svg class="icon"><use href="#i-spark" /></svg>DeepSeek Flash
+                  <span>·</span> 证据优先
+                </div>
+                <div class="send-area">
+                  <span id="charCount" class="char-count">0 / 4000</span
+                  ><button
+                    id="stopBtn"
+                    class="send-button stop-button"
+                    type="button"
+                    aria-label="停止本次请求"
+                    hidden
+                  >
+                    <svg class="icon"><use href="#i-stop" /></svg></button
+                  ><button
+                    id="sendBtn"
+                    class="send-button"
+                    type="submit"
+                    aria-label="发送问题"
+                    disabled
+                  >
+                    <svg class="icon"><use href="#i-send" /></svg>
+                  </button>
+                </div>
+              </div>
+            </form>
+            <div class="composer-footer">
+              <span>问题及证据将发送至 DeepSeek · 对话仅保存在此浏览器</span
+              ><span class="keyboard-tip"
+                ><kbd>Enter</kbd> 发送 <span>·</span>
+                <kbd>Shift ↵</kbd> 换行</span
+              >
+            </div>
+          </div>
+        </div>
       </main>
+
+      <aside
+        id="sourcesPanel"
+        class="sources-panel"
+        aria-label="检索原文"
+        hidden
+      >
+        <div class="sources-header">
+          <div>
+            <span class="eyebrow">FOLLOW THE EVIDENCE</span>
+            <h2>原文与出处</h2>
+          </div>
+          <button
+            id="closeSources"
+            class="icon-button"
+            type="button"
+            aria-label="关闭原文面板"
+          >
+            <svg class="icon"><use href="#i-close" /></svg>
+          </button>
+        </div>
+        <p class="sources-note">
+          这里展示本次检索结果，不代表每段都被答案引用。展开查看完整片段。
+        </p>
+        <label class="source-search"
+          ><svg class="icon"><use href="#i-search" /></svg
+          ><input
+            id="sourceSearch"
+            type="search"
+            placeholder="在原文中查找…"
+            aria-label="在原文中查找"
+        /></label>
+        <div id="sourceList" class="source-list"></div>
+      </aside>
     </div>
-    <script src="/app.js"></script>
+
+    <dialog
+      id="settingsDialog"
+      class="settings-dialog"
+      aria-labelledby="settingsTitle"
+    >
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">YOUR READING ENVIRONMENT</span>
+          <h2 id="settingsTitle">连接与配置</h2>
+        </div>
+        <button
+          id="closeSettings"
+          class="icon-button"
+          type="button"
+          aria-label="关闭配置"
+        >
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
+      <p>API 版已固定，不需要手动启动本地 4B 模型。</p>
+      <dl class="profile">
+        <div>
+          <dt>生成模型</dt>
+          <dd>deepseek-flash</dd>
+        </div>
+        <div>
+          <dt>推理方式</dt>
+          <dd>非思考 · 最多两轮检索</dd>
+        </div>
+        <div>
+          <dt>证据输入</dt>
+          <dd>每轮最多 20 个完整 chunk</dd>
+        </div>
+        <div>
+          <dt>本地检索</dt>
+          <dd>CPU · BGE + BM25，无重排器</dd>
+        </div>
+        <div>
+          <dt>固定版本</dt>
+          <dd>api-v1.0.0</dd>
+        </div>
+      </dl>
+      <h3>本地准备检查</h3>
+      <div id="healthDetails" class="health-details">检查中…</div>
+      <button id="refreshHealth" class="secondary-button" type="button">
+        <svg class="icon"><use href="#i-retry" /></svg>重新检查
+      </button>
+      <p class="privacy-note">
+        这里仅检查本地配置，不会请求付费
+        API。密钥只从服务端环境变量读取，不进入网页或对话存储。停止请求不能保证服务商取消已接收的调用或费用。
+      </p>
+    </dialog>
+    <dialog
+      id="deleteDialog"
+      class="confirm-dialog"
+      aria-labelledby="deleteTitle"
+    >
+      <h2 id="deleteTitle">删除这段研读记录？</h2>
+      <p>
+        仅删除此浏览器中的当前对话，其他记录不受影响。此操作无法撤销，建议先导出。
+      </p>
+      <div class="dialog-actions">
+        <button id="cancelDelete" class="secondary-button" type="button">
+          保留记录</button
+        ><button id="confirmDelete" class="danger-button" type="button">
+          删除对话
+        </button>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>

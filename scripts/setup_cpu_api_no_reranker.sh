@@ -49,14 +49,16 @@ CPU API 环境安装完成。
 需要准备：
 1. 主索引：
    python scripts/build_retrieval_index.py --device cpu
-2. API key：
-   export OPENAI_API_KEY="你的 key"
-3. 如使用其它 OpenAI 兼容服务，修改：
-   configs/runtime_cpu_api_no_reranker.json
+2. 当前固定版使用 DeepSeek API：
+   bash scripts/run_web_ui.sh --ask-key
+   密钥在终端隐藏输入，不会写入网页或仓库。
+3. 命令行运行时，先在服务进程环境中设置 DEEPSEEK_API_KEY。
 
 运行：
-   bash scripts/run_cpu_api_no_reranker.sh "炎景公主一事具体指什么"
+   bash scripts/run_api_stable.sh "炎景公主一事具体指什么"
 
-说明：此版本只在本地做 CPU 检索，不加载 reranker，生成阶段走远程 API。
+说明：固定配置为 configs/runtime_api_stable.json，本地 CPU 检索、不加载 reranker，
+      生成阶段为 deepseek-flash，非思考、完整证据、不自动重试付费请求。
+      旧的通用兼容 API 入口仍保留，但不是当前网页的默认配置。
 
 MSG

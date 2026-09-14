@@ -49,12 +49,13 @@ def simplify_evidence_for_result(evidence: list[dict[str, Any]]) -> list[dict[st
 def build_prompt_evidence_runtime_metadata(pipeline: Any) -> dict[str, Any]:
     return {
         "top_k": pipeline.prompt_evidence_top_k,
+        "require_full_documents": getattr(pipeline, "prompt_evidence_require_full_documents", False),
         "mmr_enabled": pipeline.enable_mmr,
         "mmr_lambda": pipeline.mmr_lambda,
         "pyramid_order_enabled": pipeline.enable_pyramid_order,
         "evidence_pinning_enabled": pipeline.enable_evidence_pinning,
         "moegirl_downweight_enabled": True,
-        "near_duplicate_dedupe_enabled": True,
+        "near_duplicate_dedupe_enabled": not getattr(pipeline, "prompt_evidence_require_full_documents", False),
         "crag_refinement_enabled": pipeline.enable_crag_refinement,
         "crag_refine_top_sentences": pipeline.crag_refine_top_sentences,
         "crag_refine_max_sentences": pipeline.crag_refine_max_sentences,

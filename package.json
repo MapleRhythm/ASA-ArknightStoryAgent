@@ -1,0 +1,14 @@
+{
+  "name": "asa-api-reading-room",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Development checks for ASA's dependency-free browser frontend",
+  "scripts": {
+    "check": "node --check web/app.js",
+    "test:ui": "playwright test",
+    "dev": "python3 scripts/run_web_ui.py"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "release": {
+    "version": "api-v1.0.0",
+    "description": "API-only release with local CPU retrieval; not the remote GPU benchmark configuration."
+  },
+  "retrieval": {
+    "device": "cpu",
+    "enable_reranker": false,
+    "dense_top_k": 120,
+    "sparse_top_k": 120,
+    "fusion_top_k": 80,
+    "rerank_top_k": 32,
+    "enable_minirag": false,
+    "enable_neighbor_expansion": false,
+    "enable_storyline_sparse_scope": false,
+    "enable_scoped_chapter_search": false,
+    "enable_same_story_sweep": false
+  },
+  "generator": {
+    "backend": "openai_compatible_api",
+    "api_base_url": "https://api.deepseek.com/chat/completions",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "model": "deepseek-flash",
+    "timeout": 120,
+    "max_tokens": 1536,
+    "temperature": 0.1,
+    "top_p": 1.0,
+    "response_format_json": false,
+    "prompt_appendix": false,
+    "extra_body": { "thinking": { "type": "disabled" } }
+  },
+  "inference": {
+    "pipeline_mode": "standard",
+    "max_retrieval_rounds": 2,
+    "prompt_evidence_top_k": 20,
+    "prompt_evidence_require_full_documents": true,
+    "enable_mmr": false,
+    "enable_pyramid_order": false,
+    "enable_evidence_pinning": false,
+    "enable_crag_refinement": false,
+    "self_consistency_samples": 1,
+    "conclusion_prompt_mode": "minimal",
+    "answer_grounding_mode": "quote",
+    "use_model_hypothesis": true,
+    "use_model_conclusion_generation": true,
+    "web_context": { "enabled": false }
+  }
+}

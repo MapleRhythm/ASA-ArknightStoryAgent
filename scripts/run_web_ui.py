@@ -467,4 +467,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Keep legacy helpers importable; the published UI has one fixed API profile.
+    from run_api_web import main as api_main
+    api_main()

@@ -65,6 +65,7 @@ class HypothesisGenerationMixin:
             max_retrieval_rounds=self.max_retrieval_rounds,
             prompt_evidence_top_k=self.prompt_evidence_top_k,
             prompt_evidence=self.prepare_prompt_evidence(question, current_hypothesis, evidence),
+            require_full_documents=getattr(self, "prompt_evidence_require_full_documents", False),
         )
         raw_output = self.generator.generate(
             prompt,
