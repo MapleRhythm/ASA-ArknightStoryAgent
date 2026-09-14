@@ -4,9 +4,19 @@ const health = {
   ok: true,
   ready: true,
   model: "deepseek-flash",
-  version: "api-v1.0.0",
+  version: "api-v1.1.0",
+  api_host: "api.deepseek.com",
+  thinking: false,
   checks: { api_key: true, index: true, embedding: true, dependencies: true },
   issues: [],
+};
+const apiSettings = {
+  ok: true,
+  api_base_url: "https://api.deepseek.com/chat/completions",
+  model: "deepseek-flash",
+  key_configured: true,
+  no_auth: false,
+  request_profile: "deepseek",
 };
 const source = {
   id: "act-test#chunk-0001",
@@ -29,6 +39,9 @@ const answer = {
 };
 
 async function setup(page, response = health) {
+  await page.route("**/api/settings", (route) =>
+    route.fulfill({ json: apiSettings }),
+  );
   await page.route("**/api/health", (route) =>
     route.fulfill({ json: response }),
   );
@@ -37,6 +50,222 @@ async function setup(page, response = health) {
     response.ready ? "配置就绪" : "待配置",
   );
 }
+
+test("custom API settings save without paid calls or persisted credentials", async ({
+  page,
+}, testInfo) => {
+  await setup(page);
+  let activeConfig = { ...apiSettings };
+  let paidRequests = 0;
+  const updates = [];
+  await page.route("**/api/chat", (route) => {
+    paidRequests++;
+    return route.abort();
+  });
+  await page.route("**/api/settings", (route) => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON();
+      updates.push(payload);
+      const { api_key, ...safe } = payload;
+      activeConfig = { ...safe, ok: true, key_configured: Boolean(api_key) };
+    }
+    return route.fulfill({ json: activeConfig });
+  });
+  await page.route("**/api/health", (route) =>
+    route.fulfill({
+      json: {
+        ...health,
+        model: activeConfig.model,
+        api_host: new URL(activeConfig.api_base_url).host,
+        thinking: activeConfig.request_profile === "deepseek" ? false : null,
+      },
+    }),
+  );
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#apiBaseUrl")).toHaveValue(
+    apiSettings.api_base_url,
+  );
+  await page.locator("#apiBaseUrl").fill("https://compatible.example/v1");
+  await page.locator("#apiModel").fill("custom/qa-model");
+  await expect(page.locator("#apiProfile")).toHaveValue("standard");
+  await page.locator("#apiKey").fill("synthetic-browser-credential");
+  await page.locator("#saveApiSettings").click();
+  await expect(page.locator("#apiSettingsStatus")).toContainText("已保存");
+  await expect(page.locator("#apiKey")).toHaveValue("");
+  await expect(page.locator("#keyState")).toContainText("不回显");
+  expect(updates).toEqual([
+    {
+      api_base_url: "https://compatible.example/v1",
+      model: "custom/qa-model",
+      api_key: "synthetic-browser-credential",
+      request_profile: "standard",
+      no_auth: false,
+    },
+  ]);
+  expect(paidRequests).toBe(0);
+  const storage = await page.evaluate(() =>
+    JSON.stringify({ ...localStorage, ...sessionStorage }),
+  );
+  expect(storage).not.toContain("synthetic-browser-credential");
+  expect(storage).not.toContain("compatible.example");
+  await page.screenshot({
+    path: testInfo.outputPath("custom-api-desktop.png"),
+    fullPage: true,
+  });
+  await page.locator("#closeSettings").click();
+  await expect(page.locator("#activeModel")).toHaveText("custom/qa-model");
+  await expect(page.locator("#apiPrivacy")).toContainText("compatible.example");
+  await page.reload();
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#apiModel")).toHaveValue("custom/qa-model");
+  await expect(page.locator("#apiKey")).toHaveValue("");
+});
+
+test("settings errors remain actionable and secrets clear on close", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/settings", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 400,
+          json: {
+            ok: false,
+            message: "API 地址已改变，请重新输入该接口的密钥；不会转发原密钥。",
+          },
+        })
+      : route.fulfill({ json: apiSettings }),
+  );
+  await page.locator("#settingsBtn").click();
+  await page.locator("#apiBaseUrl").fill("https://other.example/v1");
+  await page.locator("#apiModel").fill("another-model");
+  await page.locator("#saveApiSettings").click();
+  await expect(page.locator("#apiSettingsStatus")).toContainText(
+    "不会转发原密钥",
+  );
+  await expect(page.locator("#apiModel")).toHaveValue("another-model");
+  await page.locator("#apiKey").fill("synthetic-unsaved-credential");
+  await page.locator("#closeSettings").click();
+  await expect(page.locator("#apiKey")).toHaveValue("");
+});
+
+test("answers and export keep their own models across API changes", async ({
+  page,
+}) => {
+  await setup(page);
+  await mockChat(page);
+  await page.locator("#message").fill("第一问");
+  await page.locator("#sendBtn").click();
+  await expect(page.locator(".assistant .message-badge")).toHaveText(
+    "deepseek-flash",
+  );
+  await page.route("**/api/health", (route) =>
+    route.fulfill({
+      json: {
+        ...health,
+        model: "custom-new-model",
+        api_host: "other.example",
+        thinking: null,
+      },
+    }),
+  );
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#activeModel")).toHaveText("custom-new-model");
+  await page.locator("#closeSettings").click();
+  await mockChat(page, {
+    ...answer,
+    model: "custom-new-model",
+    version: "api-v1.1.0",
+  });
+  await page.locator("#message").fill("第二问");
+  await page.locator("#sendBtn").click();
+  await expect(page.locator(".assistant .message-badge")).toHaveText([
+    "deepseek-flash",
+    "custom-new-model",
+  ]);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#exportBtn").click();
+  const download = await downloadPromise;
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString("utf8");
+  expect(text).toContain("模型：deepseek-flash");
+  expect(text).toContain("模型：custom-new-model");
+  await page.reload();
+  await expect(page.locator(".assistant .message-badge")).toHaveText([
+    "deepseek-flash",
+    "custom-new-model",
+  ]);
+});
+
+test("mobile custom API form is reachable and supports explicit local no-auth", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page);
+  const updates = [];
+  await page.route("**/api/settings", (route) => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON();
+      updates.push(payload);
+      const { api_key, ...safe } = payload;
+      return route.fulfill({
+        json: { ok: true, ...safe, key_configured: false },
+      });
+    }
+    return route.fulfill({ json: apiSettings });
+  });
+  await page.locator("#healthBtn").click();
+  await page.locator("#apiBaseUrl").fill("http://localhost:8000/v1");
+  await page.locator("#apiModel").fill("local-test-model");
+  await page.locator("#apiNoAuth").check();
+  await expect(page.locator("#apiKey")).toBeDisabled();
+  await page.locator("#saveApiSettings").click();
+  await expect(page.locator("#apiSettingsStatus")).toContainText("已保存");
+  expect(updates[0].no_auth).toBe(true);
+  expect(updates[0].api_key).toBe("");
+  const bounds = await page.locator("#settingsDialog").boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  expect(
+    await page
+      .locator("#settingsDialog")
+      .evaluate((el) => el.scrollWidth <= el.clientWidth),
+  ).toBe(true);
+  await page.locator("#apiBaseUrl").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("custom-api-mobile.png"),
+    fullPage: true,
+  });
+});
+
+test("real browser settings route updates process memory without exposing the key", async ({
+  page,
+}) => {
+  // No model call: this test exercises the actual local settings HTTP route.
+  await page.goto("/");
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#apiBaseUrl")).not.toHaveValue("");
+  await page.locator("#apiBaseUrl").fill("https://browser-test.example/v1");
+  await page.locator("#apiModel").fill("browser-integration-model");
+  await page.locator("#apiKey").fill("synthetic-real-route-credential");
+  await page.locator("#saveApiSettings").click();
+  await expect(page.locator("#apiSettingsStatus")).toContainText("已保存");
+  await expect(page.locator("#apiKey")).toHaveValue("");
+  await expect(page.locator("#activeModel")).toHaveText(
+    "browser-integration-model",
+  );
+  const response = await page.request.get("/api/settings");
+  const text = await response.text();
+  expect(text).not.toContain("synthetic-real-route-credential");
+  expect(JSON.parse(text).model).toBe("browser-integration-model");
+  await page.reload();
+  await page.locator("#settingsBtn").click();
+  await expect(page.locator("#apiModel")).toHaveValue(
+    "browser-integration-model",
+  );
+});
 
 async function mockChat(page, result = answer) {
   await page.route("**/api/chat", (route) =>
@@ -178,14 +407,12 @@ test("Chinese IME enter does not submit and shift-enter adds a newline", async (
     return route.abort();
   });
   await page.locator("#message").fill("正在输入中文");
-  await page
-    .locator("#message")
-    .dispatchEvent("keydown", {
-      key: "Enter",
-      isComposing: true,
-      keyCode: 229,
-      bubbles: true,
-    });
+  await page.locator("#message").dispatchEvent("keydown", {
+    key: "Enter",
+    isComposing: true,
+    keyCode: 229,
+    bubbles: true,
+  });
   expect(calls).toBe(0);
   await page.locator("#message").press("End");
   await page.locator("#message").press("Shift+Enter");
@@ -248,7 +475,9 @@ test("mobile fits viewport, sidebar works and the composer remains reachable", a
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page);
   await expect(page.locator("#menuBtn")).toBeVisible();
-  expect(await page.locator("#chatScroll").evaluate((node) => node.scrollTop)).toBe(0);
+  expect(
+    await page.locator("#chatScroll").evaluate((node) => node.scrollTop),
+  ).toBe(0);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);

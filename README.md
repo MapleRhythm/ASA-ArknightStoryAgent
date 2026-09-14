@@ -2,11 +2,13 @@
 
 ASA（ArknightStoryAgent）是《明日方舟》的剧情研读助手：先检索原文，再回答人物关系、事件因果和剧情细节。
 
-## 当前交付：API 固定版 `api-v1.0.0`
+## 当前交付：API 固定版 `api-v1.1.0`（支持自定义接口）
 
 默认网页现在使用 **DeepSeek Flash API**，不加载本地 4B，也不在失败时切换模型。
 前端提供会话记录、中文输入法支持、复制与 Markdown 导出、完整原文面板、处理状态、
-停止与手动重试，并适配手机屏幕。网页不收集密钥。
+停止与手动重试，并适配手机屏幕。
+「连接与配置」支持自定义 **Chat Completions 接口地址、模型 ID 和 API 密钥**。
+网页提交的密钥只保留在本次服务进程内存，不写文件、不存入浏览器、不回显。
 
 ```bash
 bash scripts/setup_cpu_api_no_reranker.sh
@@ -18,6 +20,9 @@ bash scripts/run_web_ui.sh --ask-key
 
 终端会隐藏输入密钥，浏览器打开 `http://127.0.0.1:7860`。
 也可以提前在服务进程环境中设置 `DEEPSEEK_API_KEY`，省略 `--ask-key`。
+也可不带 `--ask-key` 启动后，直接在网页「连接与配置 → API 连接」填写并保存。
+切换服务商时选「通用兼容」；改地址须重新输入该接口的密钥，不会转发旧密钥。
+Base URL 会自动补齐 `/chat/completions`；配置在重启服务后恢复启动默认值。
 缺少索引、模型或密钥时，网页会显示准备步骤，不会把缺配置误报成“服务就绪”。
 
 固定配置：`configs/runtime_api_stable.json`。命令行入口：
@@ -26,7 +31,8 @@ bash scripts/run_web_ui.sh --ask-key
 bash scripts/run_api_stable.sh "霜星为什么不再压抑自己的力量？"
 ```
 
-版本约束与验证说明见 [API 固定版说明](docs/API_RELEASE_V1.md)。
+自定义接口、启动参数与安全范围见 [API v1.1 说明](docs/API_RELEASE_V1_1.md)；
+[v1.0 历史说明](docs/API_RELEASE_V1.md) 保留旧版行为。
 该发布版使用 CPU 混合检索、无重排器；它不是远端 GPU 评测的同一份管线，
 **不能直接套用历史20题的70%正确率**。完整原文指选中的检索 chunk，不是整章文本。
 
@@ -145,12 +151,20 @@ bash scripts/run_cpu_api_no_reranker.sh "炎景公主一事具体指什么"
 configs/runtime_cpu_api_no_reranker.json
 ```
 
-### 5. Web UI（当前固定为 DeepSeek API）
+### 5. Web UI（API-only，默认 DeepSeek，可自定义）
 
 准备好 API 环境、检索模型和索引后，可启动本地前端（不再切换本地 4B）：
 
 ```bash
 bash scripts/run_web_ui.sh --host 127.0.0.1 --port 7860 --ask-key
+```
+
+使用其他兼容服务，也可通过启动参数指定（密钥隐藏输入，不放命令参数）：
+
+```bash
+bash scripts/run_web_ui.sh \
+  --api-base-url https://your-provider.example/v1 \
+  --model your-model-id --request-profile standard --ask-key
 ```
 
 浏览器打开：

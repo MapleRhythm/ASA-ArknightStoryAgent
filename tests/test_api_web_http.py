@@ -11,7 +11,7 @@ import run_api_web as web
 
 @pytest.fixture
 def server(monkeypatch):
-    monkeypatch.setattr(web, "health_payload", lambda: {
+    monkeypatch.setattr(web, "health_payload", lambda connection=None: {
         "ok": True, "ready": True, "model": "deepseek-flash", "checks": {}, "issues": [],
     })
     instance = web.ASAWebServer(("127.0.0.1", 0))
@@ -63,7 +63,7 @@ def test_request_overrides_never_reach_inference(server, monkeypatch):
 
 
 def test_missing_setup_is_503_not_a_successful_answer(server, monkeypatch):
-    monkeypatch.setattr(web, "health_payload", lambda: {"ready": False, "issues": [{"id": "api_key"}]})
+    monkeypatch.setattr(web, "health_payload", lambda connection=None: {"ready": False, "issues": [{"id": "api_key"}]})
     status, _, body = request(server, "POST", "/api/chat", {"message": "问题"})
     assert status == 503
     assert json.loads(body)["ok"] is False
@@ -79,7 +79,7 @@ def test_no_invisible_queue_when_inference_is_busy(server):
 
 def test_complete_ndjson_response_and_slot_release(server, monkeypatch):
     received = []
-    def events(payload, timeout, cancelled=None):
+    def events(payload, timeout, cancelled=None, connection=None):
         received.append(payload)
         yield {"type": "stage", "message": "检索"}
         yield {"type": "result", "ok": True, "answer": "完整答案", "evidence": []}
@@ -96,7 +96,7 @@ def test_complete_ndjson_response_and_slot_release(server, monkeypatch):
 
 def test_real_subprocess_stdout_is_parsed_without_loading_models(monkeypatch):
     program = 'import json; print("API ready"); print(json.dumps({"answer":"mock result","evidence":[]}))'
-    monkeypatch.setattr(web, "build_command", lambda payload: [sys.executable, "-u", "-c", program])
+    monkeypatch.setattr(web, "build_command", lambda payload, connection=None: [sys.executable, "-u", "-c", program])
     events = list(web.inference_events({"message": "测试", "history": []}, 5))
     assert events[-1]["type"] == "result"
     assert events[-1]["answer"] == "mock result"
@@ -110,7 +110,7 @@ def test_closing_stream_stops_only_its_own_subprocess(monkeypatch):
         children.append(child)
         return child
     monkeypatch.setattr(web.subprocess, "Popen", track)
-    monkeypatch.setattr(web, "build_command", lambda payload: [
+    monkeypatch.setattr(web, "build_command", lambda payload, connection=None: [
         sys.executable, "-u", "-c", 'import time; print("ready",flush=True); time.sleep(8)',
     ])
     stream = web.inference_events({"message": "测试", "history": []}, 5)
@@ -121,7 +121,7 @@ def test_closing_stream_stops_only_its_own_subprocess(monkeypatch):
 
 
 def test_timeout_is_an_error_and_stops_the_request_process(monkeypatch):
-    monkeypatch.setattr(web, "build_command", lambda payload: [
+    monkeypatch.setattr(web, "build_command", lambda payload, connection=None: [
         sys.executable, "-u", "-c", 'import time; print("ready",flush=True); time.sleep(8)',
     ])
     events = list(web.inference_events({"message": "测试", "history": []}, 0.1))

@@ -119,10 +119,10 @@
                 <use href="#i-lock" />
               </svg>
             </div>
-            <strong>DeepSeek Flash</strong>
+            <strong id="activeModel">deepseek-flash</strong>
             <p>本地检索 · 云端生成<br />每轮最多 20 条完整证据</p>
             <span class="edition-version"
-              >API V1.0.0 <span>NON-THINKING</span></span
+              >API V1.1.0 <span id="activeProfile">NON-THINKING</span></span
             >
           </div>
           <button
@@ -163,7 +163,12 @@
             </div>
           </div>
           <div class="topbar-actions">
-            <button id="healthBtn" class="connection-state" type="button" aria-label="查看连接状态与配置">
+            <button
+              id="healthBtn"
+              class="connection-state"
+              type="button"
+              aria-label="查看连接状态与配置"
+            >
               <span id="healthDot" class="status-dot"></span
               ><span id="healthLabel">检查配置中</span>
             </button>
@@ -324,8 +329,9 @@
               ></textarea>
               <div class="composer-toolbar">
                 <div class="composer-model">
-                  <svg class="icon"><use href="#i-spark" /></svg>DeepSeek Flash
-                  <span>·</span> 证据优先
+                  <svg class="icon"><use href="#i-spark" /></svg
+                  ><span id="composerModel">deepseek-flash</span>
+                  <span class="model-divider">·</span> 证据优先
                 </div>
                 <div class="send-area">
                   <span id="charCount" class="char-count">0 / 4000</span
@@ -350,7 +356,8 @@
               </div>
             </form>
             <div class="composer-footer">
-              <span>问题及证据将发送至 DeepSeek · 对话仅保存在此浏览器</span
+              <span id="apiPrivacy"
+                >问题及证据将发送至所配置的 API · 对话仅保存在此浏览器</span
               ><span class="keyboard-tip"
                 ><kbd>Enter</kbd> 发送 <span>·</span>
                 <kbd>Shift ↵</kbd> 换行</span
@@ -414,15 +421,90 @@
           <svg class="icon"><use href="#i-close" /></svg>
         </button>
       </div>
-      <p>API 版已固定，不需要手动启动本地 4B 模型。</p>
+      <p>检索流程保持固定，生成 API 由你选择。不需要启动本地 4B。</p>
+      <form id="apiSettingsForm" autocomplete="off">
+        <fieldset id="apiSettingsFields" disabled>
+          <legend>API 连接 <span>CHAT COMPLETIONS</span></legend>
+          <div class="settings-field">
+            <label for="apiBaseUrl">接口地址</label>
+            <input
+              id="apiBaseUrl"
+              name="endpoint"
+              type="url"
+              required
+              maxlength="2048"
+              placeholder="https://your-provider.example/v1"
+              spellcheck="false"
+              aria-describedby="endpointHint"
+            />
+            <small id="endpointHint"
+              >可填 Base URL 或完整 /chat/completions 地址；远程接口须使用
+              HTTPS。</small
+            >
+          </div>
+          <div class="settings-grid">
+            <div class="settings-field">
+              <label for="apiModel">模型 ID</label>
+              <input
+                id="apiModel"
+                name="model"
+                required
+                maxlength="200"
+                spellcheck="false"
+                placeholder="服务商提供的模型名称"
+              />
+            </div>
+            <div class="settings-field">
+              <label for="apiProfile">请求格式</label>
+              <select id="apiProfile" name="profile">
+                <option value="standard">通用兼容 · 服务商默认</option>
+                <option value="deepseek">DeepSeek · 非思考</option>
+              </select>
+            </div>
+          </div>
+          <div class="settings-field">
+            <label for="apiKey"
+              >API 密钥 <span id="keyState">未配置</span></label
+            >
+            <input
+              id="apiKey"
+              type="password"
+              maxlength="4096"
+              autocomplete="new-password"
+              spellcheck="false"
+              placeholder="输入此接口的密钥"
+              aria-describedby="keyHint"
+            />
+            <small id="keyHint"
+              >同一地址留空可保留已有密钥；换地址须重新输入。保存后清空输入框，不回显密钥。</small
+            >
+          </div>
+          <label class="settings-checkbox">
+            <input id="apiNoAuth" type="checkbox" />
+            本机接口无需密钥（仅 localhost / 回环 IP）
+          </label>
+          <div class="settings-actions">
+            <button id="saveApiSettings" class="primary-button" type="submit">
+              保存 API 配置
+            </button>
+            <button id="defaultApiSettings" class="text-button" type="button">
+              填入 DeepSeek 默认值
+            </button>
+          </div>
+        </fieldset>
+        <p
+          id="apiSettingsStatus"
+          class="settings-status"
+          role="status"
+          aria-live="polite"
+        >
+          正在读取 API 配置…
+        </p>
+      </form>
       <dl class="profile">
         <div>
-          <dt>生成模型</dt>
-          <dd>deepseek-flash</dd>
-        </div>
-        <div>
           <dt>推理方式</dt>
-          <dd>非思考 · 最多两轮检索</dd>
+          <dd>证据优先 · 最多两轮检索</dd>
         </div>
         <div>
           <dt>证据输入</dt>
@@ -434,7 +516,7 @@
         </div>
         <div>
           <dt>固定版本</dt>
-          <dd>api-v1.0.0</dd>
+          <dd>api-v1.1.0</dd>
         </div>
       </dl>
       <h3>本地准备检查</h3>
@@ -443,8 +525,10 @@
         <svg class="icon"><use href="#i-retry" /></svg>重新检查
       </button>
       <p class="privacy-note">
-        这里仅检查本地配置，不会请求付费
-        API。密钥只从服务端环境变量读取，不进入网页或对话存储。停止请求不能保证服务商取消已接收的调用或费用。
+        保存与检查不会调用付费
+        API，也不验证服务商连通性。配置与密钥只保留在本次服务进程内存，
+        不写入文件或浏览器存储；重启后恢复启动配置。只有发送问题时，才会向所选接口发送问题、
+        最近对话和检索证据。请仅使用可信接口。停止请求不能保证服务商取消已接收的调用或费用。
       </p>
     </dialog>
     <dialog

@@ -1,6 +1,6 @@
 {
   "release": {
-    "version": "api-v1.0.0",
+    "version": "api-v1.1.0",
     "description": "API-only release with local CPU retrieval; not the remote GPU benchmark configuration."
   },
   "retrieval": {

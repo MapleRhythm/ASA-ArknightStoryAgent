@@ -16,6 +16,10 @@ let lastHealth = null;
 let sourceItems = [];
 let toastTimer;
 let elapsedTimer;
+let apiSettings = null;
+let settingsPending = false;
+let settingsSaving = false;
+let settingsLoadId = 0;
 
 function readStorage(key) {
   try {
@@ -231,7 +235,14 @@ function renderMessage(message, index) {
     document.createTextNode(message.role === "user" ? "博士" : "ASA"),
   );
   if (message.role === "assistant")
-    heading.append(element("span", "message-badge", "DEEPSEEK FLASH"));
+    heading.append(
+      element(
+        "span",
+        "message-badge",
+        message.model ||
+          (message.status === "error" ? "API" : "deepseek-flash"),
+      ),
+    );
   article.append(heading);
   const body = element("div", "message-body");
   if (message.role === "user" || message.status === "error")
@@ -286,7 +297,10 @@ function renderConversation() {
   $("#sourceCount").textContent = String(sourceItems.length);
   renderSessions();
   if (active.messages.length) scrollToLatest();
-  else requestAnimationFrame(() => { $("#chatScroll").scrollTop = 0; });
+  else
+    requestAnimationFrame(() => {
+      $("#chatScroll").scrollTop = 0;
+    });
 }
 
 function scrollToLatest() {
@@ -297,6 +311,7 @@ function scrollToLatest() {
 
 function setBusy(value) {
   busy = value;
+  updateSettingsControls();
   input.readOnly = value;
   $("#sendBtn").hidden = value;
   $("#stopBtn").hidden = !value;
@@ -413,6 +428,12 @@ async function checkHealth() {
     if (!response.ok) throw new Error("health");
     const data = await response.json();
     lastHealth = data;
+    $("#activeModel").textContent = data.model || "API";
+    $("#composerModel").textContent = data.model || "API";
+    $("#activeProfile").textContent =
+      data.thinking === false ? "NON-THINKING" : "CUSTOM API";
+    $("#apiPrivacy").textContent =
+      `问题及证据将发送至 ${data.api_host || "所配置的 API"} · 对话仅保存在此浏览器`;
     ready = data.ready === true;
     $("#healthLabel").textContent = ready ? "配置就绪" : "待配置";
     $("#healthDot").className = `status-dot${ready ? " ready" : ""}`;
@@ -454,6 +475,103 @@ function showSettings() {
   closeSidebar();
   if (!$("#settingsDialog").open) $("#settingsDialog").showModal();
   checkHealth();
+  loadApiSettings();
+}
+
+function updateSettingsControls() {
+  $("#apiSettingsFields").disabled = settingsPending || busy || !apiSettings;
+  $("#apiKey").disabled = $("#apiNoAuth").checked;
+}
+
+function fillApiSettings(data) {
+  apiSettings = data;
+  $("#apiBaseUrl").value = data.api_base_url;
+  $("#apiModel").value = data.model;
+  $("#apiProfile").value = data.request_profile;
+  $("#apiNoAuth").checked = data.no_auth;
+  $("#apiKey").value = "";
+  $("#keyState").textContent = data.no_auth
+    ? "无需密钥"
+    : data.key_configured
+      ? "已配置 · 不回显"
+      : "未配置";
+  $("#apiKey").placeholder = data.key_configured
+    ? "留空保留当前地址的密钥"
+    : data.no_auth
+      ? "本机接口已选择无需密钥"
+      : "输入此接口的密钥";
+}
+
+async function loadApiSettings() {
+  if (settingsSaving) return;
+  const loadId = ++settingsLoadId;
+  settingsPending = true;
+  updateSettingsControls();
+  $("#apiSettingsStatus").textContent = "正在读取 API 配置…";
+  try {
+    const response = await fetch("/api/settings", {
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok)
+      throw new Error(data.message || "无法读取 API 配置。");
+    if (loadId !== settingsLoadId) return;
+    fillApiSettings(data);
+    $("#apiSettingsStatus").textContent = busy
+      ? "正在回答问题，结束或停止后可修改配置。"
+      : "仅对当前服务生效；保存不会发起模型调用。";
+  } catch (error) {
+    if (loadId !== settingsLoadId) return;
+    apiSettings = null;
+    $("#apiSettingsStatus").textContent =
+      error.message || "读取失败，请重新打开设置。";
+  } finally {
+    if (loadId === settingsLoadId) {
+      settingsPending = false;
+      updateSettingsControls();
+    }
+  }
+}
+
+async function saveApiSettings(event) {
+  event.preventDefault();
+  if (settingsPending || busy || !apiSettings) return;
+  settingsPending = true;
+  settingsSaving = true;
+  const payload = {
+    api_base_url: $("#apiBaseUrl").value.trim(),
+    model: $("#apiModel").value.trim(),
+    api_key: $("#apiKey").value,
+    request_profile: $("#apiProfile").value,
+    no_auth: $("#apiNoAuth").checked,
+  };
+  updateSettingsControls();
+  $("#apiSettingsStatus").textContent = "正在保存至本地服务内存…";
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok)
+      throw new Error(data.message || "保存失败，请重试。");
+    fillApiSettings(data);
+    $("#apiSettingsStatus").textContent =
+      "已保存，仅本次服务有效。尚未验证 API 连通性。";
+    notify("API 配置已保存；未调用模型。");
+    await checkHealth();
+  } catch (error) {
+    $("#apiSettingsStatus").textContent =
+      error.message || "保存失败，请重新输入密钥后重试。";
+  } finally {
+    payload.api_key = "";
+    $("#apiKey").value = "";
+    settingsPending = false;
+    settingsSaving = false;
+    updateSettingsControls();
+  }
 }
 
 async function sendQuestion(question) {
@@ -505,6 +623,8 @@ async function sendQuestion(question) {
     return;
   }
   const trimmed = question.trim();
+  const requestModel = lastHealth?.model || "API";
+  const requestVersion = lastHealth?.version || "api-v1.1.0";
   active.messages.push({ role: "user", content: trimmed, status: "complete" });
   if (active.messages.length === 1) active.title = trimmed;
   input.value = "";
@@ -569,6 +689,9 @@ async function sendQuestion(question) {
           evidence: Array.isArray(event.evidence) ? event.evidence : [],
           elapsed: Number(event.elapsed),
           rounds: event.rounds,
+          model: typeof event.model === "string" ? event.model : requestModel,
+          version:
+            typeof event.version === "string" ? event.version : requestVersion,
         });
         completed = true;
       }
@@ -601,6 +724,8 @@ async function sendQuestion(question) {
         status: "error",
         content: text,
         evidence: [],
+        model: requestModel,
+        version: requestVersion,
       });
     }
     controller.abort();
@@ -610,6 +735,7 @@ async function sendQuestion(question) {
     pending.remove();
     controller = null;
     setBusy(false);
+    updateSettingsControls();
     persist();
     renderConversation();
     input.focus();
@@ -645,11 +771,17 @@ function exportChat() {
   const body = [
     "# ASA 剧情研读记录",
     "",
-    "版本：api-v1.0.0 · deepseek-flash",
+    "导出格式：ASA API · 每条回答保留当时使用的模型",
     "",
     ...active.messages.flatMap((m) => [
       `## ${m.role === "user" ? "博士" : "ASA"}${m.status === "error" ? "（未完成）" : ""}`,
       "",
+      ...(m.role === "assistant"
+        ? [
+            `模型：${m.model || "deepseek-flash"} · 版本：${m.version || "api-v1.0.0"}`,
+            "",
+          ]
+        : []),
       m.content,
       "",
       ...(m.evidence || []).flatMap((e, i) => [
@@ -707,6 +839,34 @@ $("#closeSettings").addEventListener("click", () =>
   $("#settingsDialog").close(),
 );
 $("#refreshHealth").addEventListener("click", checkHealth);
+$("#apiSettingsForm").addEventListener("submit", saveApiSettings);
+$("#apiNoAuth").addEventListener("change", () => {
+  $("#apiKey").value = "";
+  updateSettingsControls();
+});
+$("#apiBaseUrl").addEventListener("change", () => {
+  // Never move a typed credential to another destination, even before saving.
+  $("#apiKey").value = "";
+  $("#apiProfile").value = "standard";
+  $("#apiSettingsStatus").textContent =
+    "地址已编辑，请核对请求格式并重新输入此接口的密钥。";
+  $("#keyState").textContent = "请核对新地址";
+  $("#apiKey").placeholder = "更换地址后须重新输入密钥";
+});
+$("#defaultApiSettings").addEventListener("click", () => {
+  $("#apiBaseUrl").value = "https://api.deepseek.com/chat/completions";
+  $("#apiModel").value = "deepseek-flash";
+  $("#apiProfile").value = "deepseek";
+  $("#apiNoAuth").checked = false;
+  $("#apiKey").value = "";
+  $("#keyState").textContent = "请核对地址与密钥";
+  $("#apiSettingsStatus").textContent =
+    "已填入默认值，尚未保存。若更换地址，请重新输入 DeepSeek 密钥。";
+  updateSettingsControls();
+});
+$("#settingsDialog").addEventListener("close", () => {
+  $("#apiKey").value = "";
+});
 $("#exportBtn").addEventListener("click", exportChat);
 $("#deleteBtn").addEventListener("click", () => $("#deleteDialog").showModal());
 $("#deleteSidebar").addEventListener("click", () => {

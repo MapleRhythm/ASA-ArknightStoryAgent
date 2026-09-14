@@ -14,7 +14,7 @@ import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -279,6 +279,12 @@ def extract_responses_text(response: dict[str, Any]) -> str:
     raise RuntimeError(f"API returned no text: {json.dumps(response, ensure_ascii=False)[:1000]}")
 
 
+class NoAPIRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward a credential or evidence to a redirected endpoint.
+        return None
+
+
 class OpenAICompatibleAPIRunner:
     backend_name = "openai-compatible-api"
 
@@ -335,7 +341,7 @@ class OpenAICompatibleAPIRunner:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(self.api_base_url, data=data, headers=headers, method="POST")
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with build_opener(NoAPIRedirect).open(request, timeout=self.timeout) as response:
                 body = response.read().decode("utf-8")
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -541,6 +547,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--api-base-url", type=str, default=None)
     parser.add_argument("--api-key-env", type=str, default=None)
     parser.add_argument("--api-key", type=str, default=None)
+    parser.add_argument("--allow-no-api-key", action="store_true", help="Explicitly allow an unauthenticated API.")
+    parser.add_argument("--api-extra-body", type=json.loads, default=None,
+                        help="JSON object replacing provider-specific request fields.")
     parser.add_argument("--model", type=str, default=None)
     parser.add_argument("--timeout", type=float, default=None)
     parser.add_argument("--max-tokens", type=int, default=None)
@@ -720,9 +729,12 @@ def main() -> None:
 
     api_key_env = str(resolve_config_value(args.api_key_env, generator_cfg, "api_key_env", "OPENAI_API_KEY"))
     api_key = args.api_key if args.api_key is not None else os.environ.get(api_key_env)
-    if not api_key:
+    if not api_key and not args.allow_no_api_key:
         raise SystemExit(f"Missing API key. Set environment variable {api_key_env} or pass --api-key.")
-    validate_api_key(api_key, api_key_env)
+    if api_key:
+        validate_api_key(api_key, api_key_env)
+    if args.api_extra_body is not None and not isinstance(args.api_extra_body, dict):
+        raise SystemExit("--api-extra-body must be a JSON object.")
     run_log_dir = None
     if not args.no_save_run:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -746,7 +758,9 @@ def main() -> None:
         temperature=float(resolve_config_value(args.temperature, generator_cfg, "temperature", 0.1)),
         top_p=float(resolve_config_value(args.top_p, generator_cfg, "top_p", 0.9)),
         response_format_json=bool(generator_cfg.get("response_format_json", True)) and not args.no_json_response_format,
-        extra_body=generator_cfg.get("extra_body") if isinstance(generator_cfg.get("extra_body"), dict) else None,
+        extra_body=args.api_extra_body if args.api_extra_body is not None else (
+            generator_cfg.get("extra_body") if isinstance(generator_cfg.get("extra_body"), dict) else None
+        ),
         request_log_dir=run_log_dir,
         prompt_appendix=bool(generator_cfg.get("prompt_appendix", True)),
     )
