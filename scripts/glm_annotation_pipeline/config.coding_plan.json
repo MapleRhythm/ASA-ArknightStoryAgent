@@ -1,0 +1,16 @@
+{
+  "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+  "model": "glm-5.3",
+  "reasoning_effort": "high",
+  "max_output_tokens": 8192,
+  "timeout": 180,
+  "workers": 1,
+  "attempts": 3,
+  "max_api_calls": 400,
+  "max_total_tokens": 6000000,
+  "review_fraction": 0.1,
+  "seed": 20261013,
+  "request_interval": 1,
+  "max_consecutive_failures": 5,
+  "backoff_seconds": 2
+}
