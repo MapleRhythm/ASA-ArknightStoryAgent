@@ -1,0 +1,17 @@
+{
+  "counts": {
+    "scope_controlled": 240,
+    "natural_controls": 124,
+    "synthetic_controls": 512
+  },
+  "rows": 876,
+  "matrix_sha256": "58949e58b7eb430bcf6a35c349c2b1bc10d9af43898a6cb6a77737ba33d54f26",
+  "builder_sha256": "48263435688be5c9b355d938853512b0d820d26df3304f9e54a614374fdfaeba",
+  "prior_inputs": {
+    "natural_controls": "3c3b1065bed97ff8b2dafa7982c729f11f21c236c2aa1a7e8681d1d894e86a59",
+    "synthetic_controls": "9b7cea10ba4e7263baf12fe0d99a8afedee2ea22e8c58ce1336868de120d2df2"
+  },
+  "nonthinking": true,
+  "train": false,
+  "note": "Development mechanism experiment, not held-out project accuracy or training improvement"
+}

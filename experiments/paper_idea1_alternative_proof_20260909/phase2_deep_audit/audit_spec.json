@@ -1,0 +1,128 @@
+{
+  "schema": "alternative_proof_audit_v2",
+  "reviewer": "Codex source-text audit; not independent human review",
+  "development_only": true,
+  "source_hashes": {
+    "input/frozen_cases.json": "d26d89f83b3c97e0004eb312ed204b028d119b0d11dbd66606da637d9613075d",
+    "data/pilot_matrix.json": "c533fa83b2b2b7688ca283d8ac0ac4a365b1705fe162651a3982383df60b577a",
+    "runs/nonthinking_vllm/qwen35_4b_base.predictions.json": "daac8e3b0e25bf1015a5e8ea15024c7871be9857b8ade0ff3af272b44a53e4bd",
+    "runs/nonthinking_vllm/clean_sft.predictions.json": "694f94b9e355b7f68b5948b4f1e4550b0aabee091fb8ef20963323dc325fc969",
+    "audits/semantic_review.json": "71aad86acdfd1e2dac68bca34f91d69b400ba5d1c89e85989c453a2f0ceb33c0"
+  },
+  "cases": {
+    "sword_identity": {
+      "required_atoms": [
+        "女子是剑化身的伥。",
+        "她化身前的剑属于题中剑客。"
+      ],
+      "optional_atoms": [
+        "剑名为渡魂剑：只有 chunk-0016 在此冻结池中直接支持。",
+        "镇中神秘力量令器物生灵：只有 chunk-0016 支持。"
+      ],
+      "positive_status": "sufficient",
+      "broken_status": "insufficient",
+      "context_addition": "distractor",
+      "issues": [
+        "旧复合 fact 同时要求剑名、成因、身份和归属，却把 chunk-0020 标成全量支持；该段没有剑名和镇中力量成因。",
+        "hypothesis.keywords 有12项，含答案/证据片段与无法离开、她取名等歧义片段；不是 question-only 输入。",
+        "clean-SFT 在 proof_a 捏造剑客是女子存在根源，并反转赠名方向；尚不能断言由 hypothesis 因果导致。"
+      ]
+    },
+    "rosmontis_comparison": {
+      "required_atoms": [
+        "阿米娅不愿与人为敌，即使被迫战斗。",
+        "迷迭香主动承担战斗责任、坚持任务。"
+      ],
+      "optional_atoms": [
+        "两人都保护他人、迷迭香的精英干员考核和能力描述不是回答差异的必要独立事实。"
+      ],
+      "positive_status": "sufficient",
+      "broken_status": "insufficient",
+      "context_addition": "distractor",
+      "issues": [
+        "A/B 相邻段有大段逐字重合，不能计为独立两跳证明。",
+        "broken 段支持法术能力差异，不支持完整的战斗意愿比较。",
+        "旧协议检查只识别归一化后完全重复，不能证明不存在近义重复或不必要事实。"
+      ]
+    },
+    "banshee_target": {
+      "required_atoms": [
+        "寻找对象为娜斯提。",
+        "证据中的寻人主体能够与题目所指的虚弱女妖消歧对应。"
+      ],
+      "optional_atoms": [
+        "母女关系是支持/消歧信息，不是用户问题另行要求的答案槽位。"
+      ],
+      "positive_status": "unknown",
+      "broken_status": "insufficient",
+      "context_addition": "potential_identity_bridge",
+      "issues": [
+        "A 讲那位女士，B 讲拂哀菈；冻结证据未显式给出虚弱女妖与拂哀菈的别名对应。",
+        "允许场景共指的阅读可接受娜斯提，但严格证据绑定的桥接规则尚未固定，因此暂不将五个正状态作为训练 gold。",
+        "所谓 distractor 明确提供虚弱女妖/骸骨荒原/寻找她的场景，可能是有用身份桥接，不是已证明无关的干扰。"
+      ]
+    },
+    "freda_attribution": {
+      "required_atoms": [
+        "镇民指控的侧重是顺从、依附萨卡兹。",
+        "威尔辩护的侧重是妥协换取镇民存活；是汤姆指控、威尔辩护，不可反转主体。"
+      ],
+      "optional_atoms": [
+        "父亲反抗并付出代价是额外成因，chunk-0012 不完整支持这条因果。",
+        "芙蕾达以自由换生存的自述支持动机，但不应无条件当成每个镇民实际动机的逐字证明。"
+      ],
+      "positive_status": "sufficient",
+      "broken_status": "unknown",
+      "context_addition": "scene_context",
+      "issues": [
+        "旧 fact 2 将父亲反抗的因果强加给 B；B 仅提牺牲及自由换生存。",
+        "题目本身已经给出镇民指控/威尔保护的两种立场；删除 chunk-0003 不等于问题的原因解释必然无法回答。",
+        "必须固定题设是否可作推理前提及是否需要逐事实重新引用题设。当前 prompt 没有解决这一评分歧义。"
+      ]
+    }
+  },
+  "semantic_errata": [
+    {
+      "reader": "clean_sft",
+      "case": "sword_identity",
+      "condition": "proof_b",
+      "issue": "旧 complete 判定过宽：两句都只说女子是剑客的剑，没有明确给出剑化身的伥；两句还构成近义重复。不能保留为已认证完整成功。",
+      "disposition": "re_review_required"
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "case": "sword_identity",
+      "condition": "proof_a",
+      "issue": "旧说明遗漏关键方向错误：输出写意外失去人类形态、成为剑的灵识，原文是器物化身成人形的伥。",
+      "disposition": "confirmed_factual_error"
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "case": "freda_attribution",
+      "condition": "proof_a",
+      "issue": "旧审阅说明声称输出捏造芙蕾达认为威尔是叛徒；本条实际输出没有这句话。实际错误是把指控归给威尔，并反转谁相信萨卡兹承诺。",
+      "disposition": "review_note_wrong_output_attribution"
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "case": "freda_attribution",
+      "condition": "dual_proof",
+      "issue": "旧说明再次声称输出芙蕾达认为威尔是叛徒；本条没有该表达。实际输出把威尔写成指控方。",
+      "disposition": "review_note_wrong_output_attribution"
+    },
+    {
+      "reader": "qwen35_4b_base",
+      "case": "freda_attribution",
+      "condition": "proof_b",
+      "issue": "旧说明笼统归为复合事实引用不完整，像是沿用了 clean-SFT 的理由；实际应重点审阅末条不愿相信传言中的萨卡兹的解释是否改写了原文因果。",
+      "disposition": "re_review_required"
+    },
+    {
+      "reader": "clean_sft",
+      "case": "sword_identity",
+      "condition": "renumbered_b_with_distractor",
+      "issue": "旧报告称本状态回答、末轮弃答；原始 next_action 实为 retrieve_more。不能作为 answer→abstain 的例子。",
+      "disposition": "report_action_misstatement"
+    }
+  ]
+}

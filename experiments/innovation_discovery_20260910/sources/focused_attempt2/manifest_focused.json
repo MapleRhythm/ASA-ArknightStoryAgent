@@ -1,0 +1,1346 @@
+[
+  {
+    "key": "2024.tacl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2024.tacl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:14:39.016592+08:00",
+    "status": "retrieved",
+    "sha256": "442f27b06e0a51979653beaece4869a282bc2856e55079efe013e03224bd6450",
+    "file": "sources/focused_attempt2/2024.tacl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2024.tacl-1.49",
+        "title": "Can Authorship Attribution Models Distinguish Speakers in Speech Transcripts?",
+        "authors": [
+          "Cristina Aggazzotti",
+          "Nicholas Andrews",
+          "Elizabeth Allyn Smith"
+        ],
+        "abstract": "Authorship verification is the task of determining if two distinct writing samples share the same author and is typically concerned with the attribution of written text. In this paper, we explore the attribution of transcribed speech, which poses novel challenges. The main challenge is that many stylistic features, such as punctuation and capitalization, are not informative in this setting. On the other hand, transcribed speech exhibits other patterns, such as filler words and backchannels (e.g., um, uh-huh), which may be characteristic of different speakers. We propose a new benchmark for speaker attribution focused on human-transcribed conversational speech transcripts. To limit spurious associations of speakers with topic, we employ both conversation prompts and speakers participating in the same conversation to construct verification trials of varying difficulties. We establish the state of the art on this new benchmark by comparing a suite of neural and non-neural baselines, finding that although written text attribution models achieve surprisingly good performance in certain settings, they perform markedly worse as conversational topic is increasingly controlled. We present analyses of the impact of transcription style on performance as well as the ability of fine-tuning on speech transcripts to improve performance.1",
+        "url": "https://aclanthology.org/2024.tacl-1.49/"
+      }
+    ]
+  },
+  {
+    "key": "2025.tacl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2025.tacl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:14:39.030918+08:00",
+    "status": "retrieved",
+    "sha256": "1b18d62c643c94aea1b954c2a71bbd1bc9c898fa65049b85de0db4fe3f84d2e9",
+    "file": "sources/focused_attempt2/2025.tacl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2025.tacl-1.30",
+        "title": "Understanding Epistemic Language with a Language-augmented Bayesian Theory of Mind",
+        "authors": [
+          "Lance Ying",
+          "Tan Zhi-Xuan",
+          "Lionel Wong",
+          "Vikash Mansinghka",
+          "Joshua B. Tenenbaum"
+        ],
+        "abstract": "How do people understand and evaluate claims about others’ beliefs, even though these beliefs cannot be directly observed? In this paper, we introduce a cognitive model of epistemic language interpretation, grounded in Bayesian inferences about other agents’ goals, beliefs, and intentions: a language-augmented Bayesian theory-of-mind (LaBToM). By translating natural language into an epistemic “language-of-thought” with grammar-constrained LLM decoding, then evaluating these translations against the inferences produced by inverting a generative model of rational action and perception, LaBToM captures graded plausibility judgments of epistemic claims. We validate our model in an experiment where participants watch an agent navigate a maze to find keys hidden in boxes needed to reach their goal, then rate sentences about the agent’s beliefs. In contrast with multimodal LLMs (GPT-4o, Gemini Pro) and ablated models, our model correlates highly with human judgments for a wide range of expressions, including modal language, uncertainty expressions, knowledge claims, likelihood comparisons, and attributions of false belief.",
+        "url": "https://aclanthology.org/2025.tacl-1.30/"
+      },
+      {
+        "id": "2025.tacl-1.35",
+        "title": "REAL Sampling: Boosting Factuality and Diversity of Open-ended Generation by Extrapolating the Entropy of an Infinitely Large LM",
+        "authors": [
+          "Haw-Shiuan Chang",
+          "Nanyun Peng",
+          "Mohit Bansal",
+          "Anil Ramakrishna",
+          "Tagyoung Chung"
+        ],
+        "abstract": "Decoding methods for large language models (LLMs) usually struggle with the tradeoff between ensuring factuality and maintaining diversity. In this paper, we propose REAL (Residual Entropy from Asymptotic Line) sampling,1 which predicts the step-wise hallucination likelihood of an LLM. When an LLM is likely to hallucinate, REAL lowers the p threshold in nucleus sampling. Otherwise, REAL sampling increases the p threshold to boost the diversity. To predict the step-wise hallucination likelihood without supervision, we construct a THF (Token-level Hallucination Forecasting) model, which predicts the asymptotic entropy (i.e., inherent uncertainty) of the next token by extrapolating the next-token entropies of an infinitely large language model from a series of LLMs with different sizes. If an LLM’s entropy is higher than the asymptotic entropy (i.e., the LLM is more uncertain than it should be), the THF model predicts a high hallucination hazard, which leads to a lower p threshold in REAL sampling. In the FactualityPrompts benchmark (Lee et al., 2022), we demonstrate that REAL sampling based on a 70M THF model can substantially improve the factuality and diversity of 7B LLMs simultaneously. After combined with contrastive decoding, REAL sampling outperforms 13 sampling methods, and generates texts that are more factual than the greedy sampling and more diverse than the nucleus sampling with p = 0.5.",
+        "url": "https://aclanthology.org/2025.tacl-1.35/"
+      },
+      {
+        "id": "2025.tacl-1.72",
+        "title": "The Impact of Automatic Speech Transcription on Speaker Attribution",
+        "authors": [
+          "Cristina Aggazzotti",
+          "Matthew Wiesner",
+          "Elizabeth Allyn Smith",
+          "Nicholas Andrews"
+        ],
+        "abstract": "Speaker attribution from speech transcripts is the task of identifying a speaker from the transcript of their speech based on patterns in their language use. This task is especially useful when the audio is unavailable (e.g., deleted) or unreliable (e.g., anonymized speech). Prior work in this area has primarily focused on the feasibility of attributing speakers using transcripts produced by human annotators. However, in real-world settings, one often only has more errorful transcripts produced by automatic speech recognition (ASR) systems. In this paper, we conduct what is, to our knowledge, the first comprehensive study of the impact of automatic transcription on speaker attribution performance. In particular, we study the extent to which speaker attribution performance degrades in the face of transcription errors, as well as how properties of the ASR system impact attribution. We find that attribution is surprisingly resilient to word-level transcription errors and that the objective of recovering the true transcript is minimally correlated with attribution performance. Overall, our findings suggest that speaker attribution on more errorful transcripts produced by ASR is as good, if not better, than attribution based on human-transcribed data, possibly because ASR transcription errors can capture speaker-specific features revealing of speaker identity.",
+        "url": "https://aclanthology.org/2025.tacl-1.72/"
+      }
+    ]
+  },
+  {
+    "key": "2025.acl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2025.acl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:14:39.873003+08:00",
+    "status": "retrieved",
+    "sha256": "530c1065a38d39dd0b50f67ba7638d32cf40d31ec60a9f6bbba60383c9d85bc4",
+    "file": "sources/focused_attempt2/2025.acl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2025.acl-long.16",
+        "title": "ReSCORE: Label-free Iterative Retriever Training for Multi-hop Question Answering with Relevance-Consistency Supervision",
+        "authors": [
+          "Dosung Lee Korea University",
+          "Wonjun Oh",
+          "Boyoung Kim",
+          "Minyoung Kim",
+          "Joonsuk Park University of Richmond",
+          "Paul Hongsuck Seo Korea University"
+        ],
+        "abstract": "Multi-hop question answering (MHQA) involves reasoning across multiple documents to answer complex questions. Dense retrievers typically outperform sparse methods like BM25 by leveraging semantic embeddings in many tasks; however, they require labeled query-document pairs for fine-tuning, which poses a significant challenge in MHQA due to the complexity of the reasoning steps. To overcome this limitation, we introduce Retriever Supervision with Consistency and Relevance (ReSCORE), a novel method for training dense retrievers for MHQA without the need for labeled documents. ReSCORE leverages large language models to measure document-question relevance with answer consistency and utilizes this information to train a retriever within an iterative question-answering framework. Evaluated on three MHQA benchmarks, our extensive experiments demonstrate the effectiveness of ReSCORE, with significant improvements in retrieval performance that consequently lead to state-of-the-art Exact Match and F1 scores for MHQA.",
+        "url": "https://aclanthology.org/2025.acl-long.16/"
+      },
+      {
+        "id": "2025.acl-long.81",
+        "title": "Real-time Factuality Assessment from Adversarial Feedback",
+        "authors": [
+          "Sanxing Chen",
+          "Yukun Huang Duke University",
+          "Bhuwan Dhingra Duke University"
+        ],
+        "abstract": "We show that existing evaluations for assessing the factuality of news from conventional sources, such as claims on fact-checking websites, result in high accuracies over time for LLM-based detectors—even after their knowledge cutoffs. This suggests that recent popular false information from such sources can be easily identified due to its likely presence in pre-training/retrieval corpora or the emergence of salient, yet shallow, patterns in these datasets. Instead, we argue that a proper factuality evaluation dataset should test a model’s ability to reason about current events by retrieving and reading related evidence. To this end, we develop a novel pipeline that leverages natural language feedback from a RAG-based detector to iteratively modify real-time news into deceptive variants that challenge LLMs. Our iterative rewrite decreases the binary classification ROC-AUC by an absolute 17.5 percent for a strong RAG-based GPT-4o detector. Our experiments reveal the important role of RAG in both evaluating and generating challenging news examples, as retrieval-free LLM detectors are vulnerable to unseen events and adversarial attacks, while feedback from RAG-based evaluation helps discover more deceitful patterns.",
+        "url": "https://aclanthology.org/2025.acl-long.81/"
+      },
+      {
+        "id": "2025.acl-long.86",
+        "title": "Normalized AOPC: Fixing Misleading Faithfulness Metrics for Feature Attributions Explainability",
+        "authors": [
+          "Joakim Edin University of Copenhagen",
+          "Andreas Geert Motzfeldt",
+          "Casper L. Christensen Corti",
+          "Tuukka Ruotsalo Lappeenranta University of Technology and University of Copenhagen",
+          "Lars Maaløe Technical University of Denmark",
+          "Maria Maistro University of Copenhagen"
+        ],
+        "abstract": "Deep neural network predictions are notoriously difficult to interpret. Feature attribution methods aim to explain these predictions by identifying the contribution of each input feature. Faithfulness, often evaluated using the area over the perturbation curve (AOPC), reflects feature attributions’ accuracy in describing the internal mechanisms of deep neural networks. However, many studies rely on AOPC to compare faithfulness across different models, which we show can lead to false conclusions about models’ faithfulness. Specifically, we find that AOPC is sensitive to variations in the model, resulting in unreliable cross-model comparisons. Moreover, AOPC scores are difficult to interpret in isolation without knowing the model-specific lower and upper limits. To address these issues, we propose a normalization approach, Normalized AOPC (NAOPC), enabling consistent cross-model evaluations and more meaningful interpretation of individual scores. Our experiments demonstrate that this normalization can radically change AOPC results, questioning the conclusions of earlier studies and offering a more robust framework for assessing feature attribution faithfulness. Our code is available at https://github.com/JoakimEdin/naopc.",
+        "url": "https://aclanthology.org/2025.acl-long.86/"
+      },
+      {
+        "id": "2025.acl-long.150",
+        "title": "ToolHop: A Query-Driven Benchmark for Evaluating Large Language Models in Multi-Hop Tool Use",
+        "authors": [
+          "Junjie Ye",
+          "Zhengyin Du ByteDance",
+          "Xuesong Yao ByteDance Inc.",
+          "Weijian Lin ByteDance Inc.",
+          "Yufei Xu ByteDance Inc.",
+          "Zehui Chen",
+          "Zaiyuan Wang ByteDance Inc.",
+          "Sining Zhu ByteDance Inc.",
+          "Zhiheng Xi",
+          "Siyu Yuan",
+          "Tao Gui Fudan University",
+          "Qi Zhang Fudan University",
+          "Xuanjing Huang Fudan University",
+          "Jiecao Chen ByteDance Inc."
+        ],
+        "abstract": "Effective evaluation of multi-hop tool use is critical for analyzing the understanding, reasoning, and function-calling capabilities of large language models (LLMs). However, progress has been hindered by a lack of reliable evaluation datasets. To address this, we present ToolHop, a dataset comprising 995 user queries and 3,912 associated tools, specifically designed for rigorous evaluation of multi-hop tool use. ToolHop ensures diverse queries, meaningful interdependencies, locally executable tools, detailed feedback, and verifiable answers through a novel query-driven data construction approach that includes tool creation, document refinement, and code generation. We evaluate 14 LLMs across five model families (i.e., LLaMA3.1, Qwen2.5, Gemini1.5, Claude3.5, and GPT), uncovering significant challenges in handling multi-hop tool-use scenarios. The leading model, GPT-4o, achieves an accuracy of 49.04%, underscoring substantial room for improvement. Further analysis reveals variations in tool-use strategies for various families, offering actionable insights to guide the development of more effective approaches. Code and data can be found in https://huggingface.co/datasets/bytedance-research/ToolHop.",
+        "url": "https://aclanthology.org/2025.acl-long.150/"
+      },
+      {
+        "id": "2025.acl-long.211",
+        "title": "BELLE: A Bi-Level Multi-Agent Reasoning Framework for Multi-Hop Question Answering",
+        "authors": [
+          "Taolin Zhang Hefei University of Technology",
+          "Dongyang Li Shanghai University of Electric Power",
+          "Qizhou Chen",
+          "Chengyu Wang Alibaba Group",
+          "Xiaofeng He East China Normal University"
+        ],
+        "abstract": "Multi-hop question answering (QA) involves finding multiple relevant passages and performing step-by-step reasoning to answer complex questions. Previous works on multi-hop QA employ specific methods from different modeling perspectives based on large language models (LLMs), regardless of the question types. In this paper, we first conduct an in-depth analysis of public multi-hop QA benchmarks, dividing the questions into four types and evaluating five types of cutting-edge methods for multi-hop QA: Chain-of-Thought (CoT), Single-step, Iterative-step, Sub-step, and Adaptive-step. We find that different types of multi-hop questions have varying degrees of sensitivity to different types of methods. Thus, we propose a Bi-levEL muLti-agEnt reasoning (BELLE) framework to address multi-hop QA by specifically focusing on the correspondence between question types and methods, where each type of method is regarded as an ”operator” by prompting LLMs differently. The first level of BELLE includes multiple agents that debate to obtain an executive plan of combined ”operators” to address the multi-hop QA task comprehensively. During the debate, in addition to the basic roles of affirmative debater, negative debater, and judge, at the second level, we further leverage fast and slow debaters to monitor whether changes in viewpoints are reasonable. Extensive experiments demonstrate that BELLE significantly outperforms strong baselines in various datasets. Additionally, the model consumption of BELLE is higher cost-effectiveness than that of single models in more complex multi-hop QA scenarios.",
+        "url": "https://aclanthology.org/2025.acl-long.211/"
+      },
+      {
+        "id": "2025.acl-long.299",
+        "title": "UAlign: Leveraging Uncertainty Estimations for Factuality Alignment on Large Language Models",
+        "authors": [
+          "Boyang Xue",
+          "Fei Mi",
+          "Qi Zhu Huawei Technologies Ltd.",
+          "Hongru Wang The Chinese University of Hong Kong",
+          "Rui Wang",
+          "Sheng Wang",
+          "Erxin Yu Hong Kong Polytechnic University",
+          "Xuming Hu The Hong Kong University of Science and Technology (Guangzhou) and Hong Kong University of Science and Technology",
+          "Kam-Fai Wong The Chinese University of Hong Kong"
+        ],
+        "abstract": "Despite demonstrating impressive capabilities, Large Language Models (LLMs) still often struggle to accurately express the factual knowledge they possess, especially in cases where the LLMs’ knowledge boundaries are ambiguous. To improve LLMs’ factual expressions, we propose the UAlign framework, which leverages Uncertainty estimations to represent knowledge boundaries, and then explicitly incorporates these representations as input features into prompts for LLMs to Align with factual knowledge. First, we prepare the dataset on knowledge question-answering (QA) samples by calculating two uncertainty estimations, including confidence score and semantic entropy, to represent the knowledge boundaries for LLMs. Subsequently, using the prepared dataset, we train a reward model that incorporates uncertainty estimations and then employ the Proximal Policy Optimization (PPO) algorithm for factuality alignment on LLMs. Experimental results indicate that, by integrating uncertainty representations in LLM alignment, the proposed UAlign can significantly enhance the LLMs’ capacities to confidently answer known questions and refuse unknown questions on both in-domain and out-of-domain tasks, showing reliability improvements and good generalizability over various prompt- and training-based baselines.",
+        "url": "https://aclanthology.org/2025.acl-long.299/"
+      },
+      {
+        "id": "2025.acl-long.304",
+        "title": "Are the Hidden States Hiding Something? Testing the Limits of Factuality-Encoding Capabilities in LLMs",
+        "authors": [
+          "Giovanni Servedio",
+          "Alessandro De Bellis",
+          "Dario Di Palma",
+          "Vito Walter Anelli",
+          "Tommaso Di Noia"
+        ],
+        "abstract": "Factual hallucinations are a major challenge for Large Language Models (LLMs). They undermine reliability and user trust by generating inaccurate or fabricated content. Recent studies suggest that when generating false statements, the internal states of LLMs encode information about truthfulness. However, these studies often rely on synthetic datasets that lack realism, which limits generalization when evaluating the factual accuracy of text generated by the model itself. In this paper, we challenge the findings of previous work by investigating truthfulness encoding capabilities, leading to the generation of a more realistic and challenging dataset. Specifically, we extend previous work by introducing: (1) a strategy for sampling plausible true-false factoid sentences from tabular data and (2) a procedure for generating realistic, LLM-dependent true-false datasets from Question Answering collections. Our analysis of two open-source LLMs reveals that while the findings from previous studies are partially validated, generalization to LLM-generated datasets remains challenging. This study lays the groundwork for future research on factuality in LLMs and offers practical guidelines for more effective evaluation.",
+        "url": "https://aclanthology.org/2025.acl-long.304/"
+      },
+      {
+        "id": "2025.acl-long.400",
+        "title": "Improving Model Factuality with Fine-grained Critique-based Evaluator",
+        "authors": [
+          "Yiqing Xie",
+          "Wenxuan Zhou CMU, Carnegie Mellon University",
+          "Pradyot Prakash Meta",
+          "Di Jin Meta",
+          "Yuning Mao Meta",
+          "Quintin Fettes Meta",
+          "Arya Talebzadeh Meta",
+          "Sinong Wang Facebook",
+          "Han Fang Meta AI",
+          "Carolyn Rose School of Computer Science, Carnegie Mellon University",
+          "Daniel Fried Meta AI and Carnegie Mellon University",
+          "Hejia Zhang Facebook"
+        ],
+        "abstract": "Factuality evaluation aims to detect factual errors produced by language models (LMs) and hence guide the development of more factual models. Towards this goal, we train a factuality evaluator, FenCE, that provides LM generators with claim-level factuality feedback. In particular, we train FenCE to (1) generate textual critiques along with scores and (2) make claim-level judgment based on diverse source documents obtained by various tools, via data augmentation on a combination of public judgment datasets. We then present a framework that leverages FenCE to improve the factuality of LM generators by constructing training data. Specifically, we generate a set of candidate responses, ask FenCE to revise and score each response without introducing lesser-known facts, and train the generator by preferring highly scored revised responses. Experiments show that our data augmentation methods improve the evaluator’s accuracy by 2.9% on LLM-AggreFact. With FenCE, we improve Llama2-7B-chat/Llama3-8B-chat’s factuality rate by 16.86%/14.45% on FActScore, outperforming state-of-the-art factuality finetuning methods by 8.83%/6.96%.",
+        "url": "https://aclanthology.org/2025.acl-long.400/"
+      },
+      {
+        "id": "2025.acl-long.548",
+        "title": "Improving Factuality with Explicit Working Memory",
+        "authors": [
+          "Mingda Chen Meta FAIR",
+          "Yang Li Facebook",
+          "Karthik Padthe Meta AI",
+          "Rulin Shao",
+          "Alicia Yi Sun Meta AI and Massachusetts Institute of Technology",
+          "Luke Zettlemoyer University of Washington, Facebook and Meta",
+          "Gargi Ghosh Meta AI",
+          "Wen-tau Yih Meta Platforms, Inc."
+        ],
+        "abstract": "Large language models can generate factually inaccurate content, a problem known as hallucination. Recent works have built upon retrieved-augmented generation to improve factuality through iterative prompting but these methods are limited by the traditional RAG design. To address these challenges, we introduce Ewe (Explicit Working Memory), a novel approach that enhances factuality in long-form text generation by integrating a working memory that receives real-time feedback from external resources. The memory is refreshed based on online fact-checking and retrieval feedback, allowing Ewe to rectify false claims during the generation process and ensure more accurate and reliable outputs. Our experiments demonstrate that Ewe outperforms strong baselines on four fact-seeking long-form generation datasets, increasing the factuality metric, VeriScore, by 2 to 6 points absolute without sacrificing the helpfulness of the responses. Further analysis reveals that the design of rules for memory updates, configurations of memory units, and the quality of the retrieval datastore are crucial factors for influencing model performance.",
+        "url": "https://aclanthology.org/2025.acl-long.548/"
+      },
+      {
+        "id": "2025.acl-long.732",
+        "title": "Chinese SafetyQA: A Safety Short-form Factuality Benchmark for Large Language Models",
+        "authors": [
+          "Yingshui Tan Alibaba Group",
+          "Boren Zheng Alibaba Group",
+          "Baihui Zheng Alibaba Group",
+          "Kerui Cao Alibaba Group",
+          "Huiyun Jing China Academy of Information and Communications Technology",
+          "Jincheng Wei China Academy of Information and Communications Technology",
+          "Jiaheng Liu Nanjing University",
+          "Yancheng He Alibaba Group",
+          "Wenbo Su Alibaba Group",
+          "Xiaoyong Zhu Alibaba Group and Microsoft",
+          "Bo Zheng Alibaba Group",
+          "Kaifu Zhang Alibaba Group"
+        ],
+        "abstract": "With the rapid advancement of Large Language Models (LLMs), significant safety concerns have emerged. Fundamentally, the safety of large language models is closely linked to the accuracy, comprehensiveness, and clarity of their understanding of safety knowledge, particularly in domains such as law, policy and ethics. This factuality ability is crucial in determining whether these models can be deployed and applied safely and compliantly within specific regions. To address these challenges and better evaluate the factuality ability of LLMs to answer short question, we introduce the Chinese SafetyQA benchmark. Chinese SafetyQA has several properties (i.e., Chinese, Diverse, High-quality, Static, Easy-to-evaluate, safety-related, harmless). Based on Chinese SafetyQA, we perform a comprehensive evaluation on the factuality abilities of existing LLMs and analyze how these capabilities relate to LLM abilities, e.g., RAG ability and robustness against attacks.",
+        "url": "https://aclanthology.org/2025.acl-long.732/"
+      },
+      {
+        "id": "2025.acl-long.746",
+        "title": "LAQuer: Localized Attribution Queries in Content-grounded Generation",
+        "authors": [
+          "Eran Hirsch",
+          "Aviv Slobodkin",
+          "David Wan Department of Computer Science, University of North Carolina at Chapel Hill",
+          "Elias Stengel-Eskin",
+          "Mohit Bansal University of North Carolina at Chapel Hill",
+          "Ido Dagan Bar-Ilan University"
+        ],
+        "abstract": "Grounded text generation models often produce content that deviates from their source material, requiring user verification to ensure accuracy. Existing attribution methods associate entire sentences with source documents, which can be overwhelming for users seeking to fact-check specific claims. In contrast, existing sub-sentence attribution methods may be more precise but fail to align with users’ interests. In light of these limitations, we introduce Localized Attribution Queries (LAQuer), a new task that localizes selected spans of generated output to their corresponding source spans, allowing fine-grained and user-directed attribution. We compare two approaches for the LAQuer task, including prompting large language models (LLMs) and leveraging LLM internal representations. We then explore a modeling framework that extends existing attributed text generation methods to LAQuer. We evaluate this framework across two grounded text generation tasks: Multi-document Summarization (MDS) and Long-form Question Answering (LFQA). Our findings show that LAQuer methods significantly reduce the length of the attributed text. Our contributions include: (1) proposing the LAQuer task to enhance attribution usability, (2) suggesting a modeling framework and benchmarking multiple baselines, and (3) proposing a new evaluation setting to promote future research on localized attribution in content-grounded generation.",
+        "url": "https://aclanthology.org/2025.acl-long.746/"
+      },
+      {
+        "id": "2025.acl-long.828",
+        "title": "On Synthesizing Data for Context Attribution in Question Answering",
+        "authors": [
+          "Gorjan Radevski Department of Electrical Engineering, KU Leuven, Belgium, KU Leuven and NEC",
+          "Kiril Gashteovski NEC Laboratories Europe, St.Cyril and Methodius University and NEC Laboratories Europe",
+          "Shahbaz Syed NEC",
+          "Christopher Malon NEC Laboratories America",
+          "Sebastien Nicolas",
+          "Chia-Chien Hung NEC Laboratories Europe",
+          "Timo Sztyler NEC Laboratories Europe",
+          "Verena Heußer NEC Laboratories Europe GmbH",
+          "Wiem Ben Rim",
+          "Masafumi Enomoto NEC",
+          "Kunihiro Takeoka NEC",
+          "Masafumi Oyamada NEC",
+          "Goran Glavaš Julius-Maximilians-Universität Würzburg",
+          "Carolin Lawrence NEC Laboratories Europe and NEC Laboratories Europe"
+        ],
+        "abstract": "Question Answering (QA) accounts for a significant portion of LLM usage in the wild”. However, LLMs sometimes produce false or misleading responses, also known as hallucinations”. Therefore, grounding the generated answers in contextually provided information—i.e., providing evidence for the generated text—is paramount for LLMs’ trustworthiness. Providing this information is the task of context attribution. In this paper, we systematically study LLM-based approaches for this task, namely we investigate (i) zero-shot inference, (ii) LLM ensembling, and (iii) fine-tuning of small LMs on synthetic data generated by larger LLMs. Our key contribution is SynQA: a novel generative strategy for synthesizing context attribution data. Given selected context sentences, an LLM generates QA pairs that are supported by these sentences. This leverages LLMs’ natural strengths in text generation while ensuring clear attribution paths in the synthetic training data. We show that the attribution data synthesized via SynQA is highly effective for fine-tuning small LMs for context attribution in different QA tasks and domains. Finally, with a user study, we validate the usefulness of small LMs (fine-tuned on synthetic data from SynQA) in context attribution for QA.",
+        "url": "https://aclanthology.org/2025.acl-long.828/"
+      },
+      {
+        "id": "2025.acl-long.837",
+        "title": "Can LLMs Evaluate Complex Attribution in QA? Automatic Benchmarking using Knowledge Graphs",
+        "authors": [
+          "Nan Hu Southeast University",
+          "Jiaoyan Chen",
+          "Yike Wu",
+          "Guilin Qi",
+          "Hongru Wang The Chinese University of Hong Kong",
+          "Sheng Bi Southeast University",
+          "Yongrui Chen Southeast University",
+          "Tongtong Wu Monash University",
+          "Jeff Z. Pan University of Edinburgh, University of Edinburgh"
+        ],
+        "abstract": "Attributed Question Answering (AQA) has attracted wide attention, but there are still several limitations in evaluating the attributions, including lacking fine-grained attribution categories, relying on manual annotations, and failing to compare attributions with only subtle differences. To bridge these gaps, we introduce Complex Attributed Question Answering (CAQA), a large-scale benchmark containing comprehensive attribution categories, automatically generated using Knowledge Graphs (KGs), and complex attribution scenarios. We have conducted extensive experiments to verify the effectiveness of CAQA, including the benchmarking of 25 automatic evaluators, their comparison with human evaluators, the testing of LLM evaluators fine-tuned by CAQA and so on. These experiments also lead to a series of important findings that can benefit the future research of AQA.",
+        "url": "https://aclanthology.org/2025.acl-long.837/"
+      },
+      {
+        "id": "2025.acl-long.869",
+        "title": "Masking in Multi-hop QA: An Analysis of How Language Models Perform with Context Permutation",
+        "authors": [
+          "Wenyu Huang University of Edinburgh, University of Edinburgh",
+          "Pavlos Vougiouklis Huawei Technologies Ltd.",
+          "Mirella Lapata Edinburgh University, University of Edinburgh",
+          "Jeff Z. Pan University of Edinburgh, University of Edinburgh"
+        ],
+        "abstract": "Multi-hop Question Answering (MHQA) adds layers of complexity to question answering, making it more challenging. When Language Models (LMs) are prompted with multiple search results, they are tasked not only with retrieving relevant information but also employing multi-hop reasoning across the information sources. Although LMs perform well on traditional question-answering tasks, the causal mask can hinder their capacity to reason across complex contexts. In this paper, we explore how LMs respond to multi-hop questions by permuting search results (retrieved documents) under various configurations. Our study reveals interesting findings as follows: 1) Encoder-decoder models, such as the ones in the Flan-T5 family, generally outperform causal decoder-only LMs in MHQA tasks, despite being significantly smaller in size; 2) altering the order of gold documents reveals distinct trends in both Flan T5 models and fine-tuned decoder-only models, with optimal performance observed when the document order aligns with the reasoning chain order; 3) enhancing causal decoder-only models with bi-directional attention by modifying the causal mask can effectively boost their end performance. In addition to the above, we conduct a thorough investigation of the distribution of LM attention weights in the context of MHQA. Our experiments reveal that attention weights tend to peak at higher values when the resulting answer is correct. We leverage this finding to heuristically improve LMs’ performance on this task. Our code is publicly available at https://github.com/hwy9855/MultiHopQA-Reasoning.",
+        "url": "https://aclanthology.org/2025.acl-long.869/"
+      },
+      {
+        "id": "2025.acl-long.871",
+        "title": "Optimizing Question Semantic Space for Dynamic Retrieval-Augmented Multi-hop Question Answering",
+        "authors": [
+          "Linhao Ye",
+          "Lang Yu",
+          "Zhikai Lei",
+          "Qin Chen East China Normal University",
+          "Jie Zhou",
+          "Liang He East China Normal University"
+        ],
+        "abstract": "Retrieval-augmented generation (RAG) is usually integrated into large language models (LLMs) to mitigate hallucinations and knowledge obsolescence. Whereas, conventional one-step retrieve-and-read methods are insufficient for multi-hop question answering, facing challenges of retrieval semantic mismatching and the high cost in handling interdependent subquestions. In this paper, we propose Optimizing Question Semantic Space for Dynamic Retrieval-Augmented Multi-hop Question Answering (Q-DREAM). Q-DREAM consists of three key modules: (1) the Question Decomposition Module (QDM), which decomposes multi-hop questions into fine-grained subquestions; (2) the Subquestion Dependency Optimizer Module (SDOM), which models the interdependent relations of subquestions for better understanding; and (3) the Dynamic Passage Retrieval Module (DPRM), which aligns subquestions with relevant passages by optimizing the semantic embeddings.Experimental results across various benchmarks demonstrate that Q-DREAM significantly outperforms existing RAG methods, achieving state-of-the-art performance in both in-domain and out-of-domain settings. Notably, Q-DREAM also improves retrieval efficiency while maintaining high accuracy compared with recent baselines.",
+        "url": "https://aclanthology.org/2025.acl-long.871/"
+      },
+      {
+        "id": "2025.acl-long.889",
+        "title": "RUBY: An Effective Framework for Multi-Constraint Multi-Hop Question Generation",
+        "authors": [
+          "Wenzhuo Zhao",
+          "Shuangyin Li"
+        ],
+        "abstract": "Inspired by theories in language psychology, it is natural to consider more constraints, such as intentions, logic, knowledge, etc., when a complex or multi-hop question is generated. As the subtask of Multi-Hop Question Generation (MHQG), the task of Multi-Constraint Multi-Hop Question Generation (MCHQG) is more aligned with human question theories. However, it is hard to determine how to bring various high-dimensional semantic constraints, and how to integrate each constraint across all hops when a multi-hop question is being generating. To address these challenges, we introduce an effective framework which includes constraint dimensionality reduction and divide-and-conquer-based dynamic projection; we call it RUBY. The proposed RUBY contains a module of high-dimensional semantic constraint dimension reduction and a module of sub-question answer pairs-based multi-hop question generation. Meanwhile, a Reasoning Dynamic Projection strategy is tailored to effectively incorporate the constraints into every hop of the multi-hop question. The experimental results demonstrate that RUBY consistently outperforms baseline models, which suggest that RUBY is able to effectively capture and integrate semantic constraints, leading to more accurate and human-like multi-hop question generation. Our code and data are available.",
+        "url": "https://aclanthology.org/2025.acl-long.889/"
+      },
+      {
+        "id": "2025.acl-long.941",
+        "title": "Chinese SimpleQA: A Chinese Factuality Evaluation for Large Language Models",
+        "authors": [
+          "Yancheng He Alibaba Group",
+          "Shilong Li",
+          "Jiaheng Liu Nanjing University",
+          "Yingshui Tan Alibaba Group",
+          "Weixun Wang",
+          "Hui Huang",
+          "Xingyuan Bu Alibaba Group",
+          "Hangyu Guo Alibaba Group",
+          "Chengwei Hu",
+          "Boren Zheng Alibaba Group",
+          "Zhuoran Lin Alibaba Group",
+          "Dekai Sun Alibaba Group",
+          "Zhicheng Zheng Princeton University",
+          "Wenbo Su Alibaba Group",
+          "Bo Zheng Alibaba Group"
+        ],
+        "abstract": "New LLM benchmarks are important to align with the rapid development of Large Language Models (LLMs). In this work, we present Chinese SimpleQA, the first comprehensive Chinese benchmark to evaluate the factuality ability of LLMs to answer short questions, and Chinese SimpleQA mainly has five properties (i.e., Chinese, Diverse, High-quality, Static, Easy-to-evaluate). Specifically, first, we focus on the Chinese language over 6 major topics with 99 diverse subtopics. Second, we conduct a comprehensive quality control process to achieve high-quality questions and answers, where the reference answers are static and cannot be changed over time. Third, following SimpleQA, the questions and answers are very short, and the grading process is easy-to-evaluate. Based on Chinese SimpleQA, we perform a comprehensive evaluation of the factuality abilities of existing LLMs. Finally, we hope that Chinese SimpleQA could guide the developers to better understand the Chinese factuality abilities of their models and facilitate the growth of LLMs.",
+        "url": "https://aclanthology.org/2025.acl-long.941/"
+      },
+      {
+        "id": "2025.acl-long.980",
+        "title": "Generalized Attention Flow: Feature Attribution for Transformer Models via Maximum Flow",
+        "authors": [
+          "Behrooz Azarkhalili",
+          "Maxwell W. Libbrecht Simon Fraser University"
+        ],
+        "abstract": "This paper introduces Generalized Attention Flow (GAF), a novel feature attribution method for Transformer-based models to address the limitations of current approaches. By extending Attention Flow and replacing attention weights with the generalized Information Tensor, GAF integrates attention weights, their gradients, the maximum flow problem, and the barrier method to enhance the performance of feature attributions. The proposed method exhibits key theoretical properties and mitigates the shortcomings of prior techniques that rely solely on simple aggregation of attention weights. Our comprehensive benchmarking on sequence classification tasks demonstrates that a specific variant of GAF consistently outperforms state-of-the-art feature attribution methods in most evaluation settings, providing a more reliable interpretation of Transformer model outputs.",
+        "url": "https://aclanthology.org/2025.acl-long.980/"
+      },
+      {
+        "id": "2025.acl-long.1074",
+        "title": "JoPA: Explaining Large Language Model’s Generation via Joint Prompt Attribution",
+        "authors": [
+          "Yurui Chang Pennsylvania State University",
+          "Bochuan Cao",
+          "Yujia Wang Pennsylvania State University",
+          "Jinghui Chen Pennsylvania State University",
+          "Lu Lin Pennsylvania State University"
+        ],
+        "abstract": "Large Language Models (LLMs) have demonstrated impressive performances in complex text generation tasks. However, the contribution of the input prompt to the generated content still remains obscure to humans, underscoring the necessity of understanding the causality between input and output pairs. Existing works for providing prompt-specific explanation often confine model output to be classification or next-word prediction. Few initial attempts aiming to explain the entire language generation often treat input prompt texts independently, ignoring their combinatorial effects on the follow-up generation. In this study, we introduce a counterfactual explanation framework based on joint prompt attribution, JoPA, which aims to explain how a few prompt texts collaboratively influences the LLM’s complete generation. Particularly, we formulate the task of prompt attribution for generation interpretation as a combinatorial optimization problem, and introduce a probabilistic algorithm to search for the casual input combination in the discrete space. We define and utilize multiple metrics to evaluate the produced explanations, demonstrating both the faithfulness and efficiency of our framework.",
+        "url": "https://aclanthology.org/2025.acl-long.1074/"
+      },
+      {
+        "id": "2025.acl-long.1089",
+        "title": "Mitigating Lost-in-Retrieval Problems in Retrieval Augmented Multi-Hop Question Answering",
+        "authors": [
+          "Rongzhi Zhu",
+          "Xiangyu Liu",
+          "Zequn Sun",
+          "Yiwei Wang University of California, Merced",
+          "Wei Hu Nanjing University"
+        ],
+        "abstract": "In this paper, we identify a critical problem, “lost-in-retrieval”, in retrieval-augmented multi-hop question answering (QA): the key entities are missed in LLMs’ sub-question decomposition. “Lost-in-retrieval” significantly degrades the retrieval performance, which disrupts the reasoning chain and leads to the incorrect answers. To resolve this problem, we propose a progressive retrieval and rewriting method, namely ChainRAG, which sequentially handles each sub-question by completing missing key entities and retrieving relevant sentences from a sentence graph for answer generation. Each step in our retrieval and rewriting process builds upon the previous one, creating a seamless chain that leads to accurate retrieval and answers. Finally, all retrieved sentences and sub-question answers are integrated to generate a comprehensive answer to the original question. We evaluate ChainRAG on three multi-hop QA datasets—MuSiQue, 2Wiki, and HotpotQA—using three large language models: GPT4o-mini, Qwen2.5-72B, and GLM-4-Plus. Empirical results demonstrate that ChainRAG consistently outperforms baselines in both effectiveness and efficiency.",
+        "url": "https://aclanthology.org/2025.acl-long.1089/"
+      },
+      {
+        "id": "2025.acl-long.1093",
+        "title": "Decoding Knowledge Attribution in Mixture-of-Experts: A Framework of Basic-Refinement Collaboration and Efficiency Analysis",
+        "authors": [
+          "Junzhuo Li",
+          "Bo Wang",
+          "Xiuze Zhou The Hong Kong University of Science and Technology",
+          "Peijie Jiang",
+          "Jia Liu Ant Group",
+          "Xuming Hu The Hong Kong University of Science and Technology (Guangzhou) and Hong Kong University of Science and Technology"
+        ],
+        "abstract": "The interpretability of Mixture-of-Experts (MoE) models, especially those with heterogeneous designs, remains underexplored. Existing attribution methods for dense models fail to capture dynamic routing-expert interactions in sparse MoE architectures. To address this issue, we propose a cross-level attribution algorithm to analyze sparse MoE architectures (Qwen 1.5-MoE, OLMoE, Mixtral-8x7B) against dense models (Qwen 1.5-7B, Llama-7B, Mistral-7B). Results show MoE models achieve 31% higher per-layer efficiency via a “mid-activation, late-amplification” pattern: early layers screen experts, while late layers refine knowledge collaboratively. Ablation studies reveal a “basic-refinement” framework—shared experts handle general tasks (entity recognition), while routed experts specialize in domain-specific processing (geographic attributes). Semantic-driven routing is evidenced by strong correlations between attention heads and experts (r=0.68), enabling task-aware coordination. Notably, architectural depth dictates robustness: deep Qwen-MoE mitigates expert failures (e.g., 43% MRR drop in geographic tasks when blocking top-10 experts) through shared expert redundancy, whereas shallow Olmoe suffers severe degradation (76% drop). Task sensitivity further guides design: core-sensitive tasks (geography) require concentrated expertise, while distributed-tolerant tasks (object attributes) leverage broader participation. These insights advance MoE interpretability, offering principles to balance efficiency, specialization, and robustness.",
+        "url": "https://aclanthology.org/2025.acl-long.1093/"
+      },
+      {
+        "id": "2025.acl-long.1094",
+        "title": "ChartLens: Fine-grained Visual Attribution in Charts",
+        "authors": [
+          "Manan Suri",
+          "Puneet Mathur Adobe Systems",
+          "Nedim Lipka Adobe Systems",
+          "Franck Dernoncourt",
+          "Ryan A. Rossi Adobe Research",
+          "Dinesh Manocha University of Maryland, College Park"
+        ],
+        "abstract": "The growing capabilities of multimodal large language models (MLLMs) have advanced tasks like chart understanding. However, these models often suffer from hallucinations, where generated text sequences conflict with the provided visual data. To address this, we introduce Post-Hoc Visual Attribution for Charts, which identifies fine-grained chart elements that validate a given chart-associated response. We propose ChartLens, a novel chart attribution algorithm that uses segmentation-based techniques to identify chart objects and employs set-of-marks prompting with MLLMs for fine-grained visual attribution. Additionally, we present ChartVA-Eval, a benchmark with synthetic and real-world charts from diverse domains like finance, policy, and economics, featuring fine-grained attribution annotations. Our evaluations show that ChartLens improves fine-grained attributions by 26-66%.",
+        "url": "https://aclanthology.org/2025.acl-long.1094/"
+      },
+      {
+        "id": "2025.acl-long.1108",
+        "title": "XDAC: XAI-Driven Detection and Attribution of LLM-Generated News Comments in Korean",
+        "authors": [
+          "Wooyoung Go",
+          "Hyoungshick Kim Sungkyunkwan University",
+          "Alice Oh Google and Korea Advanced Institute of Science and Technology",
+          "Yongdae Kim Korea Advanced Institute of Science & Technology"
+        ],
+        "abstract": "Large language models (LLMs) generate human-like text, raising concerns about their misuse in creating deceptive content. Detecting LLM-generated comments (LGC) in online news is essential for preserving online discourse integrity and preventing opinion manipulation. However, effective detection faces two key challenges; the brevity and informality of news comments limit traditional methods, and the absence of a publicly available LGC dataset hinders model training, especially for languages other than English. To address these challenges, we propose a twofold approach. First, we develop an LGC generation framework to construct a high-quality dataset with diverse and complex examples. Second, we introduce XDAC (\\textbf{X}AI-Driven \\textbf{D}etection and \\textbf{A}ttribution of LLM-Generated \\textbf{C}omments), a framework utilizing explainable AI, designed for the detection and attribution of short-form LGC in Korean news articles. XDAC leverages XAI to uncover distinguishing linguistic patterns at both token and character levels. We present the first large-scale benchmark dataset, comprising 1.3M human-written comments from Korean news platforms and 1M LLM-generated comments from 14 distinct models. XDAC outperforms existing methods, achieving a 98.5% F1 score in LGC detection with a relative improvement of 68.1%, and an 84.3% F1 score in attribution. To validate real-world applicability, we analyze 5.24M news comments from Naver, South Korea’s leading online news platform, identifying 27,029 potential LLM-generated comments.",
+        "url": "https://aclanthology.org/2025.acl-long.1108/"
+      },
+      {
+        "id": "2025.acl-long.1138",
+        "title": "FCMR: Robust Evaluation of Financial Cross-Modal Multi-Hop Reasoning",
+        "authors": [
+          "Seunghee Kim",
+          "Changhyeon Kim",
+          "Taeuk Kim Hanyang University"
+        ],
+        "abstract": "Real-world decision-making often requires integrating and reasoning over information from multiple modalities. While recent multimodal large language models (MLLMs) have shown promise in such tasks, their ability to perform multi-hop reasoning across diverse sources remains insufficiently evaluated. Existing benchmarks, such as MMQA, face challenges due to (1) data contamination and (2) a lack of complex queries that necessitate operations across more than two modalities, hindering accurate performance assessment. To address this, we present Financial Cross-Modal Multi-Hop Reasoning (FCMR), a benchmark created to analyze the reasoning capabilities of MLLMs by urging them to combine information from textual reports, tables, and charts within the financial domain. FCMR is categorized into three difficulty levels—Easy, Medium, and Hard—facilitating a step-by-step evaluation. In particular, problems at the Hard level require precise cross-modal three-hop reasoning and are designed to prevent the disregard of any modality. Experiments on this new benchmark reveal that even state-of-the-art MLLMs struggle, with the best-performing model (Claude 3.5 Sonnet) achieving only 30.4% accuracy on the most challenging tier. We also conduct analysis to provide insights into the inner workings of the models, including the discovery of a critical bottleneck in the information retrieval phase.",
+        "url": "https://aclanthology.org/2025.acl-long.1138/"
+      },
+      {
+        "id": "2025.acl-long.1142",
+        "title": "Beyond the Answer: Advancing Multi-Hop QA with Fine-Grained Graph Reasoning and Evaluation",
+        "authors": [
+          "Qichuan Liu",
+          "Chentao Zhang",
+          "Chenfeng Zheng",
+          "Guosheng Hu University of Bristol",
+          "Xiaodong Li",
+          "Zhihong Zhang"
+        ],
+        "abstract": "Recent advancements in large language models (LLMs) have significantly improved the performance of multi-hop question answering (MHQA) systems. Despite the success of MHQA systems, the evaluation of MHQA is not deeply investigated. Existing evaluations mainly focus on comparing the final answers of the reasoning method and given ground-truths. We argue that the reasoning process should also be evaluated because wrong reasoning process can also lead to the correct final answers. Motivated by this, we propose a “Planner-Executor-Reasoner” (PER) architecture, which forms the core of the Plan-anchored Data Preprocessing (PER-DP) and the Plan-guided Multi-Hop QA (PER-QA).The former provides the ground-truth of intermediate reasoning steps and final answers, and the latter offers them of a reasoning method. Moreover, we design a fine-grained evaluation metric called Plan-aligned Stepwise Evaluation (PSE), which evaluates the intermediate reasoning steps from two aspects: planning and solving. Extensive experiments on ten types of questions demonstrate competitive reasoning performance, improved explainability of the MHQA system, and uncover issues such as “fortuitous reasoning continuance” and “latent reasoning suspension” in RAG-based MHQA systems. Besides, we also demonstrate the potential of our approach in data contamination scenarios.",
+        "url": "https://aclanthology.org/2025.acl-long.1142/"
+      },
+      {
+        "id": "2025.acl-long.1316",
+        "title": "What are the Essential Factors in Crafting Effective Long Context Multi-Hop Instruction Datasets? Insights and Best Practices",
+        "authors": [
+          "Zhi Chen",
+          "Qiguang Chen",
+          "Libo Qin Central South University",
+          "Qipeng Guo Shanghai AI Laboratory",
+          "Haijun Lv",
+          "Yicheng Zou Shanghai Artificial Intelligence Laboratory",
+          "Hang Yan",
+          "Kai Chen Shanghai AI Laboratory",
+          "Dahua Lin The Chinese University of Hong Kong"
+        ],
+        "abstract": "Recent advancements in large language models (LLMs) with extended context windows have significantly improved various tasks. To improve long-context capabilities, much work focuses on augmenting LLM’s capabilities with synthetic data. Existing methods often leverage the Self-Instruct framework to generate long-context instruction-tuning data. However, our preliminary experiments show that fewer than 35% of samples generated by Qwen-2-72B are multi-hop, and over 40% exhibit poor quality, limiting comprehensive understanding and further research. To address this, we propose the Multi-agent Interactive Multi-hop Generation (MIMG) framework, which integrates a quality verification agent, a single-hop question generation agent, a multiple question sampling strategy, and a multi-hop question merger agent. This framework significantly improves data quality, with high-quality, multi-hop, and diverse data. Furthermore, we conduct a thorough analysis of document selection, question merging, and validation techniques through extensive experiments across various models. Our results demonstrate that synthetic high-quality long-context instruction data can enhance model performance, surpassing even models trained on larger amounts of human-annotated data.",
+        "url": "https://aclanthology.org/2025.acl-long.1316/"
+      },
+      {
+        "id": "2025.acl-long.1334",
+        "title": "T2I-FactualBench: Benchmarking the Factuality of Text-to-Image Models with Knowledge-Intensive Concepts",
+        "authors": [
+          "Ziwei Huang",
+          "Wanggui He Alibaba Group",
+          "Quanyu Long",
+          "Yandi Wang",
+          "Haoyuan Li",
+          "Zhelun Yu Alibaba Group",
+          "Fangxun Shu Alibaba Group",
+          "Weilong Dai Alibaba Group",
+          "Hao Jiang Alibaba Group",
+          "Fei Wu Zhejiang University",
+          "Leilei Gan Zhejiang University"
+        ],
+        "abstract": "Most existing studies on evaluating text-to-image (T2I) models primarily focus on evaluating text-image alignment, image quality, and object composition capabilities, with comparatively fewer studies addressing the evaluation of the factuality of the synthesized images, particularly when the images involve knowledge-intensive concepts. In this work, we present T2I-FactualBench—the largest benchmark to date in terms of the number of concepts and prompts specifically designed to evaluate the factuality of knowledge-intensive concept generation. T2I-FactualBench consists of a three-tiered knowledge-intensive text-to-image generation framework, ranging from the basic memorization of individual knowledge concepts to the more complex composition of multiple knowledge concepts. We further introduce a multi-round visual question answering (VQA)-based evaluation framework to assesses the factuality of three-tiered knowledge-intensive text-to-image generation tasks. Experiments on T2I-FactualBench indicate that current state-of-the-art (SOTA) T2I models still leave significant room for improvement. We release our datasets and code at https://github.com/Safeoffellow/T2I-FactualBench.",
+        "url": "https://aclanthology.org/2025.acl-long.1334/"
+      },
+      {
+        "id": "2025.acl-long.1345",
+        "title": "Representations of Fact, Fiction and Forecast in Large Language Models: Epistemics and Attitudes",
+        "authors": [
+          "Meng Li",
+          "Michael Vrazitulis",
+          "David Schlangen University of Potsdam"
+        ],
+        "abstract": "Rational speakers are supposed to know what they know and what they do not know, and to generate expressions matching the strength of evidence. In contrast, it is still a challenge for current large language models to generate corresponding utterances based on the assessment of facts and confidence in an uncertain real-world environment. While it has recently become popular to estimate and calibrate confidence of LLMs with verbalized uncertainty, what is lacking is a careful examination of the linguistic knowledge of uncertainty encoded in the latent space of LLMs. In this paper, we draw on typological frameworks of epistemic expressions to evaluate LLMs’ knowledge of epistemic modality, using controlled stories. Our experiments show that the performance of LLMs in generating epistemic expressions is limited and not robust, and hence the expressions of uncertainty generated by LLMs are not always reliable. To build uncertainty-aware LLMs, it is necessary to enrich semantic knowledge of epistemic modality in LLMs.",
+        "url": "https://aclanthology.org/2025.acl-long.1345/"
+      },
+      {
+        "id": "2025.acl-long.1456",
+        "title": "VISA: Retrieval Augmented Generation with Visual Source Attribution",
+        "authors": [
+          "Xueguang Ma",
+          "Shengyao Zhuang CSIRO",
+          "Bevan Koopman CSIRO and University of Queensland",
+          "Guido Zuccon The University of Queensland",
+          "Wenhu Chen University of Waterloo",
+          "Jimmy Lin University of Waterloo"
+        ],
+        "abstract": "Generation with source attribution is important for enhancing the verifiability of retrieval-augmented generation (RAG) systems. However, existing approaches in RAG primarily link generated content to document-level references, making it challenging for users to locate evidence among multiple content-rich retrieved documents. To address this challenge, we propose Retrieval-Augmented Generation with Visual Source Attribution (VISA), a novel approach that combines answer generation with visual source attribution. Leveraging large vision-language models (VLMs), VISA identifies the evidence and highlights the exact regions that support the generated answers with bounding boxes in the retrieved document screenshots. To evaluate its effectiveness, we curated two datasets: Wiki-VISA, based on crawled Wikipedia webpage screenshots, and Paper-VISA, derived from PubLayNet and tailored to the medical domain. Experimental results demonstrate the effectiveness of VISA for visual source attribution on documents’ original look, as well as highlighting the challenges for improvement.",
+        "url": "https://aclanthology.org/2025.acl-long.1456/"
+      },
+      {
+        "id": "2025.acl-long.1478",
+        "title": "M³GQA: A Multi-Entity Multi-Hop Multi-Setting Graph Question Answering Benchmark",
+        "authors": [
+          "Boci Peng",
+          "Yongchao Liu Ant Group",
+          "Xiaohe Bo",
+          "Jiaxin Guo",
+          "Yun Zhu",
+          "Xuanbo Fan Peking University",
+          "Chuntao Hong Alibaba Group",
+          "Yan Zhang Peking University"
+        ],
+        "abstract": "Recently, GraphRAG systems have achieved remarkable progress in enhancing the performance and reliability of large language models (LLMs). However, most previous benchmarks are template-based and primarily focus on few-entity queries, which are monotypic and simplistic, failing to offer comprehensive and robust assessments. Besides, the lack of ground-truth reasoning paths also hinders the assessments of different components in GraphRAG systems. To address these limitations, we propose M³GQA, a complex, diverse, and high-quality GraphRAG benchmark focusing on multi-entity queries, with six distinct settings for comprehensive evaluation. In order to construct diverse data with semantically correct ground-truth reasoning paths, we introduce a novel reasoning-driven four-step data construction method, including tree sampling, reasoning path backtracking, query creation, and multi-stage refinement and filtering. Extensive experiments demonstrate that M³GQA effectively reflects the capabilities of GraphRAG methods, offering valuable insights into the model performance and reliability. By pushing the boundaries of current methods, M³GQA establishes a comprehensive, robust, and reliable benchmark for advancing GraphRAG research.",
+        "url": "https://aclanthology.org/2025.acl-long.1478/"
+      },
+      {
+        "id": "2025.acl-long.1539",
+        "title": "DualRAG: A Dual-Process Approach to Integrate Reasoning and Retrieval for Multi-Hop Question Answering",
+        "authors": [
+          "Rong Cheng Tianjin University",
+          "Jinyi Liu",
+          "Yan Zheng Tianjin Unibersity, China",
+          "Fei Ni",
+          "Jiazhen Du Kuaishou- 快手科技",
+          "Hangyu Mao",
+          "Fuzheng Zhang",
+          "Bo Wang",
+          "Jianye Hao Tianjin University"
+        ],
+        "abstract": "Multi-Hop Question Answering (MHQA) tasks permeate real-world applications, posing challenges in orchestrating multi-step reasoning across diverse knowledge domains. While existing approaches have been improved with iterative retrieval, they still struggle to identify and organize dynamic knowledge. To address this, we propose DualRAG, a synergistic dual-process framework that seamlessly integrates reasoning and retrieval. DualRAG operates through two tightly coupled processes: Reasoning-augmented Querying (RaQ) and progressive Knowledge Aggregation (pKA). They work in concert: as RaQ navigates the reasoning path and generates targeted queries, pKA ensures that newly acquired knowledge is systematically integrated to support coherent reasoning. This creates a virtuous cycle of knowledge enrichment and reasoning refinement. Through targeted fine-tuning, DualRAG preserves its sophisticated reasoning and retrieval capabilities even in smaller-scale models, demonstrating its versatility and core advantages across different scales. Extensive experiments demonstrate that this dual-process approach substantially improves answer accuracy and coherence, approaching, and in some cases surpassing, the performance achieved with oracle knowledge access. These results establish DualRAG as a robust and efficient solution for complex multi-hop reasoning tasks.",
+        "url": "https://aclanthology.org/2025.acl-long.1539/"
+      },
+      {
+        "id": "2025.acl-long.1574",
+        "title": "CiteEval: Principle-Driven Citation Evaluation for Source Attribution",
+        "authors": [
+          "Yumo Xu AWS AI Labs",
+          "Peng Qi Orby AI",
+          "Jifan Chen Amazon",
+          "Kunlun Liu",
+          "Rujun Han Google",
+          "Lan Liu",
+          "Bonan Min Amazon and Tufts University",
+          "Vittorio Castelli Amazon",
+          "Arshit Gupta Amazon",
+          "Zhiguo Wang"
+        ],
+        "abstract": "Citation quality is crucial in information-seeking systems, directly influencing trust and the effectiveness of information access. Current evaluation frameworks, both human and automatic, mainly rely on Natural Language Inference (NLI) to assess binary or ternary supportiveness from cited sources, which we argue is a suboptimal proxy for citation evaluation. In this work we introduce CiteEval, a citation evaluation framework driven by principles focusing on fine-grained citation assessment within a broad context, encompassing not only the cited sources but the full retrieval context, user query, and generated text. Guided by the proposed framework, we construct CiteBench, a multi-domain benchmark with high-quality human annotations on citation quality. To enable efficient evaluation, we further develop CiteEval-Auto, a suite of model-based metrics that exhibit strong correlation with human judgments. Experiments across diverse systems demonstrate CiteEval-Auto’s superior ability to capture the multifaceted nature of citations compared to existing metrics, offering a principled and scalable approach to evaluate and improve model-generated citations.",
+        "url": "https://aclanthology.org/2025.acl-long.1574/"
+      },
+      {
+        "id": "2025.acl-long.1587",
+        "title": "FactBench: A Dynamic Benchmark for In-the-Wild Language Model Factuality Evaluation",
+        "authors": [
+          "Farima Fatahi Bayat",
+          "Lechen Zhang",
+          "Sheza Munir",
+          "Lu Wang Northeastern University, Northeastern University and University of Michigan"
+        ],
+        "abstract": "The rapid adoption of language models (LMs) across diverse applications has raised concerns about their factuality, i.e., their consistency with real-world facts. We introduce VERIFY, an evidence-based evaluation pipeline that measures LMs’ factuality in real-world user interactions. VERIFY considers the verifiability of LM-generated content and categorizes content units as Supported, Unsupported, or Undecidable based on Web-retrieved evidence. Importantly, factuality judgment by VERIFY more strongly correlates with human evaluations than existing methods. Using VERIFY, we identify “hallucination prompts,” i.e., those that frequently elicit factual errors in LM responses. These prompts form FactBench, a dataset of 1K prompts spanning 150 topics and tiered into Easy, Moderate, and Hard prompts. We benchmark widely-used openweight and proprietary LMs from six families, yielding three key findings: (i) LMs’ factual precision declines from Easy to Hard prompts, (ii) factuality does not necessarily improve with scale; Llama3.1-405B-Instruct performs comparably to or worse than its 70B variant, and (iii) Gemini1.5-Pro shows a notably higher refusal rate, with over-refusal in 25% of cases.",
+        "url": "https://aclanthology.org/2025.acl-long.1587/"
+      },
+      {
+        "id": "2025.acl-short.18",
+        "title": "Revisiting Epistemic Markers in Confidence Estimation: Can Markers Accurately Reflect Large Language Models’ Uncertainty?",
+        "authors": [
+          "Jiayu Liu",
+          "Qing Zong",
+          "Weiqi Wang The Hong Kong University of Science and Technology",
+          "Yangqiu Song Hong Kong University of Science and Technology"
+        ],
+        "abstract": "As large language models (LLMs) are increasingly used in high-stakes domains, accurately assessing their confidence is crucial. Humans typically express confidence through epistemic markers (e.g., “fairly confident”) instead of numerical values. However, it remains unclear whether LLMs consistently use these markers to reflect their intrinsic confidence due to the difficulty of quantifying uncertainty associated with various markers. To address this gap, we first define marker confidence as the observed accuracy when a model employs an epistemic marker. We evaluate its stability across multiple question-answering datasets in both in-distribution and out-of-distribution settings for open-source and proprietary LLMs. Our results show that while markers generalize well within the same distribution, their confidence is inconsistent in out-of-distribution scenarios. These findings raise significant concerns about the reliability of epistemic markers for confidence estimation, underscoring the need for improved alignment between marker based confidence and actual model uncertainty. Our code is available at https://github.com/HKUST-KnowComp/MarCon.",
+        "url": "https://aclanthology.org/2025.acl-short.18/"
+      },
+      {
+        "id": "2025.acl-short.70",
+        "title": "From Citations to Criticality: Predicting Legal Decision Influence in the Multilingual Swiss Jurisprudence",
+        "authors": [
+          "Ronja Stern",
+          "Ken Kawamura",
+          "Matthias Stürmer BFH - Bern University of Applied Sciences and Universität Bern",
+          "Ilias Chalkidis Copenhagen University",
+          "Joel Niklaus Harvey"
+        ],
+        "abstract": "Many court systems are overwhelmed all over the world, leading to huge backlogs of pending cases. Effective triage systems, like those in emergency rooms, could ensure proper prioritization of open cases, optimizing time and resource allocation in the court system. In this work, we introduce the Criticality Prediction dataset, a novel resource for evaluating case prioritization. Our dataset features a two-tier labeling system: (1) the binary LD-Label, identifying cases published as Leading Decisions (LD), and (2) the more granular Citation-Label, ranking cases by their citation frequency and recency, allowing for a more nuanced evaluation. Unlike existing approaches that rely on resource-intensive manual annotations, we algorithmically derive labels leading to a much larger dataset than otherwise possible. We evaluate several multilingual models, including both smaller fine-tuned models and large language models in a zero-shot setting. Our results show that the fine-tuned models consistently outperform their larger counterparts, thanks to our large training set. Our results highlight that for highly domain-specific tasks like ours, large training sets are still valuable.",
+        "url": "https://aclanthology.org/2025.acl-short.70/"
+      },
+      {
+        "id": "2025.acl-short.80",
+        "title": "Quantifying Misattribution Unfairness in Authorship Attribution",
+        "authors": [
+          "Pegah Alipoormolabashi State University of New York at Stony Brook",
+          "Ajay Patel",
+          "Niranjan Balasubramanian State University of New York, Stony Brook"
+        ],
+        "abstract": "Authorship misattribution can have profound consequences in real life. In forensic settings simply being considered as one of the potential authors of an evidential piece of text or communication can result in undesirable scrutiny. This raises a fairness question: Is every author in the candidate pool at equal risk of misattribution? Standard evaluation measures for authorship attribution systems do not explicitly account for this notion of fairness. We introduce a simple measure, Misattribution Unfairness Index (MAUI_k), which is based on how often authors are ranked in the top k for texts they did not write. Using this measure we quantify the unfairness of five models on two different datasets. All models exhibit high levels of unfairness with increased risks for some authors. Furthermore, we find that this unfairness relates to how the models embed the authors as vectors in the latent search space. In particular, we observe that the risk of misattribution is higher for authors closer to the centroid (or center) of the embedded authors in the haystack. These results indicate the potential for harm and the need for communicating with and calibrating end users on misattribution risk when building and providing such models for downstream use.",
+        "url": "https://aclanthology.org/2025.acl-short.80/"
+      },
+      {
+        "id": "2025.acl-demo.28",
+        "title": "LCDS: A Logic-Controlled Discharge Summary Generation System Supporting Source Attribution and Expert Review",
+        "authors": [
+          "Cheng Yuan East China University of Science and Technology",
+          "Xinkai Rui",
+          "Yongqi Fan",
+          "Yawei Fan",
+          "Boyang Zhong",
+          "Jiacheng Wang",
+          "Weiyan Zhang East China University of Science and Technology",
+          "Tong Ruan"
+        ],
+        "abstract": "Despite the remarkable performance of Large Language Models (LLMs) in automated discharge summary generation, they still suffer from generating inaccurate content or fabricating information without valid sources. To address these issues, we propose LCDS, a tool for empowering LLMs with Logic-Controlled Discharge Summary generation. LCDS constructs a source mapping table by calculating the textual similarity between electronic medical records (EMRs) and discharge summaries, providing a structured reference for generation. Based on a comprehensive set of logical rules, LCDS identifies the structured writing logic of discharge summaries and integrates it with EMRs to generate silver discharge summaries. Furthermore, LCDS traces the provenance of generated content, allowing experts to review, provide feedback, and rectify errors to produce golden discharge summaries, which are subsequently recorded for the incremental fine-tuning of LLMs.Our project and demo video are in the GitHub repository https://github.com/ycycyc02/LCDS.",
+        "url": "https://aclanthology.org/2025.acl-demo.28/"
+      },
+      {
+        "id": "2025.acl-demo.49",
+        "title": "Ai2 Scholar QA: Organized Literature Synthesis with Attribution",
+        "authors": [
+          "Amanpreet Singh Allen Institute for Artificial Intelligence",
+          "Joseph Chee Chang Allen Institute for Artificial Intelligence",
+          "Dany Haddad",
+          "Aakanksha Naik Allen Institute for Artificial Intelligence and National Institutes of Health",
+          "Jena D. Hwang Allen Institute for Artificial Intelligence",
+          "Rodney Kinney Allen Institute for Artificial Intelligence",
+          "Daniel S Weld Department of Computer Science, University of Washington",
+          "Doug Downey Allen Institute for Artificial Intelligence and Northwestern University",
+          "Sergey Feldman Allen Institute for Artificial Intelligence and Data Cowboys"
+        ],
+        "abstract": "Retrieval-augmented generation is increasingly effective in answering scientific questions from literature, but many state-of-the-art systems are expensive and closed-source. We introduce Ai2 Scholar QA, a free online scientific question answering application. To facilitate research, we make our entire pipeline public: as a customizable open-source Python package and interactive web app, along with paper indexes accessible through public APIs and downloadable datasets. We describe our system in detail and present experiments analyzing its key design decisions. In an evaluation on a recent scientific QA benchmark, we find that Ai2 Scholar QA outperforms competing systems.",
+        "url": "https://aclanthology.org/2025.acl-demo.49/"
+      },
+      {
+        "id": "2025.acl-srw.1",
+        "title": "Advancing African-Accented English Speech Recognition: Epistemic Uncertainty-Driven Data Selection for Generalizable ASR Models",
+        "authors": [
+          "Bonaventure F. P. Dossou"
+        ],
+        "abstract": "Accents play a pivotal role in shaping human communication, enhancing our ability to convey and comprehend messages with clarity and cultural nuance. While there has been significant progress in Automatic Speech Recognition (ASR), African-accented English ASR has been understudied due to a lack of training datasets, which are often expensive to create and demand colossal human labor. Combining several active learning paradigms and the core-set approach, we propose a new multi-round adaptation process that uses epistemic uncertainty to automate annotation, significantly reducing the associated costs and human labor. This novel method streamlines data annotation and strategically selects data samples that contribute most to model uncertainty, enhancing training efficiency. We define a new U-WER metric to track model adaptation to hard accents. We evaluate our approach across several domains, datasets, and high-performing speech models. Our results show that our approach leads to a 27% WER relative average improvement while requiring, on average, 45% less data than established baselines. Our approach also improves out-of-distribution generalization for very low-resource accents, demonstrating its viability for building generalizable ASR models in the context of accented African ASR. We open-source the code here.",
+        "url": "https://aclanthology.org/2025.acl-srw.1/"
+      },
+      {
+        "id": "2025.acl-srw.77",
+        "title": "Improving Explainability of Sentence-level Metrics via Edit-level Attribution for Grammatical Error Correction",
+        "authors": [
+          "Takumi Goto Nara Institute of Science and Technology, Japan",
+          "Justin Vasselli",
+          "Taro Watanabe Nara Institute of Science and Technology, Japan"
+        ],
+        "abstract": "Various evaluation metrics have been proposed for Grammatical Error Correction (GEC), but many, particularly reference-free metrics, lack explainability. This lack of explainability hinders researchers from analyzing the strengths and weaknesses of GEC models and limits the ability to provide detailed feedback for users. To address this issue, we propose attributing sentence-level scores to individual edits, providing insight into how specific corrections contribute to the overall performance. For the attribution method, we use Shapley values, from cooperative game theory, to compute the contribution of each edit. Experiments with existing sentence-level metrics demonstrate high consistency across different edit granularities and show approximately 70% alignment with human evaluations. In addition, we analyze biases in the metrics based on the attribution results, revealing trends such as the tendency to ignore orthographic edits.",
+        "url": "https://aclanthology.org/2025.acl-srw.77/"
+      },
+      {
+        "id": "2025.acl-industry.77",
+        "title": "AIDE: Attribute-Guided MultI-Hop Data Expansion for Data Scarcity in Task-Specific Fine-tuning",
+        "authors": [
+          "Jiayu Li Amazon",
+          "Jennifer Zhu University of California, Berkeley and Amazon",
+          "Fang Liu Amazon",
+          "Yanjun Qi University of Virginia"
+        ],
+        "abstract": "Fine-tuning large language models (LLMs) for specific tasks requires diverse, high-quality training data. However, obtaining sufficient relevant data remains a significant challenge. Existing data synthesis methods either depend on extensive seed datasets or struggle to balance task relevance and data diversity. To address these challenges, we propose Attribute-guided multI-hop Data Expansion (AIDE), a novel data synthesis framework that uses a multi-hop process to expand very few seed data points while ensuring data diversity and task relevance. AIDE extracts the main topic and key knowledge attributes from the seeds to guide the synthesis steps. The process repeats for K hops, using the generated data as seeds. To prevent irrelevant data generation as the hop depth increases, AIDE incorporates a residual connection mechanism. Our empirical results show that AIDE enables fine-tuning of Mistral-7B, Llama-3.1-8B and Llama-3.2-3B from 10 seeds, surpassing the models fine-tuned on human curated data. Furthermore, AIDE outperforms state-of-the-art data synthesis methods, such as Evol-Instruct, by over 30% in task-specific fine-tuning. Code is available at https://github.com/Code4Graph/AIDE.",
+        "url": "https://aclanthology.org/2025.acl-industry.77/"
+      }
+    ]
+  },
+  {
+    "key": "2026.acl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2026.acl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:14:38.888963+08:00",
+    "status": "retrieved",
+    "sha256": "ebaab36c686f5cb7909652cf08035a89a5bedc077e2e87ec25cbfb7b602ed41f",
+    "file": "sources/focused_attempt2/2026.acl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2026.acl-long.18",
+        "title": "MINTQA: A Multi-Hop Question Answering Benchmark for Evaluating LLMs on New and Long-tail Knowledge",
+        "authors": [
+          "Jie He",
+          "Nan Hu Southeast University",
+          "Wanqiu Long",
+          "Jiaoyan Chen The University of Manchester",
+          "Jeff Z. Pan University of Edinburgh, University of Edinburgh"
+        ],
+        "abstract": "Retrieval-Augmented Generation (RAG) enhances large language models (LLMs) by integrating external knowledge, enabling them to tackle knowledge-intensive tasks. However, limited research has explored how LLMs effectively leverage RAG techniques for multi-hop question answering (QA), particularly when handling knowledge with with varying degrees of familiarity. In this paper, we introduce MINTQA (Multi-hop Question Answering on New and Tail Knowledge), a benchmark designed to evaluate multi-hop QA performance on questions involving 10,479 question-answer pairs for evaluating old/new knowledge and 17,887 pairs for assessing popular/unpopular knowledge, with each question equipped with corresponding sub-questions and answers. This benchmark primarily evaluates the multi-hop reasoning ability of LLMs and their capacity to handle knowledge with varying levels of familiarity during the reasoning process. We evaluate 22 state-of-the-art LLMs using three distinct QA strategies: LLM-based parameterized knowledge QA, direct RAG-enhanced QA, and multi-hop RAG-enhanced QA. Our experiments reveal key challenges in how LLMs handle knowledge with different familiarity and offer insights into improving their multi-hop reasoning capabilities when combined with RAG techniques.",
+        "url": "https://aclanthology.org/2026.acl-long.18/"
+      },
+      {
+        "id": "2026.acl-long.22",
+        "title": "PR-XAI: PageRank-Based Feature Attribution for Transformers",
+        "authors": [
+          "Behrooz Azarkhalili",
+          "Linyi Li Simon Fraser University",
+          "Maxwell W. Libbrecht"
+        ],
+        "abstract": "We introduce PR-XAI, a feature attribution method for transformer models based on the PageRank algorithm. The proposed PR-XAI models the attention mechanism as a directed graph, with weights derived from attention weights and their gradients. Evaluations across five well-known text classification datasets and three different architectures show that PR-AG, one variant of PR-XAI, outperforms state-of-the-art attribution methods in faithfulness and classification metrics, with significant gains on long-form text.",
+        "url": "https://aclanthology.org/2026.acl-long.22/"
+      },
+      {
+        "id": "2026.acl-long.282",
+        "title": "CiteGuard: Faithful Citation Attribution for LLMs via Retrieval-Augmented Validation",
+        "authors": [
+          "Yee Man Choi University of Waterloo",
+          "Xuehang Guo",
+          "Yi R. Fung",
+          "Qingyun Wang College of William and Mary"
+        ],
+        "abstract": "Large Language Models (LLMs) have emerged as powerful assistants for scientific writing. However, concerns remain about the quality and reliability of the generated text, including citation accuracy and faithfulness. While most recent work relies on methods such as LLM-as-a-Judge, the reliability of LLM-as-a-Judge alone is also in doubt. In this work, we reframe citation evaluation as a problem of citation attribution alignment, which assesses whether LLM-generated citations match those a human author would include for the same text. We propose CiteGuard, a retrieval-aware agent framework designed to provide more faithful grounding for citation validation. CiteGuard improves over the prior baseline by 10 percentage points and achieves up to 68.1% accuracy on the CiteME benchmark, approaching human performance (69.2%). It also identifies alternative valid citations and demonstrates generalization ability for cross-domain citation attribution.",
+        "url": "https://aclanthology.org/2026.acl-long.282/"
+      },
+      {
+        "id": "2026.acl-long.300",
+        "title": "Faithful Serum: Mitigating the Faithfulness Gap in Textual Explanations of LLM Decisions via Attribution Guidance",
+        "authors": [
+          "Bar Alon",
+          "Itamar Zimerman Tel Aviv University",
+          "Lior Wolf Tel Aviv University"
+        ],
+        "abstract": "Large language models (LLMs) achieve strong performance and have revolutionized NLP, but their lack of explainability keeps them treated as black boxes, limiting their use in domains that demand transparency and trust. A promising direction to address this issue is post-hoc text-based explanations, which aim to explain model decisions in natural language. Prior work has focused on generating convincing rationales that appear to be subjectively faithful, but it remains unclear whether these explanations are epistemically faithful - that is, whether they reflect the internal evidence the model actually relied on for its decision. In this paper, we first assess the epistemic faithfulness of LLM-generated explanations via counterfactuals and show that they are often unfaithful. We then introduce a training-free method, that enhances faithfulness by guiding explanation generation through attention-level interventions, informed by token-level heatmaps extracted via a faithful attribution method. This method significantly improves epistemic faithfulness across multiple models, benchmarks, and prompts. Our code is attached as supplementary material.",
+        "url": "https://aclanthology.org/2026.acl-long.300/"
+      },
+      {
+        "id": "2026.acl-long.312",
+        "title": "LAFaCT: Attribution-based Localization and Focused Sequential Analysis of Fact-Critical Tokens for Hallucination Detection",
+        "authors": [
+          "Xin Wang",
+          "Jiahao Li University of Science and Technology of China",
+          "Licheng Zhang",
+          "Zhendong Mao University of Science and Technology of China"
+        ],
+        "abstract": "Large Language Models (LLMs) suffer from hallucinations, severely undermining their reliability. While white-box hallucination detection methods that leverage hidden states prevail, they fail to identify and focus on fact-critical information when analyzing token sequences. To address this, we propose LAFaCT, a Localize-then-Analyze detection framework. It first localizes fact-critical tokens using Factual Criticality, a novel metric derived from feature attribution. A subsequent stage then performs a focused sequential analysis on their hidden states. Extensive experiments on eight benchmarks and multiple model families confirm LAFaCT as the new state-of-the-art, with in-depth analyses validating the effectiveness of its core token-localization strategy.",
+        "url": "https://aclanthology.org/2026.acl-long.312/"
+      },
+      {
+        "id": "2026.acl-long.395",
+        "title": "When Correct Beliefs Collapse: Epistemic Resilience of LLMs under Clinical Pressure",
+        "authors": [
+          "Boyu Xiao",
+          "Xiuqi Tian",
+          "Xuwen Song Harbin Institute of Technology",
+          "Haochun Wang Harbin Institute of Technology",
+          "Guanchun Song",
+          "Sendong Zhao",
+          "Bing Qin Harbin Institute of Technology"
+        ],
+        "abstract": "Despite strong medical benchmark accuracy, LLMs can exhibit severe multi-turn sycophancy in clinical dialogue, abandoning initial correct diagnosis under escalating pressure. We propose Med-Stress, a targeted stress test framework that evaluates belief stability under escalating pressure. Across nine frontier large language models (LLMs), we find a clear dissociation between medical knowledge and robustness: high initial diagnostic capability does not imply high belief stability, yielding large knowledge-robustness gaps for several LLMs. To mitigate this failure mode, we propose a lightweight inference-time defense, RBED (Role-Based Epistemic Defense), and R-FT (Resilience-oriented Fine-Tuning), a training-time approach that internalizes evidence-based resistance to pressure. Experiments show that R-FT nearly eliminates belief change and substantially improves robustness.",
+        "url": "https://aclanthology.org/2026.acl-long.395/"
+      },
+      {
+        "id": "2026.acl-long.402",
+        "title": "QBridge: Bridging Natural Language and SQL via Gold Query Rewriting with Agentic Refinement",
+        "authors": [
+          "Zhensheng Luo Zhejiang University",
+          "Sai Wu Zhejiang University",
+          "Yuan Qiu",
+          "Chang Yao Zhejiang University",
+          "Gang Chen College of Computer Science and Technology, Zhejiang University",
+          "Xiu Tang Zhejiang University"
+        ],
+        "abstract": "Natural language to SQL (NL2SQL) provides an intuitive interface for querying structured data, yet real user questions are often noisy, ambiguous, and weakly grounded to database semantics.As a result, token-level schema linking and single-pass SQL decoding can be brittle: small misunderstandings in language or schema grounding may propagate into incorrect generation.We present QBridge, an agentic, feedback-driven NL2SQL framework based on a Refined Gold Query Paradigm, which bridges natural language and SQL via Gold Query—a structured, SQL-aligned intermediate representation.A core insight of QBridge is Distilled Back-Translation (DBT) for SL-independent rewriting.DBT converts SQL-grounded supervision into execution-verified Gold-Query-style rewrites from a teacher model, and distills a lightweight, plug-and-play rewriter that generates schema-aware rewrites without requiring explicit schema linking at inference.QBridge then (i) verifies and conservatively refines the rewrite into a high-fidelity Refined Gold Query, and (ii) refines the generated SQL with dual feedback from execution validity and semantic consistency, enabling interpretable self-correction while remaining compatible with diverse SQL backbones.Extensive experiments on Spider, BIRD, and three robustness variants demonstrate that QBridge consistently improves zero-shot NL2SQL, outperforming strong prompting and agentic baselines while showing strong robustness and generalization. Code and data are available at https://github.com/WannaBSteve/QBridge.",
+        "url": "https://aclanthology.org/2026.acl-long.402/"
+      },
+      {
+        "id": "2026.acl-long.422",
+        "title": "ConlangCrafter: Constructing Languages with a Multi-Hop LLM Pipeline",
+        "authors": [
+          "Morris Alper Carnegie Mellon University",
+          "Moran Yanuka Tel Aviv University and Apple",
+          "Raja Giryes Apple and Tel Aviv University",
+          "Gasper Begus University of California, Berkeley"
+        ],
+        "abstract": "Constructed languages (conlangs) such as Esperanto and Quenya have played diverse roles in art, philosophy, and international communication. Meanwhile, foundation models have revolutionized creative generation in text, images, and beyond. In this work, we leverage modern LLMs as computational creativity aids for end-to-end conlang creation. We introduce ConlangCrafter, a multi-hop pipeline that decomposes language design into modular stages – phonology, morphology, syntax, lexicon generation, and translation. At each stage, our method leverages LLMs’ metalinguistic reasoning capabilities, injecting randomness to encourage diversity and leveraging self-refinement feedback to encourage consistency in the emerging language description. We construct a novel, scalable evaluation framework for this task, evaluating metrics measuring consistency and typological diversity. Automatic and manual evaluations demonstrate ConlangCrafter’s ability to produce coherent and varied conlangs without human linguistic expertise. We will release our code and data.",
+        "url": "https://aclanthology.org/2026.acl-long.422/"
+      },
+      {
+        "id": "2026.acl-long.653",
+        "title": "ReFEree: Reference-Free and Fine-Grained Method for Evaluating Factual Consistency in Real-World Code Summarization",
+        "authors": [
+          "Suyoung Bae Sung Kyun Kwan University",
+          "CheolWon Na Sungkyunkwan University",
+          "Jaehoon Lee Sung Kyun Kwan University",
+          "Yumin Lee Sung Kyun Kwan University",
+          "YunSeok Choi SungKyunKwan University",
+          "Jee-Hyong Lee Sungkyunkwan University"
+        ],
+        "abstract": "As Large Language Models (LLMs) have become capable of generating long and descriptive code summaries, accurate and reliable evaluation of factual consistency has become a critical challenge. However, previous evaluation methods are primarily designed for short summaries of isolated code snippets. Consequently, they struggle to provide fine-grained evaluation of multi-sentence functionalities and fail to accurately assess dependency context commonly found in real-world code summaries.To address this, we propose ReFEree, a reference-free and fine-grained method for evaluating factual consistency in real-world code summaries. We define factual inconsistency criteria specific to code summaries and evaluate them at the segment level using these criteria along with dependency information. These segment-level results are then aggregated into a fine-grained score. We construct a code summarization benchmark with human-annotated factual consistency labels. The evaluation results demonstrate that ReFEree achieves the highest correlation with human judgment among 13 baselines, improving 15-18% over the previous state-of-the-art. Our code and data are available at https://github.com/bsy99615/ReFEree.git.",
+        "url": "https://aclanthology.org/2026.acl-long.653/"
+      },
+      {
+        "id": "2026.acl-long.736",
+        "title": "Accommodation and Epistemic Vigilance: A Pragmatic Account of Why LLMs Fail to Challenge Harmful Beliefs",
+        "authors": [
+          "Myra Cheng Stanford University",
+          "Robert D. Hawkins",
+          "Dan Jurafsky Stanford University"
+        ],
+        "abstract": "Recent evaluations show that large language models (LLMs) frequently fail to challenge users’ harmful beliefs in domains ranging from medical advice to social reasoning. We present a unifying analysis through the lens of pragmatics: these safety failures can be understood and addressed as LLMs exhibiting excessive accommodation and insufficient epistemic vigilance. We show that the pragmatic factors affecting accommodation and epistemic vigilance in humans (at-issueness, linguistic encoding, and source reliability) influence LLM behaviors in similar ways. We demonstrate how these factors explain performance differences across three safety benchmarks that test models’ ability to challenge harmful beliefs, spanning misinformation (Cancer-Myth, SAGE-Eval) and sycophancy (ELEPHANT). This pragmatic lens further motivates prompting interventions, such as adding the phrase “wait a minute”, that drastically improve performance on these difficult benchmarks by shifting pragmatic cues. Our results have practical implications for benchmark design and underscore the importance of pragmatics for understanding model behavior and improving performance.",
+        "url": "https://aclanthology.org/2026.acl-long.736/"
+      },
+      {
+        "id": "2026.acl-long.814",
+        "title": "LCR-RAG: Enhancing Logical Consistency in Retrieval-Augmented Generation via Neuro-symbolic Reinforcement Learning",
+        "authors": [
+          "Wenxiang Zheng Harbin Institute of Technology",
+          "Guo Tang",
+          "Shixin Jiang",
+          "Liangyu Huo",
+          "Xiyuan Zhang Du Xiaoman Technology (Beijing) Co., Ltd.",
+          "Jian Xie Beijing Baichuan Intelligent Technology Co., Ltd.",
+          "Ming Liu Harbin Institute of Technology"
+        ],
+        "abstract": "Retrieval-Augmented Generation (RAG) is widely used to ground large language models (LLMs) in external knowledge and improve factual accuracy. Prior work has explored iterative and self-reflective mechanisms to refine reasoning, but these approaches rely on internal model judgment and lack formally grounded, verifiable feedback. As a result, RAG systems may still produce logically inconsistent or contradictory answers in multi-step reasoning. In this paper, we propose LCR-RAG, a framework that integrates neuro-symbolic verification with reinforcement learning to explicitly optimize logical consistency. The core of our approach is a Logic-Consistency-driven Reward (LCR), which converts discrete logical signals—such as contradictions or incomplete inference chains—into a structured reward signal. This reward guides a PPO-based agent to iteratively rewrite queries and correct reasoning errors. Experiments on HotpotQA, ASQA, and TriviaQA show that LCR-RAG consistently outperforms strong RAG baselines, with ablation results indicating that the LCR mechanism is the primary source of improvement, even under noisy or conflicting retrieval conditions.",
+        "url": "https://aclanthology.org/2026.acl-long.814/"
+      },
+      {
+        "id": "2026.acl-long.867",
+        "title": "Know the Known and the Unknown: Reasonable Answer Generation with Knowledge-Informed Citations",
+        "authors": [
+          "Yichi Zhang Zhejiang University",
+          "Zhuo Chen Zhejiang University",
+          "Lingbing Guo Nanjing University",
+          "Jun Xu",
+          "Mengshu Sun",
+          "Zhizhen Liu",
+          "Lei Liang",
+          "Wen Zhang Zhejiang University",
+          "Huajun Chen Zhejiang University and ZJU-Hangzhou Global Scientific and Technological Innovation Center"
+        ],
+        "abstract": "Question answering (QA) with reference texts is a classic application scenario for large language models (LLMs), where high standards for the credibility and traceability of generated answers are crucial. Many existing approaches focus on generating multi-level citations linked to specific references within the answer, making it verifiable and trustworthy. However, they often overlook key challenges such as citation granularity, the awareness of unknown information, and the adoption of effective training strategies. In this paper, we introduce Knowledge-informed Citation (KFC), which addresses these issues through a novel data construction pipeline, a new benchmark, and an innovative training strategy. With approximately 42K samples spanning 19 distinct domains, KFC includes both traditional citations referencing known entity-level information and specialized citations referring to unknown knowledge in the given question. This structure provides a more granular approach to citations, guiding the model to recognize and explicitly indicate unknown information, thus enhancing the quality and credibility of the response. Additionally, we propose a self-correction paradigm, Self-KFC, designed to fine-tune LLMs by refining poorly cited answers into more accurate ones, making it particularly suitable for citation-dependent scenarios. We present comprehensive experimental results to demonstrate the effectiveness and generalization of Self-KFC on the KFC benchmark.",
+        "url": "https://aclanthology.org/2026.acl-long.867/"
+      },
+      {
+        "id": "2026.acl-long.912",
+        "title": "Seeing the Whole Elephant: A Benchmark for Failure Attribution in LLM-based Multi-Agent Systems",
+        "authors": [
+          "Mengzhuo Chen",
+          "Junjie Wang Institute of Software, Chinese Academy of Sciences",
+          "Fangwen Mu",
+          "Yawen Wang",
+          "Zhe Liu Institute of Software Chinese Academy of Sciences",
+          "Huanxiang Feng",
+          "Qing Wang"
+        ],
+        "abstract": "Failure attribution, i.e., identifying the responsible agent and decisive step of a failure, is particularly challenging in LLM-based multi-agent systems (MAS) due to their natural-language reasoning, nondeterministic outputs, and intricate interaction dynamics. A reliable benchmark is therefore essential to guide and evaluate attribution techniques. Yet existing benchmarks rely on partially observable traces that capture only agent outputs, omitting the inputs and context that developers actually use when debugging. We argue that attribution should be studied under full execution observability, aligning with real-world developer-facing scenarios where complete traces, rather than only outputs, are accessible for diagnosis. To this end, we introduce TraceElephant, a benchmark designed for failure attribution with full execution traces and reproducible environments. We then systematically evaluate failure attribution techniques across various configurations. Specifically, full traces improve attribution accuracy by up to 76.5% over a partial-observation counterpart, confirming that missing inputs obscure many failure causes. TraceElephant provides a foundation for follow-up failure attribution research, promoting evaluation practices that reflect real-world debugging and supporting the development of more transparent MASs.",
+        "url": "https://aclanthology.org/2026.acl-long.912/"
+      },
+      {
+        "id": "2026.acl-long.935",
+        "title": "THOR: A Theta-Gamma Hierarchical Oscillatory Reasoning Framework for Multi-hop QA",
+        "authors": [
+          "Ziyang Ling University of Science and Technology of China",
+          "Ronald X. Xu University of Science and Technology of China",
+          "Mingzhai Sun University of Science and Technology of China"
+        ],
+        "abstract": "Multi-hop question answering requires retrieving and integrating evidence from multiple contexts. Despite the rapid progress of current research, multi-hop reasoning remains constrained by two persistent limitations: attention decay, where the model’s focus on main question degrades as the reasoning chain grows, and error accumulation, where mistakes propagate across hops and compounds into final failure. Inspired by Theta-Gamma hierarchical oscillation which decouples global planning from local retrieval, enabling efficient attention transfer between hops and a verification and repair mechanism that interrupts the accumulation of errors in the wrong paths, we present THOR, a brain-inspired Theta-Gamma hierarchical oscillatory reasoning framework. Extensive comparative experiments and specific validation experiments on multi-hop QA benchmarks demonstrate that THOR improves answer accuracy and robustness while mitigating limitations, showcasing its generalization across different backbones.",
+        "url": "https://aclanthology.org/2026.acl-long.935/"
+      },
+      {
+        "id": "2026.acl-long.1054",
+        "title": "DVCQR: Dual-View Conversational Query Rewriting with Stage-wise Reinforcement Learning",
+        "authors": [
+          "Chenyi Li",
+          "Xinhui Tu Central China Normal University",
+          "Zaixiang Wang Central China Normal University"
+        ],
+        "abstract": "Conversational query rewriting (CQR) addresses context dependence in conversational search by rewriting each user query into a standalone form. Recent approaches leverage reinforcement learning (RL) to directly optimize retrieval effectiveness; however, they typically rely on a single rewrite, which struggles to accommodate the divergent preferences of sparse and dense retrievers and often suffers from conflicting optimization signals. We propose DVCQR, a Dual-View CQR framework that explicitly generates two complementary rewrites for each query: a sparse-view rewrite that emphasizes distinctive lexical anchors, and a dense-view rewrite that captures complete semantic constraints. Both rewrites are produced in a single pass via a structured reasoning process. To further mitigate objective conflicts, we introduce a stage-wise RL strategy that sequentially aligns the sparse and dense views with their corresponding retrievers using rank-based feedback. Extensive experiments on four benchmarks (TopiOCQA, QReCC, CAsT-19, and CAsT-20) demonstrate that DVCQR consistently outperforms state-of-the-art methods on most metrics under both sparse and dense retrieval settings, validating the effectiveness of dual-view rewriting and stage-wise retriever alignment.",
+        "url": "https://aclanthology.org/2026.acl-long.1054/"
+      },
+      {
+        "id": "2026.acl-long.1159",
+        "title": "TPA: Next Token Probability Attribution for Detecting Hallucinations in RAG",
+        "authors": [
+          "Pengqian Lu",
+          "Jie Lu University of Technology Sydney",
+          "Anjin Liu Commonwealth Bank of Australia",
+          "Guangquan Zhang University of Technology Sydney (UTS)"
+        ],
+        "abstract": "Detecting hallucinations in Retrieval-Augmented Generation remains a challenge. Prior approaches attribute hallucinations to a binary conflict between internal knowledge stored in FFNs and the retrieved context. However, this perspective is incomplete, failing to account for the impact of other components of the LLM, such as the user query, previously generated tokens, the self token, and the final LayerNorm adjustment. To comprehensively capture the impact of these components on hallucination detection, we propose TPA which mathematically attributes each token’s probability to seven distinct sources: Query, RAG Context, Past Token, Self Token, FFN, Final LayerNorm, and Initial Embedding. This attribution quantifies how each source contributes to the generation of the next token. Specifically, we aggregate these attribution scores by Part-of-Speech (POS) tags to quantify the contribution of each model component to the generation of specific linguistic categories within a response. By leveraging these patterns, such as detecting anomalies where Nouns rely heavily on LayerNorm, TPA effectively identifies hallucinated responses. Extensive experiments show that TPA achieves state-of-the-art performance.",
+        "url": "https://aclanthology.org/2026.acl-long.1159/"
+      },
+      {
+        "id": "2026.acl-long.1203",
+        "title": "CIRAG: Construction–Integration Retrieval and Adaptive Generation for Multi-hop Question Answering",
+        "authors": [
+          "Zili Wei",
+          "Yilin Wang",
+          "Xiaocui Yang Northeastern University",
+          "Shi Feng Northeastern University, China",
+          "Weidong Bao Northeastern University",
+          "Daling Wang",
+          "Zihan Wang Northeastern University",
+          "Yifei Zhang"
+        ],
+        "abstract": "Triple-based Iterative Retrieval-Augmented Generation (iRAG) mitigates document-level noise for multi-hop question answering. However, existing methods still face limitations: (i) greedy single-path expansion, which propagates early errors and fails to capture parallel evidence from different reasoning branches, and (ii) granularity–demand mismatch, where a single evidence representation struggles to balance noise control with contextual sufficiency. In this paper, we propose the Construction–Integration Retrieval and Adaptive Generation model, CIRAG. It introduces an Iterative Construction–Integration module that constructs candidate triples and history-conditionally integrates them to distill core triples and generate the next-hop query. This module mitigates the greedy trap by preserving multiple plausible evidence chains. Besides, to address the granularity–demand mismatch, we propose an Adaptive Cascaded Multi-Granularity Generation module that progressively expands contextual evidence based on the problem requirements, from triples to supporting sentences and full passages. Moreover, we introduce Trajectory Distillation, which distills the teacher model’s integration policy into a lightweight student, enabling efficient and reliable long-horizon reasoning. Extensive experiments demonstrate that CIRAG achieves superior performance compared to existing iRAG methods.",
+        "url": "https://aclanthology.org/2026.acl-long.1203/"
+      },
+      {
+        "id": "2026.acl-long.1226",
+        "title": "Think Parallax: Solving Multi-Hop Problems via Multi-View Knowledge-Graph-Based Retrieval-Augmented Generation",
+        "authors": [
+          "Jinliang Liu University of Electronic Science and Technology of China",
+          "Jiale Bai",
+          "Shaoning Zeng University of Electronic Science and Technology of China"
+        ],
+        "abstract": "Large language models (LLMs) still struggle with multi-hop reasoning over knowledge-graphs (KGs), and we identify a previously overlooked structural reason for this difficulty: Transformer attention heads naturally specialize in distinct semantic relations across reasoning stages, forming a hop-aligned relay pattern. This key finding suggests that multi-hop reasoning is inherently multi-view, yet existing KG-based retrieval-augmented generation (KG-RAG) systems collapse all reasoning hops into a single representation, flat embedding space, suppressing this implicit structure and causing noisy or drifted path exploration. We introduce ParallaxRAG, a symmetric multi-view framework that decouples queries and KGs into aligned, head-specific retrieval spaces. By enforcing relational diversity across heads while constraining weakly related paths, ParallaxRAG constructs more accurate, cleaner subgraphs and guides LLMs through grounded, hop-wise reasoning. On WebQSP and CWQ, it achieves state-of-the-art retrieval and QA performance, substantially reduces hallucination, and generalizes strongly to the biomedical BioASQ benchmark. Our implementation is available at https://github.com/LucaLiu1313/ParallaxRAG.",
+        "url": "https://aclanthology.org/2026.acl-long.1226/"
+      },
+      {
+        "id": "2026.acl-long.1273",
+        "title": "Achieving Multi-Hop Calculation and Safe Abstention in Financial Numerical Reasoning by Metric Graph Constrained LLMs",
+        "authors": [
+          "Aoyuan Jiang Wuhan University",
+          "Liang Hong Wuhan University",
+          "Haoxuan Liu",
+          "Rui Wang"
+        ],
+        "abstract": "Financial numerical reasoning demands rigorous adherence to domain-specific logic and precise evidence foundation. However, large language models (LLMs) are prone to forced generation when confronting ambiguous evidence or complex recursive dependencies, often hallucinating values to bridge information gaps. To address this, we propose graph-bounded financial reasoning (GBFR), a neuro-symbolic framework that imposes semantic and structural constraints via a financial metric knowledge graph (FMKG). Unlike sequential generation paradigms, our approach employs a parallel graph-constrained reasoning algorithm that orchestrates specialized operators to simultaneously explore heterogeneous derivation paths of complex financial metrics. Through cross-path verification, the framework aggregates only semantically consistent results, ensuring reasoning is bounded by available context. Crucially, this approach enables safe abstention by distinguishing genuine data absence from retrieval failure, thereby preventing ungrounded fabrication. To evaluate this capability, we further construct counterfactual samples by perturbing entities, times, and metrics to synthesize unanswerable scenarios. Empirical evaluations on standard benchmarks demonstrate that GBFR significantly outperforms state-of-the-art baselines.",
+        "url": "https://aclanthology.org/2026.acl-long.1273/"
+      },
+      {
+        "id": "2026.acl-long.1295",
+        "title": "HopWeaver: Cross-Document Synthesis of High-Quality and Authentic Multi-Hop Questions",
+        "authors": [
+          "Zhiyu Shen",
+          "Jiyuan Liu",
+          "Yunhe Pang",
+          "Yanghui Rao SUN YAT-SEN UNIVERSITY",
+          "Fu Lee Wang Hong Kong Metropolitan University",
+          "Jianxing Yu"
+        ],
+        "abstract": "Multi-Hop Question Answering (MHQA) is crucial for evaluating the model’s capability to integrate information from diverse sources. However, creating extensive and high-quality MHQA datasets is challenging: (i) manual annotation is expensive, and (ii) current synthesis methods often produce simplistic questions or require extensive manual guidance. This paper introduces HopWeaver, the first cross-document framework synthesizing authentic multi-hop questions without human intervention. HopWeaver synthesizes bridge and comparison questions through an innovative pipeline that identifies complementary documents and constructs authentic reasoning paths to ensure true multi-hop reasoning. We further present a comprehensive system for evaluating the synthesized multi-hop questions. Empirical evaluations demonstrate that the synthesized questions achieve comparable or superior quality to human-annotated datasets at a lower cost. Our framework provides a valuable tool for the research community: it can automatically generate challenging benchmarks from any raw corpus, which opens new avenues for both evaluation and targeted training to improve the reasoning capabilities of advanced question answering models, especially in domains with scarce resources.",
+        "url": "https://aclanthology.org/2026.acl-long.1295/"
+      },
+      {
+        "id": "2026.acl-long.1323",
+        "title": "FactVerse: A Benchmark for Factual Consistency in Interleaved Image–Text Generation",
+        "authors": [
+          "Yubo Shan",
+          "Kun Zhang Tencent",
+          "Qiming Xu Beijing Technology and Business University",
+          "Liping Cao",
+          "Yingying Cao",
+          "Jian Zhang",
+          "Yu Wang",
+          "Jingyuan Li",
+          "Yuanzhuo Wang Chinese Academy of Sciences"
+        ],
+        "abstract": "Interleaved multimodal understanding and generation—where models can interactively comprehend and produce images and text in arbitrary orders—has emerged as a key research direction in generative Multimodal Large Language Models(MLLMs). Such interleaved image–text content plays an increasingly important role in information dissemination. However, the compounded persuasive power of multimodal narratives also raises the risk of factual misinformation. Despite this, existing benchmarks lack effective mechanisms to evaluate factual consistency in interleaved image–text content. To bridge this gap, we introduce FactVerse, a benchmark dedicated to evaluating factual consistency in interleaved image-text generation. FactVerse comprises 3,000 human-verified instances across four categories and 50 domains, supporting both English and Chinese. We also establish a multi-dimensional evaluation framework designed to rigorously assess factual consistency. Experiments demonstrate that our framework achieves high alignment with human judgments, significantly outperforming existing evaluation methods. Furthermore, our analysis reveals systematic deficiencies in current models, offering critical insights for future design.",
+        "url": "https://aclanthology.org/2026.acl-long.1323/"
+      },
+      {
+        "id": "2026.acl-long.1362",
+        "title": "Modal Dependency Parsing as Structured Prediction over Source-Cue Scope",
+        "authors": [
+          "Jayeol Chun Brandeis University",
+          "Nianwen Xue Brandeis University"
+        ],
+        "abstract": "Modal dependency parsing-the task of identifying a semantic graph that represents who is responsible for an event-centered claim and with what degree of certainty-relies on recognizing source-introducing cues and correctly linking them to their associated content. However, prior work has largely focused on identifying sources only, treating cue expressions and their modal coverage as auxiliary signals. In this work, we propose a structured prediction framework that leverages large language models (LLMs) to explicitly identify source-cue pairs as well as their respective scope, which together define the modal contexts governing downstream source attribution for events. By concentrating learning at the source-cue level and constraining event-level decisions to a small, scope-defined candidate set, our top-down approach enables more efficient inference in long, event-rich documents. Experiments show this approach surpasses prior state-of-the-art results by 3 and 4% for English and Chinese datasets, respectively.",
+        "url": "https://aclanthology.org/2026.acl-long.1362/"
+      },
+      {
+        "id": "2026.acl-long.1405",
+        "title": "Generating Attribution Reports for Manipulated Facial Images: A Dataset and Baseline",
+        "authors": [
+          "Jingchun Lian",
+          "Lingyu Liu Xi'an Jiaotong University",
+          "Yaxiong Wang Hefei University of Technology",
+          "Yujiao Wu CSIRO",
+          "Lianwei Wu",
+          "Li Zhu Xi'an Jiaotong University",
+          "Zhedong Zheng University of Macau"
+        ],
+        "abstract": "Existing facial forgery detection methods typically focus on binary classification or pixel-level localization, providing little semantic insight into the nature of the manipulation. To address this, we introduce Forgery Attribution Report Generation, a new multimodal task designed to provide post-hoc forensic evidence for manipulated images. This task jointly localizes forged regions (“Where“) and generates natural language explanations grounded in the editing process (“Why“). This dual-focus approach goes beyond traditional binary forensics, providing a comprehensive, interpretable understanding of the manipulation. To enable research in this domain, we present Multi-Modal Tamper Tracing (MMTT), a large-scale dataset of 152,217 samples. Each sample features a process-derived ground-truth mask and a human-authored textual description, ensuring high annotation precision and linguistic richness. We further propose ForgeryTalker, a unified end-to-end baseline that integrates vision and language via a shared encoder and dual decoders for mask and text generation. Experiments show that ForgeryTalker achieves competitive performance on both subtasks, i.e., 59.3 CIDEr and 73.67 IoU, establishing a strong baseline for explainable multimedia forensics. Our dataset and code are available at: https://github.com/NattyLianJc/Generating-Attribution-Reports.",
+        "url": "https://aclanthology.org/2026.acl-long.1405/"
+      },
+      {
+        "id": "2026.acl-long.1430",
+        "title": "Attribution, Citation, and Quotation: A Survey of Evidence-based Text Generation with Large Language Models",
+        "authors": [
+          "Tobias Schreieder",
+          "Tim Schopf",
+          "Michael Färber Technische Universität Dresden"
+        ],
+        "abstract": "The increasing adoption of large language models (LLMs) has raised serious concerns about their reliability and trustworthiness. As a result, a growing body of research focuses on evidence-based text generation with LLMs, aiming to link model outputs to supporting evidence to ensure traceability and verifiability. However, the field is fragmented due to inconsistent terminology, isolated evaluation practices, and a lack of unified benchmarks. To bridge this gap, we systematically analyze 134 papers, introduce a unified taxonomy of evidence-based text generation with LLMs, and investigate 300 evaluation metrics across seven key dimensions. Thereby, we focus on approaches that use citations, attribution, or quotations for evidence-based text generation. Building on this, we examine the distinctive characteristics and representative methods in the field. Finally, we highlight open challenges and outline promising directions for future work.",
+        "url": "https://aclanthology.org/2026.acl-long.1430/"
+      },
+      {
+        "id": "2026.acl-long.1468",
+        "title": "Teaching Language Models to Check Grounded Claim Factuality with Human Test-Taking Strategies",
+        "authors": [
+          "Yuxuan Ye",
+          "Raul Santos-Rodriguez University of Bristol",
+          "Edwin Simpson University of Bristol"
+        ],
+        "abstract": "Grounded claim factuality checking is important for large language model (LLM) applications such as retrieval-augmented generation, as it helps users assess the correctness of generated outputs. Existing metrics using entailment classifiers require dataset-specific threshold tuning, while LLM-based approaches often use direct prompting, which underutilises the reasoning capabilities of LLMs. We address this by formulating grounded claim factuality checking as a true/false reading comprehension task and prompting LLMs with explicit test-taking strategies for efficient reasoning. Our method reduces token usage by over 80% compared to unguided open-ended reasoning, and achieves competitive performance to more expensive alternatives across two factuality benchmarks, setting a new state of the art on one. To further reduce inference cost, we train small language models (SLMs) to replace LLMs in the checking pipeline. Using supervised fine-tuning (SFT) and a self-revision mechanism, the SLMs learn to improve their factuality judgements. Experimental results show that the resulting SLMs perform on par with strong baselines, combining low inference costs with generating supporting rationales to support interpretability. Code and datasets will be released upon acceptance.",
+        "url": "https://aclanthology.org/2026.acl-long.1468/"
+      },
+      {
+        "id": "2026.acl-long.1472",
+        "title": "Stress Testing Factual Consistency Metrics for Long-Document Summarization",
+        "authors": [
+          "Zain Muhammad Mujahid Copenhagen University",
+          "Dustin Wright Aalborg University",
+          "Isabelle Augenstein University of Copenhagen"
+        ],
+        "abstract": "Evaluating the factual consistency of abstractive text summarization remains a significant challenge, particularly for long documents, where conventional metrics struggle with input length limitations and long-range dependencies. In this work, we systematically evaluate the reliability of six widely used reference-free factuality metrics, originally proposed for short-form summarization, in the long-document setting. We probe metric robustness through seven factuality-preserving perturbations applied to summaries, namely paraphrasing, simplification, synonym replacement, logically equivalent negations, vocabulary reduction, compression, and source text insertion, and further analyze their sensitivity to retrieval context and claim information density. Across three long-form benchmark datasets spanning science fiction, legal, and scientific domains, our results reveal that existing short-form metrics produce inconsistent scores for semantically equivalent summaries and exhibit declining reliability for information-dense claims whose content is semantically similar to many parts of the source document. While expanding the retrieval context improves stability in some domains, no metric consistently maintains factual alignment under long-context conditions. Finally, our results highlight concrete directions for improving factuality evaluation, including multi-span reasoning, context-aware calibration, and training on meaning-preserving variations to enhance robustness in long-form summarization.",
+        "url": "https://aclanthology.org/2026.acl-long.1472/"
+      },
+      {
+        "id": "2026.acl-long.1478",
+        "title": "The Retrieval Bottleneck: Scaling Laws for Reinforcement Learning in RAG",
+        "authors": [
+          "Shu Zhou",
+          "Jinman Leng",
+          "Yufei Song",
+          "Xin Wang",
+          "Tao Fan Nanjing University of Finance and Economics",
+          "Hao Wang"
+        ],
+        "abstract": "Scaling laws have enabled predictable compute allocation for pre-training and for RL in reasoning tasks. However, research on retrieval reinforcement generation (RAG) remains insufficient and there is a lack of fundamental understanding of the interaction between retrieval quality and reinforcement learning computation. We present the first systematic study of RL scaling for RAG across three knowledge-intensive benchmarks. We introduce the Retrieval Bottleneck Hypothesis and derive sigmoidal scaling laws showing that retrieval quality, not RL compute, determines the asymptotic performance ceiling. Our analysis reveals three principles: (1) retrieval quality bounds achievable performance, with improving retrieval yielding larger gains than algorithmic innovations; (2) design choices (training objectives, rewards, off-policy methods) primarily modulate compute efficiency, with secondary effects on the ceiling that are substantially smaller than retrieval quality improvements; and (3) stable configurations enable extrapolation with 3.1% error at 4x compute. We further uncover RAG-specific dynamics: optimal document count increases with training, and RL algorithm effectiveness depends critically on retrieval quality. These insights yield RAG-ScaleRL, achieving strong performance on knowledge-intensive benchmarks while providing the predictable scaling long available for pre-training but previously absent in RAG-RL.",
+        "url": "https://aclanthology.org/2026.acl-long.1478/"
+      },
+      {
+        "id": "2026.acl-long.1489",
+        "title": "De-Anonymization at Scale via Tournament-Style Attribution",
+        "authors": [
+          "Lirui Zhang",
+          "Huishuai Zhang"
+        ],
+        "abstract": "As LLMs rapidly advance and enter real-world use, their privacy implications are increasingly important. We study an authorship de-anonymization threat: using LLMs to link anonymous documents to their authors, potentially compromising settings such as double-blind peer review. We propose De-Anonymization at Scale (DAS), a large-language-model–based method for attributing authorship among tens of thousands of candidate texts. DAS uses a sequential progression strategy: it randomly partitions the candidate corpus into fixed-size groups, prompts an LLM to select the text most likely written by the same author as a query text, and iteratively re-queries the surviving candidates to produce a ranked top-k list. To make this practical at scale, DAS adds a dense-retrieval prefilter to shrink the search space and a majority-voting–style aggregation over multiple independent runs to improve robustness and ranking precision. Experiments on anonymized review data show DAS can recover same-author texts from pools of tens of thousands with accuracy well above chance, demonstrating a realistic privacy risk for anonymous platforms. On standard authorship benchmarks (Enron emails and blog posts), DAS also improves both accuracy and scalability over prior approaches, highlighting a new LLM-enabled de-anonymization vulnerability.",
+        "url": "https://aclanthology.org/2026.acl-long.1489/"
+      },
+      {
+        "id": "2026.acl-long.1559",
+        "title": "IterCOMP: Reasoning-aware Adaptive Prompt Compression for Multi-hop Question Answering",
+        "authors": [
+          "JungMin Yun Chung-Ang University",
+          "YoungBin Kim Chung-Ang University"
+        ],
+        "abstract": "Multi-hop question answering requires complex reasoning across multiple evidence segments, which often overwhelms retrieval-augmented generation systems with lengthy and noisy contexts, thereby undermining both efficiency and accuracy. While existing prompt compression methods attempt to address this issue, they are typically designed for single-turn queries and fail to capture interdependent reasoning steps. We propose IterCOMP, a unified, training-free prompt compression framework that incorporates multi-hop reasoning within an iterative compression loop. IterCOMP decomposes documents into evidence segments, evaluates question answerability, and generates targeted follow-up questions to iteratively integrate essential evidence, producing a compact, reasoning-oriented prompt. Experiments on MusiQue, 2WikiMultiHopQA, and HotpotQA demonstrate that IterCOMP achieves substantial improvements in Exact Match and F1 scores while reducing the token budget, outperforming existing baselines and exhibiting robustness as reasoning complexity increases.",
+        "url": "https://aclanthology.org/2026.acl-long.1559/"
+      },
+      {
+        "id": "2026.acl-long.1571",
+        "title": "ART: Attention Replacement Technique to Improve Factuality in LLMs",
+        "authors": [
+          "Ziqin Luo Baidu Inc.",
+          "Yihao Quan Rutgers University",
+          "Xiaofeng Zhang",
+          "Xiaosong Yuan",
+          "Chen Shen Alibaba Group"
+        ],
+        "abstract": "Hallucination in large language models (LLMs) continues to be a significant issue, particularly in tasks like question answering, where models often generate plausible yet incorrect or irrelevant information. Although various methods have been proposed to mitigate hallucinations, the relationship between attention patterns and hallucinations has not been fully explored. In this paper, we analyze the distribution of attention scores across each layer and attention head of LLMs, revealing a common and intriguing phenomenon: Shallow layers of LLMs primarily rely on uniform attention patterns, where the model distributes its attention evenly across the entire sequence. This uniform attention pattern can lead to hallucinations, as the model fails to focus on the most relevant information. To mitigate this issue, we propose a training-free method called Attention Replacement Technique (ART), which replaces these uniform attention patterns in the shallow layers with local attention patterns. This change directs the model to focus more on the relevant contexts, thus reducing hallucinations. Through extensive experiments, ART demonstrates significant reductions in hallucinations across multiple LLM architectures, proving its effectiveness and generalizability without requiring fine-tuning or additional training data.",
+        "url": "https://aclanthology.org/2026.acl-long.1571/"
+      },
+      {
+        "id": "2026.acl-long.1586",
+        "title": "DeepFact: Co-Evolving Benchmarks and Agents for Deep Research Factuality",
+        "authors": [
+          "Yukun Huang Duke University",
+          "Leonardo F. R. Ribeiro",
+          "Momchil Hardalov Amazon AGI",
+          "Bhuwan Dhingra Apple and Duke University",
+          "Markus Dreyer",
+          "Venkatesh Saligrama Amazon and Boston University"
+        ],
+        "abstract": "Search-augmented LLM agents can produce deep research reports (DRRs), but verifying claim-level factuality remains challenging. Existing fact-checkers usually target general-domain atomic claims, and there is no benchmark to test whether such verifiers transfer to DRRs.Yet building such a benchmark for DRR fact-checkers is itself difficult because it requires expert judgments over cognitively demanding, domain-specific claims.In a controlled study with PhD-level specialists, unassisted experts achieve only 60.8% accuracy on hidden known-answer claims. We therefore propose evolving benchmarking via Audit-then-Score (AtS), in which labels and rationales remain revisable: when a verifier disagrees with the current benchmark, it submits evidence; an auditor adjudicates the dispute; and accepted revisions update the benchmark before scoring. After three additional AtS rounds, expert accuracy rises to 90.9%, showing that experts are better auditors than one-shot labelers.We instantiate AtS as DeepFactBench, a versioned DRR factuality benchmark with auditable rationales, and introduce DeepFactEval, a claim-level verifier.On the frozen DeepFactBench release, DeepFactEval achieves 83.4% accuracy, outperforming the best prior deep-research and traditional fact-checkers by 14.3 and 24.9 points, respectively, and transferring well to external factuality datasets.",
+        "url": "https://aclanthology.org/2026.acl-long.1586/"
+      },
+      {
+        "id": "2026.acl-long.1620",
+        "title": "Utility-Oriented Visual Evidence Selection for Multimodal Retrieval-Augmented Generation",
+        "authors": [
+          "Weiqing Luo Arizona State University",
+          "Zongye Hu",
+          "Xiao Wang Arizona State University",
+          "Zhiyuan Yu Texas A&M University - College Station",
+          "Haofeng Zhang Morgan Stanley",
+          "Ziyi Huang Arizona State University"
+        ],
+        "abstract": "Visual evidence selection is a critical component of multimodal retrieval-augmented generation (RAG), yet existing methods typically rely on semantic relevance or surface-level similarity, which are often misaligned with the actual utility of visual evidence for downstream reasoning. We reformulate multimodal evidence selection from an information-theoretic perspective by defining evidence utility as the information gain induced on a model’s output distribution. To overcome the intractability of answer-space optimization, we introduce a latent notion of evidence helpfulness and theoretically show that, under mild assumptions, ranking evidence by information gain on this latent variable is equivalent to answer-space utility. We further propose a training-free, surrogate-accelerated framework that efficiently estimates evidence utility using lightweight multimodal models. Experiments on MRAG-Bench and Visual-RAG across multiple model families demonstrate that our method consistently outperforms state-of-the-art RAG baselines while achieving substantial reductions in computational cost. We release our code at https://github.com/Hcnaeg/utility-mrag.",
+        "url": "https://aclanthology.org/2026.acl-long.1620/"
+      },
+      {
+        "id": "2026.acl-long.1740",
+        "title": "TH-RAG : Topic-Based Hierarchical Knowledge Graphs for Robust Multi-hop Reasoning in Graph-based RAG Systems",
+        "authors": [
+          "JungHyoun Kim",
+          "Soohyeong Kim",
+          "Seok Jun Hwang",
+          "Jeonghyeon Park Hanyang University",
+          "Yong Suk Choi"
+        ],
+        "abstract": "Retrieval-augmented generation (RAG) enables large language models (LLMs) to incorporate external knowledge at inference. Graph-based RAG extends this by organizing corpora into knowledge graphs, improving multi-hop reasoning and offering a global understanding of the corpus. However, triplet-based graphs generated by LLMs are often fragmented and sparsely connected, which reduces coherence and hinders reasoning. Prior enrichment methods such as clustering, community detection, or approximate graph algorithms attempt to restore connectivity but incur high computational cost and risk semantic distortion. To address these issues, we propose TH-RAG, a hierarchical framework that organizes triplets into subtopics and topics, enhancing connectivity, integrating dispersed information, and supporting robust multi-hop reasoning. Experiments on abstractive and specific QA benchmarks show that TH-RAG outperforms strong baselines in accuracy and robustness while remaining efficient, providing a scalable foundation for graph-based RAG.",
+        "url": "https://aclanthology.org/2026.acl-long.1740/"
+      },
+      {
+        "id": "2026.acl-long.1804",
+        "title": "MemCoRL: Alternating Co-Optimization of Memory Retrieval and Utilization via Collaborative Reinforcement Learning",
+        "authors": [
+          "Yuewen Liu",
+          "Peng Xu",
+          "Muxi Diao",
+          "Anyi Zhang Beijing University of Posts and Telecommunications",
+          "Yang Li",
+          "Yutong Zhang"
+        ],
+        "abstract": "Large Language Models (LLMs) are inherently constrained by their fixed-length context windows, which limits LLMs’ ability to retain and utilize information across long-term interactions. To address this limitation, recent work has proposed external memory modules for LLMs. Using memory modules typically involves two stages: evidence retrieval and memory utilization. While prior work focuses on the architecture of memory modules and the retrieval stage, the equally critical memory utilization stage remains underexplored. Building on this, we propose MemCoRL, a two-stage alternating co-optimization reinforcement learning method. Stage 1 optimizes evidence retrieval using citation feedback and semantic accuracy from utilization as rewards. Stage 2 optimizes utilization with rewards combining semantic similarity and lexical overlap. Iterative co-optimization establishes a positive feedback loop: better retrieval improves memory utilization, which in turn refines retrieval rewards. Experimental results show our approach outperforms the leading baselines on both lexical overlap and semantic similarity metrics, confirming the co-optimization in memory retrieval and memory utilization.",
+        "url": "https://aclanthology.org/2026.acl-long.1804/"
+      },
+      {
+        "id": "2026.acl-long.1812",
+        "title": "From Where Words Come: Efficient Regularization of Code Tokenizers Through Source Attribution",
+        "authors": [
+          "Pavel Chizhov Technical University of Applied Sciences Würzburg-Schweinfurt and PleIAs",
+          "Egor Bogomolov Delft University of Technology and JetBrains Research",
+          "Ivan P. Yamshchikov Technical University of Applied Sciences Würzburg-Schweinfurt"
+        ],
+        "abstract": "Efficiency and safety of Large Language Models (LLMs), among other factors, rely on the quality of tokenization. A good tokenizer not only improves inference speed and language understanding but also provides extra defense against jailbreak attacks and lowers the risk of hallucinations. In this work, we investigate the efficiency of code tokenization, in particular from the perspective of data source diversity. We demonstrate that code tokenizers are prone to producing unused, and thus under-trained, tokens due to the imbalance in repository and language diversity in the training data, as well as the dominance of source-specific, repetitive tokens that are often unusable in future inference. By modifying the BPE objective and introducing merge skipping, we implement different techniques under the name Source-Attributed BPE (SA-BPE) to regularize BPE training and minimize overfitting, thereby substantially reducing the number of under-trained tokens while maintaining the same inference procedure as with regular BPE. This provides an effective tool suitable for production use.",
+        "url": "https://aclanthology.org/2026.acl-long.1812/"
+      },
+      {
+        "id": "2026.acl-long.1840",
+        "title": "KnowRL: Exploring Knowledgeable Reinforcement Learning for Factuality",
+        "authors": [
+          "Baochang Ren",
+          "Shuofei Qiao Zhejiang University",
+          "Ningyu Zhang Zhejiang University",
+          "Da Zheng Ant Group",
+          "Huajun Chen Zhejiang University and ZJU-Hangzhou Global Scientific and Technological Innovation Center"
+        ],
+        "abstract": "Slow-thinking Large Language Models (LLMs) have demonstrated strong reasoning capabilities but often suffer from severe hallucinations due to an inability to recognize their knowledge boundaries. Existing Reinforcement Learning (RL) approaches typically rely on outcome-oriented rewards, which can inadvertently reinforce fabricated reasoning paths when the final answer is correct. To address this, we propose Knowledge-enhanced RL, KnowRL, a framework that integrates factual supervision directly into the reasoning process. By decomposing the chain of thought into atomic facts and verifying them against the corresponding ground-truth knowledge, KnowRL performs fine-grained checks to encourage models to reason faithfully. Crucially, this process-oriented supervision teaches the model to identify its knowledge boundaries, learning to say “I don’t know” instead of fabricating answers when information is missing. Experimental results demonstrate that KnowRL effectively mitigates hallucinations—reducing the Incorrect Rate on SimpleQA by 20.3% for distillation-based slow-thinking models while maintaining strong performance on complex reasoning benchmarks like GPQA and AIME 2025. Furthermore, our method shows robust transferability to out-of-distribution tasks, indicating that the model learns a generalizable verification behavior.",
+        "url": "https://aclanthology.org/2026.acl-long.1840/"
+      },
+      {
+        "id": "2026.acl-long.1888",
+        "title": "M^3-VQA: A Benchmark for Multimodal, Multi-Entity, Multi-Hop Visual Question Answering",
+        "authors": [
+          "Jiatong Ma Institute of automation, Chinese academy of science, Chinese Academy of Sciences",
+          "Longteng Guo Institute of automation, Chinese academy of science, Chinese Academy of Sciences",
+          "Yuchen Liu",
+          "Zijia Zhao",
+          "Dongze Hao",
+          "Xuanxu Lin Institute of automation, Chinese academy of science, Chinese Academy of Sciences",
+          "Jing Liu Institute of automation, Chinese academy of science"
+        ],
+        "abstract": "We present M^3-VQA, a novel knowledge-based Visual Question Answering (VQA) benchmark, to enhance the evaluation of multimodal large language models (MLLMs) in fine-grained multimodal entity understanding and complex multi-hop reasoning. Unlike existing VQA datasets that focus on coarse-grained categories and simple reasoning over single entities, M^3-VQA introduces diverse multi-entity questions involving multiple distinct entities from both visual and textual sources. It requires models to perform both sequential and parallel multi-hop reasoning across multiple documents, supported by traceable, detailed evidence and a curated multimodal knowledge base. We evaluate 16 leading MLLMs   under three settings: without external knowledge, with gold evidence, and with retrieval-augmented input. The poor results reveal significant challenges for MLLMs in knowledge acquisition and reasoning. Models perform poorly without external information but improve markedly when provided with precise evidence. Furthermore, reasoning-aware agentic retrieval surpasses heuristic methods, highlighting the importance of structured reasoning for complex multimodal understanding. M^3-VQA presents a more challenging evaluation for advancing the multimodal reasoning capabilities of MLLMs. Our code and dataset are available at https://github.com/CASIA-IVA-Lab/M3VQA.",
+        "url": "https://aclanthology.org/2026.acl-long.1888/"
+      },
+      {
+        "id": "2026.acl-long.1937",
+        "title": "Failure Modes in Multi-Hop QA: The Weakest Link Effect and the Recognition Bottleneck",
+        "authors": [
+          "Meiru Zhang",
+          "Zaiqiao Meng Huazhong University of Science and Technology",
+          "Nigel Collier University of Cambridge"
+        ],
+        "abstract": "Despite scaling to massive context windows, Large Language Models (LLMs) struggle with multi-hop reasoning due to inherent position bias, which causes them to overlook information at certain positions. Whether these failures stem from an inability to locate evidence (recognition failure) or integrate it (synthesis failure) is unclear. We introduce Multi-Focus Attention Instruction (MFAI), a semantic probe to disentangle these mechanisms by explicitly steering attention towards selected positions. Across 5 LLMs on two multi-hop QA tasks (MuSiQue and NeoQA), we identify the “Weakest Link Effect”: in our 18-document, 3-bucket setting, multi-hop reasoning performance collapses to the level of the least visible evidence, governed by absolute position rather than the linear distance between facts. While matched MFAI resolves recognition bottlenecks, improving accuracy by up to 11.49% in low-visibility positions, misleading MFAI yields divergent effects modulated by task topology: entity-centric tasks with vertical reasoning chains are vulnerable, whereas event-centric tasks with horizontal evidence structures are more resilient. Finally, we demonstrate that “thinking” models utilizing System-2 reasoning effectively locate and integrate the required information, matching gold-only baselines even in noisy, long-context settings. Supplementary experiments on 2WikiMultiHopQA, extended 3-4 hop counts, and a 32B model confirm these findings generalize across datasets, reasoning depths, and model scales.",
+        "url": "https://aclanthology.org/2026.acl-long.1937/"
+      },
+      {
+        "id": "2026.acl-long.1991",
+        "title": "Credal Concept Bottleneck Models for Epistemic–Aleatoric Uncertainty Decomposition",
+        "authors": [
+          "Tanmoy Mukherjee Vrije Universiteit Brussel",
+          "Thomas Bailleux Université d'Artois",
+          "Pierre Marquis Université d'Artois",
+          "Zied Bouraoui CRIL Univ-Artois & CNRS"
+        ],
+        "abstract": "Concept Bottleneck Models (CBMs) predict through human-interpretable concepts, but they typically output point concept probabilities that conflate epistemic uncertainty (reducible model underspecification) with aleatoric uncertainty (irreducible input ambiguity). This makes concept-level uncertainty hard to interpret and, more importantly, hard to act upon. We introduce (Credal Ensemble Concept Estimation), a CBM framework that decomposes concept uncertainty by construction. represents each concept as a credal prediction (a probability interval), derives epistemic uncertainty from disagreement across diverse concept heads, and estimates aleatoric uncertainty via a dedicated ambiguity output trained to match annotator disagreement when available. The resulting signals support prescriptive decisions: automate low-uncertainty cases, prioritize data collection for high-epistemic cases, route high-aleatoric cases to human review, and abstain when both are high. Across several tasks, we show that epistemic uncertainty is positively associated with prediction errors, whereas aleatoric uncertainty closely tracks annotator disagreement, providing guidance beyond error correlation. Our implementation is available at the following link: https://github.com/Tankiit/Credal_Sets/tree/ensemble-credal-cbm",
+        "url": "https://aclanthology.org/2026.acl-long.1991/"
+      },
+      {
+        "id": "2026.acl-long.2018",
+        "title": "Explainable Disentangled Representation Learning for Generalizable Authorship Attribution in the Era of Generative AI",
+        "authors": [
+          "Hieu Man University of Oregon",
+          "Van-Cuong Pham University of Oregon",
+          "Nghia Trung Ngo University of Oregon",
+          "Franck Dernoncourt Adobe Research",
+          "Thien Huu Nguyen University of Oregon"
+        ],
+        "abstract": "Learning robust representations of authorial style is crucial for authorship attribution and AI-generated text detection. However, existing methods often struggle with content-style entanglement, where models learn spurious correlations between authors’ writing styles and topics, leading to poor generalization across domains. To address this challenge, we propose Explainable Authorship Variational Autoencoder (EAVAE), a novel framework that explicitly disentangles style from content through architectural separation-by-design. EAVAE first pretrains style encoders using supervised contrastive learning on diverse authorship data, then finetunes with a Variational Autoencoder (VEA) architecture using separate encoders for style and content representations. Disentanglement is enforced through a novel discriminator that not only distinguishes whether pairs of style/content representations belong to the same or different authors/content sources, but also generates natural language explanation for their decision, simultaneously mitigating confounding information and enhancing interpretability. Extensive experiments demonstrate the effectiveness of EAVAE. On authorship attribution, we achieve state-of-the-art performance on various datasets, including Amazon Reviews, PAN21, and HRS. For AI-generated text detection, EAVAE excels in few-shot learning over the M4 dataset.",
+        "url": "https://aclanthology.org/2026.acl-long.2018/"
+      },
+      {
+        "id": "2026.acl-long.2062",
+        "title": "INFACT: A Diagnostic Benchmark for Induced Faithfulness and Factuality Hallucinations in Video-LLMs",
+        "authors": [
+          "Yangjunqi",
+          "Yuecong Min",
+          "Jie Zhang Institute of Computing Technology, Chinese Academy of Sciences",
+          "Shiguang Shan Institute of Computing Technology, Chinese Academy of Sciences",
+          "Xilin Chen"
+        ],
+        "abstract": "Despite rapid progress, Video Large Language Models (Video-LLMs) remain unreliable due to hallucinations, which are outputs that contradict either video evidence (faithfulness) or verifiable world knowledge (factuality).Existing benchmarks provide limited coverage of factuality hallucinations and predominantly evaluate models only in clean settings.We introduce INFACT, a diagnostic benchmark comprising 9,800 QA instances with fine-grained taxonomies for faithfulness and factuality, spanning real and synthetic videos.INFACT evaluates models in four modes: Base (clean), Visual Degradation, Evidence Corruption, and Temporal Intervention for order-sensitive items.Reliability under induced modes is quantified using Resist Rate (RR) and Temporal Sensitivity Score (TSS).Experiments on 14 representative Video-LLMs reveal that higher Base-mode accuracy does not reliably translate to higher reliability in the induced modes, with evidence corruption reducing stability and temporal intervention yielding the largest degradation.Notably, many open-source baselines exhibit near-zero TSS on factuality, indicating pronounced temporal inertia on order-sensitive questions.",
+        "url": "https://aclanthology.org/2026.acl-long.2062/"
+      },
+      {
+        "id": "2026.acl-long.2082",
+        "title": "How Long Reasoning Chains Influence LLMs’ Judgment of Answer Factuality",
+        "authors": [
+          "Minzhu Tu",
+          "Shiyu Ni Institute of Computing Technology, Chinese Academy of Sciences",
+          "Keping Bi Chinese Academy of Sciences"
+        ],
+        "abstract": "Large language models (LLMs) are increasingly adopted as scalable judges for open-ended generation, yet how they form judgments remains insufficiently understood. Meanwhile, modern LLMs frequently produce answers accompanied by explicit reasoning, making reasoning chains a natural but understudied source of information for model-based evaluation. This work takes a first step toward understanding how exposing reasoning influences LLM-based judgment. Empirical results across factual question-answering (QA) and mathematical datasets show that the presence of reasoning substantially alters judgment behavior, with clear differences across judge capabilities. Weaker judges become more likely to accept incorrect answers when reasoning is present, suggesting over-reliance on persuasive explanations. In contrast, stronger judges exhibit more selective behavior and, in some cases, achieve higher judgment accuracy by leveraging reasoning content. Further analysis reveals that both reasoning fluency and factuality critically shape judgment outcomes. Together, these findings suggest that examining how models interpret reasoning is essential for understanding and improving LLM-based evaluation, with broader implications for the design of reliable automatic judges and evaluation protocols.",
+        "url": "https://aclanthology.org/2026.acl-long.2082/"
+      },
+      {
+        "id": "2026.acl-long.2091",
+        "title": "Authorship Attribution in Multilingual Machine-Generated Texts",
+        "authors": [
+          "Lucio La Cava University of Calabria",
+          "Dominik Macko Kempelen Institute of Intelligent Technologies",
+          "Robert Moro Kempelen Institute of Intelligent Technologies",
+          "Ivan Srba Kempelen Institute of Intelligent Technologies",
+          "Andrea Tagarelli University of Calabria"
+        ],
+        "abstract": "As Large Language Models (LLMs) have reached human-like fluency and coherence, distinguishing machine-generated text (MGT) from human-written content becomes increasingly difficult. While early efforts in MGT detection have focused on binary classification, the growing landscape and diversity of LLMs require a more fine-grained yet challenging authorship attribution (AA), i.e., being able to identify the precise generator (LLM or human) behind a text. However, AA remains nowadays confined to a monolingual setting, with English being the most investigated one, overlooking the multilingual nature and usage of modern LLMs. In this work, we introduce the problem of Multilingual Authorship Attribution, which involves attributing texts to human or multiple LLM generators across diverse languages. Focusing on 18 languages—covering multiple families and writing scripts—and 8 generators (7 LLMs and the human-authored class), we investigate the multilingual suitability of monolingual AA methods in terms of their cross-lingual transferability, and the impact of generators on attribution performance. Our results reveal that while certain monolingual AA methods can be adapted to multilingual settings, significant limitations and challenges remain, particularly in transferring across diverse language families, underscoring the complexity of multilingual AA and the need for more robust approaches to better match real-world scenarios.",
+        "url": "https://aclanthology.org/2026.acl-long.2091/"
+      },
+      {
+        "id": "2026.acl-long.2147",
+        "title": "FactCorrector: A Graph-Inspired Approach to Long-Form Factuality Correction of Large Language Models",
+        "authors": [
+          "Javier Carnerero-Cano Imperial College London, Universidad Carlos III de Madrid, Universidad Carlos II de Madrid and International Business Machines",
+          "Massimiliano Pronesti",
+          "Radu Marinescu International Business Machines",
+          "Tigran T. Tchrakian International Business Machines",
+          "James Barry",
+          "Jasmina Gajcin International Business Machines",
+          "Yufang Hou IT:U Interdisciplinary Transformation University Austria, Technische Universität Darmstadt and IBM Research Ireland",
+          "Alessandra Pascale International Business Machines",
+          "Elizabeth M. Daly IBM Research"
+        ],
+        "abstract": "Large language models (LLMs) are widely used in knowledge-intensive applications but often generate factually incorrect responses. A promising approach to rectify these flaws is correcting LLMs using feedback. Therefore, in this paper, we introduce FactCorrector, a new post-hoc correction method that adapts across domains without retraining and leverages structured feedback about the factuality of the original response to generate a correction. To support rigorous evaluations of factuality correction methods, we also develop the VELI5 benchmark, a novel dataset containing systematically injected factual errors and ground-truth corrections. Experiments on VELI5 and several popular long-form factuality datasets show that the FactCorrector approach significantly improves factual precision while preserving relevance, outperforming strong baselines. We release our code at https://ibm.biz/factcorrector.",
+        "url": "https://aclanthology.org/2026.acl-long.2147/"
+      },
+      {
+        "id": "2026.acl-long.2159",
+        "title": "GrAInS: Gradient-based Attribution for Inference-Time Steering of LLMs and VLMs",
+        "authors": [
+          "Duy Nguyen Department of Computer Science, University of North Carolina at Chapel Hill",
+          "Archiki Prasad",
+          "Elias Stengel-Eskin University of Texas at Austin",
+          "Mohit Bansal University of North Carolina at Chapel Hill"
+        ],
+        "abstract": "Inference-time steering provides a lightweight alternative to fine-tuning large language models (LLMs) and vision-language models (VLMs) by modifying model activations without updating weights. However, existing methods often rely on a global intervention vector, overlook token-level causal influence, and underutilize model logits, especially in multimodal settings where visual and textual inputs contribute unevenly. We propose GrAInS, a contrastive, gradient-based approach that leverages Integrated Gradients to identify top-k influential tokens and construct directional steering vectors based on their contribution to preferred over dispreferred outputs. These vectors guide activation intervention at each layer, preserving the representational scale. GrAInS outperforms fine-tuning and prior steering methods on both LLM and VLM tasks: improving TruthfulQA accuracy by 13.22% (Llama-3.1-8B), reducing MMHal-Bench hallucinations from 0.624 to 0.514 (LLaVA-1.6-7B), and increasing SPA-VL alignment by 8.11%, all without degrading fluency or general capabilities.",
+        "url": "https://aclanthology.org/2026.acl-long.2159/"
+      },
+      {
+        "id": "2026.acl-short.7",
+        "title": "From Factuality to Meta-Factivity: A Cognitive Blueprint for Trustworthy LLMs",
+        "authors": [
+          "Daohuan Liu Huazhong University of Science and Technology",
+          "Lun Xia",
+          "Yuer Wang Huazhong University of Science and Technology",
+          "Jiaoyang Su Huazhong University of Science and Technology",
+          "Xuri Tang Huazhong University of Science and Technology"
+        ],
+        "abstract": "Current research on Event Factuality Prediction (EFP) predominantly treats LLMs as passive classifiers, where high aggregate metrics often mask shortcut learning and unreliable reasoning. In this position paper, we argue for a focus shift from event factuality to meta-factivity. We introduce the Meta-Factivity Framework (MFF), a theoretical roadmap that moves evaluation beyond surface recognition to belief trajectory reasoning and epistemic regulation. By framing hallucination as a failure of meta-cognitive control, we advocate for a transition from measuring black-box accuracy to evaluating white-box cognition, laying the groundwork for a more rigorous benchmark for explainable self-governance.",
+        "url": "https://aclanthology.org/2026.acl-short.7/"
+      },
+      {
+        "id": "2026.acl-demo.76",
+        "title": "DIAGRAMS : A Review Framework for Reasoning-Level Attribution in Diagram QA",
+        "authors": [
+          "Anirudh Iyengar Kaniyar Narayana Iyengar Arizona State University",
+          "Tampu Ravi Kumar Arizona State University",
+          "Manan Suri",
+          "Raviteja Bommireddy",
+          "Dinesh Manocha University of Maryland, College Park",
+          "Puneet Mathur Adobe Systems",
+          "Vivek Gupta Arizona State University"
+        ],
+        "abstract": "Diagram question answering (Diagram QA) requires reasoning-level attribution that links each question-answer pair to all visual regions needed to derive the answer, rather than only the region containing the final response. Creating such structured evidence across diagrams, charts, maps, circuits, and infographics is time-consuming, and existing annotation tools tightly couple their interfaces to dataset-specific formats. We present DIAGRAMS, a lightweight, schema-driven review framework that decouples interface logic from dataset-specific JSON structures through an internal meta-schema and dataset adapters. Given an image and QA pair with optional candidate regions, the system performs QA-conditioned evidence selection and proposes the regions required for reasoning. When QA pairs or candidate regions are missing, it generates them and supports human verification and refinement. Across six Diagram QA datasets, model-suggested evidence achieves 85.39% precision and 75.30% recall against reviewer-final selections (micro-averaged). These results indicate that the review-first framework reduces the number of regions that annotators must create from scratch. Human reviewers accept, edit, or reject each proposed region before export, which structurally limits over-reliance on AI proposals. We release a public demo and installable package to support dataset auditing, grounded supervision creation, and grounded evaluation.",
+        "url": "https://aclanthology.org/2026.acl-demo.76/"
+      },
+      {
+        "id": "2026.acl-srw.67",
+        "title": "Thesis Proposal: Self-Adaptive and Epistemic Uncertainty-Guided ASR of Dense Intra-Sentential Code-Switched Speech for African Low-Resource Languages",
+        "authors": [
+          "Umar Baba Umar",
+          "Sulaimon Adebayo Bashir",
+          "Abdulmalik Danlami Mohammed Federal University of Technology, Minna",
+          "Amina Gogo Tafida"
+        ],
+        "abstract": "Automatic Speech Recognition (ASR) has achieved strong performance for high-resource languages, but dense intra-sentential code-switched speech in African low-resource settings remains underexplored. Existing multilingual and pretrained ASR systems improve general recognition accuracy, yet they remain weak at switch regions, are sensitive to language imbalance during adaptation, and are typically evaluated with metrics that obscure switching-specific errors. This thesis proposes a self-adaptive and epistemic uncertainty-guided framework for African low-resource code-switched ASR, using Hausa–English (Engausa) and Hausa–Yorùbá as case studies. The work investigates three linked questions: (1) how to design a linguistically informed code-switched corpus with explicit switch-region annotation and labeled/unlabeled partitions for adaptive learning, (2) whether epistemic uncertainty is systematically elevated around switch regions and can guide pseudo-label selection in semi-supervised training, and (3) whether switch-aware adaptation with auxiliary language identification and boundary supervision can reduce recognition errors without increasing catastrophic forgetting. The long-term goal is to develop scalable and data-efficient ASR systems that model code-switching as a structured linguistic phenomenon rather than as noise in multilingual African speech.",
+        "url": "https://aclanthology.org/2026.acl-srw.67/"
+      },
+      {
+        "id": "2026.acl-industry.118",
+        "title": "PAR^2-RAG: Planned Active Retrieval and Reasoning for Multi-Hop Question Answering",
+        "authors": [
+          "Xingyu Li",
+          "Rongguang Wang",
+          "Yuying Wang",
+          "Mengqing Guo",
+          "Chenyang Li",
+          "Tao Sheng",
+          "Sujith Ravi",
+          "Dan Roth"
+        ],
+        "abstract": "Multi-hop question answering (MHQA) is a practical bottleneck in industry applications such as enterprise assistants, customer-support copilots, and compliance analysis, where systems must combine evidence across multiple documents before answering. Large language models (LLMs) remain brittle in this setting: iterative retrieval can commit too early to low-recall trajectories, while planning-only approaches can produce static query sets that fail to adapt when intermediate evidence changes. We propose Planned Active Retrieval and Reasoning RAG (PAR^2-RAG), a training-free two-stage framework that separates coverage from commitment. PAR^2-RAG first performs breadth-first anchoring to build a high-recall evidence frontier, then applies depth-first refinement with evidence sufficiency control in an iterative loop. This design targets deployment constraints by avoiding retraining cycles, reducing maintenance overhead under changing corpora, and improving scalability across domains. Across four MHQA benchmarks, PAR^2-RAG consistently outperforms strong baselines: compared with IRCoT, it achieves up to 23.5% higher answer accuracy and up to 10.5% NDCG gains in retrieval quality.",
+        "url": "https://aclanthology.org/2026.acl-industry.118/"
+      },
+      {
+        "id": "2026.acl-industry.119",
+        "title": "OmniOData: Unleashing Small Language Models for OData Query Generation with Synthetic Data and Reinforcement Learning",
+        "authors": [
+          "Tao Bai",
+          "Zhaochen Li",
+          "Hongxin Shao",
+          "Daniel Dahlmeier"
+        ],
+        "abstract": "Despite the success of Large Language Models (LLMs) in structured query generation, OData—a critical RESTful protocol for enterprise APIs—remains under-researched due to a lack of high-fidelity, execution-validated datasets. To bridge this gap, we introduce OmniOData, a framework that generates SynOData, the first large-scale OData corpus featuring execution-grounded queries and reasoning traces. Using this corpus, we develop OmniOData-R1 (1.5B–3B parameters), a family of models that match or surpass frontier proprietary systems, such as GPT-4o and Gemini 3, on realistic industrial benchmarks. Our results demonstrate that the synergy of execution-verified synthetic data and Reinforcement Learning (RL) effectively unlocks the latent reasoning of Small Language Models (SLMs), providing a high-performance, low-latency solution for specialized enterprise query generation.The code and data will be released under an open-source license.",
+        "url": "https://aclanthology.org/2026.acl-industry.119/"
+      }
+    ]
+  }
+]

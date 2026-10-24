@@ -1,0 +1,83 @@
+[
+  {
+    "key": "2023.emnlp-main.322",
+    "url": "https://aclanthology.org/2023.emnlp-main.322.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:02:18.321588+08:00",
+    "status": "retrieved",
+    "sha256": "47f985749bc248b330dd5b965a2c072413017972523f052c5702ae22f3bd75e3",
+    "file": "sources/2023.emnlp-main.322.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/2023.emnlp-main.322.txt",
+    "text_sha256": "4ce3d56a7766506cfd1d7c99e31f0f39f3ab2d04ee4c555a2f3be051ef29e365"
+  },
+  {
+    "key": "2022.emnlp-main.679",
+    "url": "https://aclanthology.org/2022.emnlp-main.679.pdf",
+    "http_status": "200",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:02:32.421560+08:00",
+    "status": "unverified",
+    "sha256": "22b5caf927ee21418305a882c52b0ce62bf43cd41ae10f0c8345b827eab75cb6",
+    "file": "sources/2022.emnlp-main.679.pdf",
+    "error": "curl: (28) Operation timed out after 25000 milliseconds with 524288 out of 1203561 bytes received\n"
+  },
+  {
+    "key": "2021.naacl-main.383",
+    "url": "https://aclanthology.org/2021.naacl-main.383.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:02:10.752694+08:00",
+    "status": "retrieved",
+    "sha256": "79873a91d83ee6b2c48cbc05cbefbdbffba38c92c3b529c60bfb3a1c75cf24d4",
+    "file": "sources/2021.naacl-main.383.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/2021.naacl-main.383.txt",
+    "text_sha256": "0d8573b2f7a7c6de0be7816a3fa98937460ef5a4a35c36b594365ddbd0b42ada"
+  },
+  {
+    "key": "2022.naacl-main.236",
+    "url": "https://aclanthology.org/2022.naacl-main.236.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:02:24.768971+08:00",
+    "status": "retrieved",
+    "sha256": "dc6d99bebd186961ba8e38f75d7c9fbb9cf1d23cac24dbd8830994ee8948e16f",
+    "file": "sources/2022.naacl-main.236.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/2022.naacl-main.236.txt",
+    "text_sha256": "5e82dbbb1cc7b5519161f84bb82cc19c0f17b07209cb030280e926e7f2f74907"
+  },
+  {
+    "key": "2023.acl-short.64",
+    "url": "https://aclanthology.org/2023.acl-short.64.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:02:10.256038+08:00",
+    "status": "retrieved",
+    "sha256": "a37bfc32d8248912f2237488c7cebd692bb20ec56adc32d2351c1bf75a7d54ba",
+    "file": "sources/2023.acl-short.64.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/2023.acl-short.64.txt",
+    "text_sha256": "6ec36a852a5d9d50248db6acf4b7b2558cf4c3a31ed34fe372d6c0292517161a"
+  },
+  {
+    "key": "2023.emnlp-main.398",
+    "url": "https://aclanthology.org/2023.emnlp-main.398.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:02:14.817835+08:00",
+    "status": "retrieved",
+    "sha256": "ae9868f07f0f7ffaae5346778f79b7827d9ec6b13b1e6aae4dff6b2ffc37a2e1",
+    "file": "sources/2023.emnlp-main.398.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/2023.emnlp-main.398.txt",
+    "text_sha256": "966e8e924fd88fd96b871209e77252a880092d40101ba41bef3ded41471fc600"
+  }
+]

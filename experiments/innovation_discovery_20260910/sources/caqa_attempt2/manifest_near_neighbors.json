@@ -1,0 +1,13 @@
+[
+  {
+    "key": "2025.acl-long.837",
+    "url": "https://aclanthology.org/2025.acl-long.837.pdf",
+    "http_status": "200",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:18:12.378097+08:00",
+    "status": "unverified",
+    "sha256": "793a943c5f207b6189660c26d0e51d1dcf4b923d1b9e31e5331802d3bf1fe5f2",
+    "file": "sources/caqa_attempt2/2025.acl-long.837.pdf",
+    "error": "curl: (28) Operation timed out after 55000 milliseconds with 1277952 out of 1697137 bytes received\n"
+  }
+]

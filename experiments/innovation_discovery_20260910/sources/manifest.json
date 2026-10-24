@@ -1,0 +1,631 @@
+[
+  {
+    "key": "2023.emnlp",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2023.emnlp.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T00:58:04.898665+08:00",
+    "status": "retrieved",
+    "sha256": "a3d04dc4f24f1b2d896a06ae1369e605fefac07a7899820939c8637beb05e1d6",
+    "file": "sources/2023.emnlp.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2023.emnlp-main.10",
+        "title": "Evaluating and Modeling Attribution for Cross-Lingual Question Answering",
+        "authors": [
+          "Benjamin Muller",
+          "John Wieting",
+          "Jonathan H. Clark",
+          "Tom Kwiatkowski",
+          "Sebastian Ruder",
+          "Livio Baldini Soares",
+          "Roee Aharoni",
+          "Jonathan Herzig",
+          "Xinyi Wang"
+        ],
+        "abstract": "Trustworthy answer content is abundant in many high-resource languages and is instantly accessible through question answering systems — yet this content can be hard to access for those that do not speak these languages. The leap forward in cross-lingual modeling quality offered by generative language models offers much promise, yet their raw generations often fall short in factuality. To improve trustworthiness in these systems, a promising direction is to attribute the answer to a retrieved source, possibly in a content-rich language different from the query. Our work is the first to study attribution for cross-lingual question answering. First, we collect data in 5 languages to assess the attribution level of a state-of-the-art cross-lingual QA system. To our surprise, we find that a substantial portion of the answers is not attributable to any retrieved passages (up to 50% of answers exactly matching a gold reference) despite the system being able to attend directly to the retrieved text. Second, to address this poor attribution level, we experiment with a wide range of attribution detection techniques. We find that Natural Language Inference models and PaLM 2 fine-tuned on a very small amount of attribution data can accurately detect attribution. With these models, we improve the attribution level of a cross-lingual QA system. Overall, we show that current academic generative cross-lingual QA systems have substantial shortcomings in attribution and we build tooling to mitigate these issues.",
+        "url": "https://aclanthology.org/2023.emnlp-main.10/"
+      },
+      {
+        "id": "2023.emnlp-main.127",
+        "title": "TrueTeacher: Learning Factual Consistency Evaluation with Large Language Models",
+        "authors": [
+          "Zorik Gekhman",
+          "Jonathan Herzig",
+          "Roee Aharoni",
+          "Chen Elkind",
+          "Idan Szpektor"
+        ],
+        "abstract": "Factual consistency evaluation is often conducted using Natural Language Inference (NLI) models, yet these models exhibit limited success in evaluating summaries. Previous work improved such models with synthetic training data. However, the data is typically based on perturbed human-written summaries, which often differ in their characteristics from real model-generated summaries and have limited coverage of possible factual errors. Alternatively, large language models (LLMs) have recently shown promising results in directly evaluating generative tasks, but are too computationally expensive for practical use. Motivated by these limitations, we introduce TrueTeacher, a method for generating synthetic data by annotating diverse model-generated summaries using a LLM. Unlike prior work, TrueTeacher does not rely on human-written summaries, and is multilingual by nature. Experiments on the TRUE benchmark show that a student model trained using our data, substantially outperforms both the state-of-the-art model with similar capacity, and the LLM teacher. In a systematic study, we compare TrueTeacher to existing synthetic data generation methods and demonstrate its superiority and robustness to domain-shift. We also show that our method generalizes to multilingual scenarios. Lastly, we release our large scale synthetic dataset (1.4M examples), generated using TrueTeacher, and a checkpoint trained on this data.",
+        "url": "https://aclanthology.org/2023.emnlp-main.127/"
+      },
+      {
+        "id": "2023.emnlp-main.322",
+        "title": "Query Rewriting in Retrieval-Augmented Large Language Models",
+        "authors": [
+          "Xinbei Ma",
+          "Yeyun Gong",
+          "Pengcheng He",
+          "Hai Zhao",
+          "Nan Duan"
+        ],
+        "abstract": "Large Language Models (LLMs) play powerful, black-box readers in the retrieve-then-read pipeline, making remarkable progress in knowledge-intensive tasks. This work introduces a new framework, Rewrite-Retrieve-Read instead of the previous retrieve-then-read for the retrieval-augmented LLMs from the perspective of the query rewriting. Unlike prior studies focusing on adapting either the retriever or the reader, our approach pays attention to the adaptation of the search query itself, for there is inevitably a gap between the input text and the needed knowledge in retrieval. We first prompt an LLM to generate the query, then use a web search engine to retrieve contexts. Furthermore, to better align the query to the frozen modules, we propose a trainable scheme for our pipeline. A small language model is adopted as a trainable rewriter to cater to the black-box LLM reader. The rewriter is trained using the feedback of the LLM reader by reinforcement learning. Evaluation is conducted on downstream tasks, open-domain QA and multiple-choice QA. Experiments results show consistent performance improvement, indicating that our framework is proven effective and scalable, and brings a new framework for retrieval-augmented LLM.",
+        "url": "https://aclanthology.org/2023.emnlp-main.322/"
+      },
+      {
+        "id": "2023.emnlp-main.332",
+        "title": "The Effect of Scaling, Retrieval Augmentation and Form on the Factual Consistency of Language Models",
+        "authors": [
+          "Lovisa Hagström",
+          "Denitsa Saynova",
+          "Tobias Norlund",
+          "Moa Johansson",
+          "Richard Johansson"
+        ],
+        "abstract": "Large Language Models (LLMs) make natural interfaces to factual knowledge, but their usefulness is limited by their tendency to deliver inconsistent answers to semantically equivalent questions. For example, a model might supply the answer “Edinburgh” to “Anne Redpath passed away in X.” and “London” to “Anne Redpath’s life ended in X.” In this work, we identify potential causes of inconsistency and evaluate the effectiveness of two mitigation strategies: up-scaling and augmenting the LM with a passage retrieval database. Our results on the LLaMA and Atlas models show that both strategies reduce inconsistency but that retrieval augmentation is considerably more efficient. We further consider and disentangle the consistency contributions of different components of Atlas. For all LMs evaluated we find that syntactical form and task artifacts impact consistency. Taken together, our results provide a better understanding of the factors affecting the factual consistency of language models.",
+        "url": "https://aclanthology.org/2023.emnlp-main.332/"
+      },
+      {
+        "id": "2023.emnlp-main.379",
+        "title": "Dynamic Top-k Estimation Consolidates Disagreement between Feature Attribution Methods",
+        "authors": [
+          "Jonathan Kamp",
+          "Lisa Beinborn",
+          "Antske Fokkens"
+        ],
+        "abstract": "Feature attribution scores are used for explaining the prediction of a text classifier to users by highlighting a k number of tokens. In this work, we propose a way to determine the number of optimal k tokens that should be displayed from sequential properties of the attribution scores. Our approach is dynamic across sentences, method-agnostic, and deals with sentence length bias. We compare agreement between multiple methods and humans on an NLI task, using fixed k and dynamic k. We find that perturbation-based methods and Vanilla Gradient exhibit highest agreement on most method–method and method–human agreement metrics with a static k. Their advantage over other methods disappears with dynamic ks which mainly improve Integrated Gradient and GradientXInput. To our knowledge, this is the first evidence that sequential properties of attribution scores are informative for consolidating attribution signals for human interpretation.",
+        "url": "https://aclanthology.org/2023.emnlp-main.379/"
+      },
+      {
+        "id": "2023.emnlp-main.398",
+        "title": "Enabling Large Language Models to Generate Text with Citations",
+        "authors": [
+          "Tianyu Gao",
+          "Howard Yen",
+          "Jiatong Yu",
+          "Danqi Chen"
+        ],
+        "abstract": "Large language models (LLMs) have emerged as a widely-used tool for information seeking, but their generated outputs are prone to hallucination. In this work, our aim is to allow LLMs to generate text with citations, improving their factual correctness and verifiability. Existing work mainly relies on commercial search engines and human evaluation, making it challenging to reproduce and compare different modeling approaches. We propose ALCE, the first benchmark for Automatic LLMs’ Citation Evaluation. ALCE collects a diverse set of questions and retrieval corpora and requires building end-to-end systems to retrieve supporting evidence and generate answers with citations. We develop automatic metrics along three dimensions—fluency, correctness, and citation quality—and demonstrate their strong correlation with human judgements. Our experiments with state-of-the-art LLMs and novel prompting strategies show that current systems have considerable room for improvement—For example, on the ELI5 dataset, even the best models lack complete citation support 50% of the time. Our analyses further highlight promising future directions, including developing better retrievers, advancing long-context LLMs, and improving the ability to synthesize information from multiple sources.",
+        "url": "https://aclanthology.org/2023.emnlp-main.398/"
+      },
+      {
+        "id": "2023.emnlp-main.524",
+        "title": "IDTraffickers: An Authorship Attribution Dataset to link and connect Potential Human-Trafficking Operations on Text Escort Advertisements",
+        "authors": [
+          "Vageesh Saxena",
+          "Benjamin Ashpole",
+          "Gijs van Dijck",
+          "Gerasimos Spanakis"
+        ],
+        "abstract": "Human trafficking (HT) is a pervasive global issue affecting vulnerable individuals, violating their fundamental human rights. Investigations reveal that a significant number of HT cases are associated with online advertisements (ads), particularly in escort markets. Consequently, identifying and connecting HT vendors has become increasingly challenging for Law Enforcement Agencies (LEAs). To address this issue, we introduce IDTraffickers, an extensive dataset consisting of 87,595 text ads and 5,244 vendor labels to enable the verification and identification of potential HT vendors on online escort markets. To establish a benchmark for authorship identification, we train a DeCLUTR-small model, achieving a macro-F1 score of 0.8656 in a closed-set classification environment. Next, we leverage the style representations extracted from the trained classifier to conduct authorship verification, resulting in a mean r-precision score of 0.8852 in an open-set ranking environment. Finally, to encourage further research and ensure responsible data sharing, we plan to release IDTraffickers for the authorship attribution task to researchers under specific conditions, considering the sensitive nature of the data. We believe that the availability of our dataset and benchmarks will empower future researchers to utilize our findings, thereby facilitating the effective linkage of escort ads and the development of more robust approaches for identifying HT indicators.",
+        "url": "https://aclanthology.org/2023.emnlp-main.524/"
+      },
+      {
+        "id": "2023.emnlp-main.890",
+        "title": "FANToM: A Benchmark for Stress-testing Machine Theory of Mind in Interactions",
+        "authors": [
+          "Hyunwoo Kim",
+          "Melanie Sclar",
+          "Xuhui Zhou",
+          "Ronan Bras",
+          "Gunhee Kim",
+          "Yejin Choi",
+          "Maarten Sap"
+        ],
+        "abstract": "Theory of mind (ToM) evaluations currently focus on testing models using passive narratives that inherently lack interactivity. We introduce FANToM, a new benchmark designed to stress-test ToM within information-asymmetric conversational contexts via question answering. Our benchmark draws upon important theoretical requisites from psychology and necessary empirical considerations when evaluating large language models (LLMs). In particular, we formulate multiple types of questions that demand the same underlying reasoning to identify illusory or false sense of ToM capabilities in LLMs. We show that FANToM is challenging for state-of-the-art LLMs, which perform significantly worse than humans even with chain-of-thought reasoning or fine-tuning.",
+        "url": "https://aclanthology.org/2023.emnlp-main.890/"
+      },
+      {
+        "id": "2023.emnlp-main.980",
+        "title": "An Attribution Method for Siamese Encoders",
+        "authors": [
+          "Lucas Moeller",
+          "Dmitry Nikolaev",
+          "Sebastian Padó"
+        ],
+        "abstract": "Despite the success of Siamese encoder models such as sentence transformers (ST), little is known about the aspects of inputs they pay attention to. A barrier is that their predictions cannot be attributed to individual features, as they compare two inputs rather than processing a single one. This paper derives a local attribution method for Siamese encoders by generalizing the principle of integrated gradients to models with multiple inputs. The output takes the form of feature-pair attributions and in case of STs it can be reduced to a token–token matrix. Our method involves the introduction of integrated Jacobians and inherits the advantageous formal properties of integrated gradients: it accounts for the model’s full computation graph and is guaranteed to converge to the actual prediction. A pilot study shows that in case of STs few token pairs can dominate predictions and that STs preferentially focus on nouns and verbs. For accurate predictions, however, they need to attend to the majority of tokens and parts of speech.",
+        "url": "https://aclanthology.org/2023.emnlp-main.980/"
+      }
+    ]
+  },
+  {
+    "key": "2022.emnlp",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2022.emnlp.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T00:58:05.632402+08:00",
+    "status": "retrieved",
+    "sha256": "398ab4519cd4f964f3521e538e27d5bad320e1cd0fe1b062dc8523ace9849c11",
+    "file": "sources/2022.emnlp.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2022.emnlp-main.101",
+        "title": "A Multilingual Perspective Towards the Evaluation of Attribution Methods in Natural Language Inference",
+        "authors": [
+          "Kerem Zaman Bogazici University",
+          "Yonatan Belinkov Technion"
+        ],
+        "abstract": "Most evaluations of attribution methods focus on the English language. In this work, we present a multilingual approach for evaluating attribution methods for the Natural Language Inference (NLI) task in terms of faithfulness and plausibility.First, we introduce a novel cross-lingual strategy to measure faithfulness based on word alignments, which eliminates the drawbacks of erasure-based evaluations.We then perform a comprehensive evaluation of attribution methods, considering different output mechanisms and aggregation methods.Finally, we augment the XNLI dataset with highlight-based explanations, providing a multilingual NLI dataset with highlights, to support future exNLP studies. Our results show that attribution methods performing best for plausibility and faithfulness are different.",
+        "url": "https://aclanthology.org/2022.emnlp-main.101/"
+      },
+      {
+        "id": "2022.emnlp-main.153",
+        "title": "A Multifaceted Framework to Evaluate Evasion, Content Preservation, and Misattribution in Authorship Obfuscation Techniques",
+        "authors": [
+          "Malik Altakrori McGill University /Mila",
+          "Thomas Scialom Meta AI",
+          "Benjamin C. M. Fung McGill University",
+          "Jackie Chi Kit Cheung Mila / McGill University"
+        ],
+        "abstract": "Authorship obfuscation techniques have commonly been evaluated based on their ability to hide the author’s identity (evasion) while preserving the content of the original text. However, to avoid overstating the systems’ effectiveness, evasion detection must be evaluated using competitive identification techniques in settings that mimic real-life scenarios, and the outcomes of the content-preservation evaluation have to be interpretable by potential users of these obfuscation tools. Motivated by recent work on cross-topic authorship identification and content preservation in summarization, we re-evaluate different authorship obfuscation techniques on detection evasion and content preservation. Furthermore, we propose a new information-theoretic measure to characterize the misattribution harm that can be caused by detection evasion. Our results reveal key weaknesses in state-of-the-art obfuscation techniques and a surprisingly competitive effectiveness from a back-translation baseline in all evaluation aspects.",
+        "url": "https://aclanthology.org/2022.emnlp-main.153/"
+      },
+      {
+        "id": "2022.emnlp-main.311",
+        "title": "Explicit Query Rewriting for Conversational Dense Retrieval",
+        "authors": [
+          "Hongjin Qian Renmin University of China",
+          "Zhicheng Dou Renmin University of China"
+        ],
+        "abstract": "In a conversational search scenario, a query might be context-dependent because some words are referred to previous expressions or omitted. Previous works tackle the issue by either reformulating the query into a self-contained query (query rewriting) or learning a contextualized query embedding from the query context (context modelling). In this paper, we propose a model CRDR that can perform query rewriting and context modelling in a unified framework in which the query rewriting’s supervision signals further enhance the context modelling. Instead of generating a new query, CRDR only performs necessary modifications on the original query, which improves both accuracy and efficiency of query rewriting. In the meantime, the query rewriting benefits the context modelling by explicitly highlighting relevant terms in the query context, which improves the quality of the learned contextualized query embedding. To verify the effectiveness of CRDR, we perform comprehensive experiments on TREC CAsT-19 and TREC CAsT-20 datasets, and the results show that our method outperforms all baseline models in terms of both quality of query rewriting and quality of context-aware ranking.",
+        "url": "https://aclanthology.org/2022.emnlp-main.311/"
+      },
+      {
+        "id": "2022.emnlp-main.386",
+        "title": "Questioning the Validity of Summarization Datasets and Improving Their Factual Consistency",
+        "authors": [
+          "Yanzhu Guo Ecole Polytechnique",
+          "Chloé Clavel LTCI, Telecom-Paris, Institut Polytechnique de Paris",
+          "Moussa Kamal Eddine École polytechnique",
+          "Michalis Vazirgiannis Ecole Polytechnique"
+        ],
+        "abstract": "The topic of summarization evaluation has recently attracted a surge of attention due to the rapid development of abstractive summarization systems. However, the formulation of the task is rather ambiguous, neither the linguistic nor the natural language processing communities have succeeded in giving a mutually agreed-upon definition. Due to this lack of well-defined formulation, a large number of popular abstractive summarization datasets are constructed in a manner that neither guarantees validity nor meets one of the most essential criteria of summarization: factual consistency. In this paper, we address this issue by combining state-of-the-art factual consistency models to identify the problematic instances present in popular summarization datasets. We release SummFC, a filtered summarization dataset with improved factual consistency, and demonstrate that models trained on this dataset achieve improved performance in nearly all quality aspects. We argue that our dataset should become a valid benchmark for developing and evaluating summarization systems.",
+        "url": "https://aclanthology.org/2022.emnlp-main.386/"
+      },
+      {
+        "id": "2022.emnlp-main.623",
+        "title": "Improving Factual Consistency in Summarization with Compression-Based Post-Editing",
+        "authors": [
+          "Alex Fabbri Salesforce AI Research",
+          "Prafulla Kumar Choubey Salesforce AI Research",
+          "Jesse Vig Salesforce Research",
+          "Chien-Sheng Wu Salesforce",
+          "Caiming Xiong Metamind"
+        ],
+        "abstract": "State-of-the-art summarization models still struggle to be factually consistent with the input text. A model-agnostic way to address this problem is post-editing the generated summaries. However, existing approaches typically fail to remove entity errors if a suitable input entity replacement is not available or may insert erroneous content. In our work, we focus on removing extrinsic entity errors, or entities not in the source, to improve consistency while retaining the summary’s essential information and form. We propose to use sentence-compression data to train the post-editing model to take a summary with extrinsic entity errors marked with special tokens and output a compressed, well-formed summary with those errors removed. We show that this model improves factual consistency while maintaining ROUGE, improving entity precision by up to 30% on XSum, and that this model can be applied on top of another post-editor, improving entity precision by up to a total of 38%. We perform an extensive comparison of post-editing approaches that demonstrate trade-offs between factual consistency, informativeness, and grammaticality, and we analyze settings where post-editors show the largest improvements.",
+        "url": "https://aclanthology.org/2022.emnlp-main.623/"
+      },
+      {
+        "id": "2022.emnlp-main.679",
+        "title": "CONQRR: Conversational Query Rewriting for Retrieval with Reinforcement Learning",
+        "authors": [
+          "Zeqiu Wu University of Washington",
+          "Yi Luan Google",
+          "Hannah Rashkin Google Research",
+          "David Reitter Google Research",
+          "Hannaneh Hajishirzi University of Washington",
+          "Mari Ostendorf University of Washington",
+          "Gaurav Singh Tomar Google Research"
+        ],
+        "abstract": "Compared to standard retrieval tasks, passage retrieval for conversational question answering (CQA) poses new challenges in understanding the current user question, as each question needs to be interpreted within the dialogue context. Moreover, it can be expensive to re-train well-established retrievers such as search engines that are originally developed for non-conversational queries. To facilitate their use, we develop a query rewriting model CONQRR that rewrites a conversational question in the context into a standalone question. It is trained with a novel reward function to directly optimize towards retrieval using reinforcement learning and can be adapted to any off-the-shelf retriever. CONQRR achieves state-of-the-art results on a recent open-domain CQA dataset containing conversations from three different sources, and is effective for two different off-the-shelf retrievers. Our extensive analysis also shows the robustness of CONQRR to out-of-domain dialogues as well as to zero query rewriting supervision.",
+        "url": "https://aclanthology.org/2022.emnlp-main.679/"
+      },
+      {
+        "id": "2022.emnlp-main.825",
+        "title": "JDDC 2.1: A Multimodal Chinese Dialogue Dataset with Joint Tasks of Query Rewriting, Response Generation, Discourse Parsing, and Summarization",
+        "authors": [
+          "Nan Zhao JD AI Research",
+          "Haoran Li JD AI Research",
+          "Youzheng Wu JD AI Research",
+          "Xiaodong He JD AI Research"
+        ],
+        "abstract": "The popularity of multimodal dialogue has stimulated the need for a new generation of dialogue agents with multimodal interactivity.When users communicate with customer service, they may express their requirements by means of text, images, or even videos. Visual information usually acts as discriminators for product models, or indicators of product failures, which play an important role in the E-commerce scenario.On the other hand, detailed information provided by the images is limited, and typically, customer service systems cannot understand the intent of users without the input text.Thus, bridging the gap between the image and text is crucial for communicating with customers.In this paper, we construct JDDC 2.1, a large-scale multimodal multi-turn dialogue dataset collected from a mainstream Chinese E-commerce platform, containing about 246K dialogue sessions, 3M utterances, and 507K images, along with product knowledge bases and image category annotations. Over our dataset, we jointly define four tasks: the multimodal dialogue response generation task,the multimodal query rewriting task, the multimodal dialogue discourse parsing task, and the multimodal dialogue summarization task.JDDC 2.1 is the first corpus with annotations for all the above tasks over the same dialogue sessions, which facilitates the comprehensive research around the dialogue.In addition, we present several text-only and multimodal baselines and show the importance of visual information for these tasks. Our dataset and implements will be publicly available.",
+        "url": "https://aclanthology.org/2022.emnlp-main.825/"
+      },
+      {
+        "id": "2022.emnlp-industry.40",
+        "title": "PAIGE: Personalized Adaptive Interactions Graph Encoder for Query Rewriting in Dialogue Systems",
+        "authors": [
+          "Daniel Biś Florida State University",
+          "Saurabh Gupta LinkedIn",
+          "Jie Hao Amazon",
+          "Xing Fan Amazon Alexa AI",
+          "Chenlei Guo Amazon Alexa AI"
+        ],
+        "abstract": "Unexpected responses or repeated clarification questions from conversational agents detract from the users’ experience with technology meant to streamline their daily tasks. To reduce these frictions, Query Rewriting (QR) techniques replace transcripts of faulty queries with alternatives that lead to responses thatsatisfy the users’ needs. Despite their successes, existing QR approaches are limited in their ability to fix queries that require considering users’ personal preferences. We improve QR by proposing Personalized Adaptive Interactions Graph Encoder (PAIGE).PAIGE is the first QR architecture that jointly models user’s affinities and query semantics end-to-end. The core idea is to represent previous user-agent interactions and world knowledge in a structured form — a heterogeneous graph — and apply message passing to propagate latent representations of users’ affinities to refine utterance embeddings.Using these embeddings, PAIGE can potentially provide different rewrites given the same query for users with different preferences. Our model, trained without any human-annotated data, improves the rewrite retrieval precision of state-of-the-art baselines by 12.5–17.5% while having nearly ten times fewer parameters.",
+        "url": "https://aclanthology.org/2022.emnlp-industry.40/"
+      },
+      {
+        "id": "2022.emnlp-industry.48",
+        "title": "CGF: Constrained Generation Framework for Query Rewriting in Conversational AI",
+        "authors": [
+          "Jie Hao Amazon",
+          "Yang Liu Amazon",
+          "Xing Fan Amazon Corporation",
+          "Saurabh Gupta Linkedin",
+          "Saleh Soltan Amazon Alexa",
+          "Rakesh Chada Amazon",
+          "Pradeep Natarajan Amazon",
+          "Chenlei Guo Amazon",
+          "Gokhan Tur Amazon"
+        ],
+        "abstract": "In conversational AI agents, Query Rewriting (QR) plays a crucial role in reducing user frictions and satisfying their daily demands. User frictions are caused by various reasons, such as errors in the conversational AI system, users’ accent or their abridged language. In this work, we present a novel Constrained Generation Framework (CGF) for query rewriting at both global and personalized levels. It is based on the encoder-decoder framework, where the encoder takes the query and its previous dialogue turns as the input to form a context-enhanced representation, and the decoder uses constrained decoding to generate the rewrites based on the pre-defined global or personalized constrained decoding space. Extensive offline and online A/B experiments show that the proposed CGF significantly boosts the query rewriting performance.",
+        "url": "https://aclanthology.org/2022.emnlp-industry.48/"
+      }
+    ]
+  },
+  {
+    "key": "2021.naacl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2021.naacl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T00:58:06.241013+08:00",
+    "status": "retrieved",
+    "sha256": "e0a99ff9df548efaaba88d936b1376217c47d1951437aba11a6e0a03e32e31fa",
+    "file": "sources/2021.naacl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2021.naacl-main.58",
+        "title": "Enhancing Factual Consistency of Abstractive Summarization",
+        "authors": [
+          "Chenguang Zhu",
+          "William Hinthorn",
+          "Ruochen Xu",
+          "Qingkai Zeng",
+          "Michael Zeng",
+          "Xuedong Huang",
+          "Meng Jiang"
+        ],
+        "abstract": "Automatic abstractive summaries are found to often distort or fabricate facts in the article. This inconsistency between summary and original text has seriously impacted its applicability. We propose a fact-aware summarization model FASum to extract and integrate factual relations into the summary generation process via graph attention. We then design a factual corrector model FC to automatically correct factual errors from summaries generated by existing systems. Empirical results show that the fact-aware summarization can produce abstractive summaries with higher factual consistency compared with existing systems, and the correction model improves the factual consistency of given summaries via modifying only a few keywords.",
+        "url": "https://aclanthology.org/2021.naacl-main.58/"
+      },
+      {
+        "id": "2021.naacl-main.75",
+        "title": "An Empirical Comparison of Instance Attribution Methods for NLP",
+        "authors": [
+          "Pouya Pezeshkpour",
+          "Sarthak Jain",
+          "Byron Wallace",
+          "Sameer Singh"
+        ],
+        "abstract": "Widespread adoption of deep models has motivated a pressing need for approaches to interpret network outputs and to facilitate model debugging. Instance attribution methods constitute one means of accomplishing these goals by retrieving training instances that (may have) led to a particular prediction. Influence functions (IF; Koh and Liang 2017) provide machinery for doing this by quantifying the effect that perturbing individual train instances would have on a specific test prediction. However, even approximating the IF is computationally expensive, to the degree that may be prohibitive in many cases. Might simpler approaches (e.g., retrieving train examples most similar to a given test point) perform comparably? In this work, we evaluate the degree to which different potential instance attribution agree with respect to the importance of training samples. We find that simple retrieval methods yield training instances that differ from those identified via gradient-based methods (such as IFs), but that nonetheless exhibit desirable characteristics similar to more complex attribution methods. Code for all methods and experiments in this paper is available at: https://github.com/successar/instance_attributions_NLP.",
+        "url": "https://aclanthology.org/2021.naacl-main.75/"
+      },
+      {
+        "id": "2021.naacl-main.383",
+        "title": "Understanding Factuality in Abstractive Summarization with FRANK: A Benchmark for Factuality Metrics",
+        "authors": [
+          "Artidoro Pagnoni",
+          "Vidhisha Balachandran",
+          "Yulia Tsvetkov"
+        ],
+        "abstract": "Modern summarization models generate highly fluent but often factually unreliable outputs. This motivated a surge of metrics attempting to measure the factuality of automatically generated summaries. Due to the lack of common benchmarks, these metrics cannot be compared. Moreover, all these methods treat factuality as a binary concept and fail to provide deeper insights on the kinds of inconsistencies made by different systems. To address these limitations, we devise a typology of factual errors and use it to collect human annotations of generated summaries from state-of-the-art summarization systems for the CNN/DM and XSum datasets. Through these annotations we identify the proportion of different categories of factual errors and benchmark factuality metrics, showing their correlation with human judgement as well as their specific strengths and weaknesses.",
+        "url": "https://aclanthology.org/2021.naacl-main.383/"
+      }
+    ]
+  },
+  {
+    "key": "2022.naacl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2022.naacl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T00:58:05.401405+08:00",
+    "status": "retrieved",
+    "sha256": "6b7e621944601a29964dd088de4047fe068f06b006746af00dc792f82e85be95",
+    "file": "sources/2022.naacl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2022.naacl-main.19",
+        "title": "GlobEnc: Quantifying Global Token Attribution by Incorporating the Whole Encoder Layer in Transformers",
+        "authors": [
+          "Ali Modarressi",
+          "Mohsen Fayyaz",
+          "Yadollah Yaghoobzadeh",
+          "Mohammad Taher Pilehvar"
+        ],
+        "abstract": "There has been a growing interest in interpreting the underlying dynamics of Transformers. While self-attention patterns were initially deemed as the primary option, recent studies have shown that integrating other components can yield more accurate explanations. This paper introduces a novel token attribution analysis method that incorporates all the components in the encoder block and aggregates this throughout layers. Through extensive quantitative and qualitative experiments, we demonstrate that our method can produce faithful and meaningful global token attributions. Our experiments reveal that incorporating almost every encoder component results in increasingly more accurate analysis in both local (single layer) and global (the whole model) settings. Our global attribution analysis significantly outperforms previous methods on various tasks regarding correlation with gradient-based saliency scores. Our code is freely available at https://github.com/mohsenfayyaz/GlobEnc.",
+        "url": "https://aclanthology.org/2022.naacl-main.19/"
+      },
+      {
+        "id": "2022.naacl-main.137",
+        "title": "MultiCite: Modeling realistic citations requires moving beyond the single-sentence single-label setting",
+        "authors": [
+          "Anne Lauscher",
+          "Brandon Ko",
+          "Bailey Kuehl",
+          "Sophie Johnson",
+          "Arman Cohan",
+          "David Jurgens",
+          "Kyle Lo"
+        ],
+        "abstract": "Citation context analysis (CCA) is an important task in natural language processing that studies how and why scholars discuss each others’ work. Despite decades of study, computational methods for CCA have largely relied on overly-simplistic assumptions of how authors cite, which ignore several important phenomena. For instance, scholarly papers often contain rich discussions of cited work that span multiple sentences and express multiple intents concurrently. Yet, recent work in CCA is often approached as a single-sentence, single-label classification task, and thus many datasets used to develop modern computational approaches fail to capture this interesting discourse. To address this research gap, we highlight three understudied phenomena for CCA and release MULTICITE, a new dataset of 12.6K citation contexts from 1.2K computational linguistics papers that fully models these phenomena. Not only is it the largest collection of expert-annotated citation contexts to-date, MULTICITE contains multi-sentence, multi-label citation contexts annotated through-out entire full paper texts. We demonstrate how MULTICITE can enable the development of new computational methods on three important CCA tasks. We release our code and dataset at https://github.com/allenai/multicite.",
+        "url": "https://aclanthology.org/2022.naacl-main.137/"
+      },
+      {
+        "id": "2022.naacl-main.159",
+        "title": "Locally Aggregated Feature Attribution on Natural Language Model Understanding",
+        "authors": [
+          "Sheng Zhang",
+          "Jin Wang",
+          "Haitao Jiang",
+          "Rui Song"
+        ],
+        "abstract": "With the growing popularity of deep-learning models, model understanding becomes more important. Much effort has been devoted to demystify deep neural networks for better explainability. Some feature attribution methods have shown promising results in computer vision, especially the gradient-based methods where effectively smoothing the gradients with reference data is the key to a robust and faithful result. However, direct application of these gradient-based methods to NLP tasks is not trivial due to the fact that the input consists of discrete tokens and the “reference” tokens are not explicitly defined. In this work, we propose Locally Aggregated Feature Attribution (LAFA), a novel gradient-based feature attribution method for NLP models. Instead of relying on obscure reference tokens, it smooths gradients by aggregating similar reference texts derived from language model embeddings. For evaluation purpose, we also design experiments on different NLP tasks including Entity Recognition and Sentiment Analysis on public datasets and key words detection on constructed Amazon catalogue dataset. The superior performance of the proposed method is demonstrated through experiments.",
+        "url": "https://aclanthology.org/2022.naacl-main.159/"
+      },
+      {
+        "id": "2022.naacl-main.187",
+        "title": "QAFactEval: Improved QA-Based Factual Consistency Evaluation for Summarization",
+        "authors": [
+          "Alexander Fabbri",
+          "Chien-Sheng Wu",
+          "Wenhao Liu",
+          "Caiming Xiong"
+        ],
+        "abstract": "Factual consistency is an essential quality of text summarization models in practical settings. Existing work in evaluating this dimension can be broadly categorized into two lines of research, entailment-based and question answering (QA)-based metrics, and different experimental setups often lead to contrasting conclusions as to which paradigm performs the best. In this work, we conduct an extensive comparison of entailment and QA-based metrics, demonstrating that carefully choosing the components of a QA-based metric, especially question generation and answerability classification, is critical to performance. Building on those insights, we propose an optimized metric, which we call QAFactEval, that leads to a 14% average improvement over previous QA-based metrics on the SummaC factual consistency benchmark, and also outperforms the best-performing entailment-based metric. Moreover, we find that QA-based and entailment-based metrics can offer complementary signals and be combined into a single metric for a further performance boost.",
+        "url": "https://aclanthology.org/2022.naacl-main.187/"
+      },
+      {
+        "id": "2022.naacl-main.236",
+        "title": "FactGraph: Evaluating Factuality in Summarization with Semantic Graph Representations",
+        "authors": [
+          "Leonardo F. R. Ribeiro",
+          "Mengwen Liu",
+          "Iryna Gurevych",
+          "Markus Dreyer",
+          "Mohit Bansal"
+        ],
+        "abstract": "Despite recent improvements in abstractive summarization, most current approaches generate summaries that are not factually consistent with the source document, severely restricting their trust and usage in real-world applications. Recent works have shown promising improvements in factuality error identification using text or dependency arc entailments; however, they do not consider the entire semantic graph simultaneously. To this end, we propose FactGraph, a method that decomposes the document and the summary into structured meaning representations (MR), which are more suitable for factuality evaluation. MRs describe core semantic concepts and their relations, aggregating the main content in both document and summary in a canonical form, and reducing data sparsity. FactGraph encodes such graphs using a graph encoder augmented with structure-aware adapters to capture interactions among the concepts based on the graph connectivity, along with text representations using an adapter-based text encoder. Experiments on different benchmarks for evaluating factuality show that FactGraph outperforms previous approaches by up to 15%. Furthermore, FactGraph improves performance on identifying content verifiability errors and better captures subsentence-level factual inconsistencies.",
+        "url": "https://aclanthology.org/2022.naacl-main.236/"
+      },
+      {
+        "id": "2022.naacl-main.287",
+        "title": "TRUE: Re-evaluating Factual Consistency Evaluation",
+        "authors": [
+          "Or Honovich",
+          "Roee Aharoni",
+          "Jonathan Herzig",
+          "Hagai Taitelbaum",
+          "Doron Kukliansy",
+          "Vered Cohen",
+          "Thomas Scialom",
+          "Idan Szpektor",
+          "Avinatan Hassidim",
+          "Yossi Matias"
+        ],
+        "abstract": "Grounded text generation systems often generate text that contains factual inconsistencies, hindering their real-world applicability. Automatic factual consistency evaluation may help alleviate this limitation by accelerating evaluation cycles, filtering inconsistent outputs and augmenting training data. While attracting increasing attention, such evaluation metrics are usually developed and evaluated in silo for a single task or dataset, slowing their adoption. Moreover, previous meta-evaluation protocols focused on system-level correlations with human annotations, which leave the example-level accuracy of such metrics unclear. In this work, we introduce TRUE: a comprehensive survey and assessment of factual consistency metrics on a standardized collection of existing texts from diverse tasks, manually annotated for factual consistency. Our standardization enables an example-level meta-evaluation protocol that is more actionable and interpretable than previously reported correlations, yielding clearer quality measures. Across diverse state-of-the-art metrics and 11 datasets we find that large-scale NLI and question generation-and-answering-based approaches achieve strong and complementary results. We recommend those methods as a starting point for model and metric developers, and hope TRUE will foster progress towards even better evaluation methods.",
+        "url": "https://aclanthology.org/2022.naacl-main.287/"
+      },
+      {
+        "id": "2022.naacl-main.417",
+        "title": "Investigating Crowdsourcing Protocols for Evaluating the Factual Consistency of Summaries",
+        "authors": [
+          "Xiangru Tang",
+          "Alexander Fabbri",
+          "Haoran Li",
+          "Ziming Mao",
+          "Griffin Adams",
+          "Borui Wang",
+          "Asli Celikyilmaz",
+          "Yashar Mehdad",
+          "Dragomir Radev"
+        ],
+        "abstract": "Current pre-trained models applied for summarization are prone to factual inconsistencies that misrepresent the source text. Evaluating the factual consistency of summaries is thus necessary to develop better models. However, the human evaluation setup for evaluating factual consistency has not been standardized. To determine the factors that affect the reliability of the human evaluation, we crowdsource evaluations for factual consistency across state-of-the-art models on two news summarization datasets using the rating-based Likert Scale and ranking-based Best-Worst Scaling. Our analysis reveals that the ranking-based Best-Worst Scaling offers a more reliable measure of summary quality across datasets and that the reliability of Likert ratings highly depends on the target dataset and the evaluation design. To improve crowdsourcing reliability, we extend the scale of the Likert rating and present a scoring algorithm for Best-Worst Scaling that we call value learning. Our crowdsourcing guidelines will be publicly available to facilitate future work on factual consistency in summarization.",
+        "url": "https://aclanthology.org/2022.naacl-main.417/"
+      }
+    ]
+  },
+  {
+    "key": "2023.acl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2023.acl.xml",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T00:58:06.472071+08:00",
+    "status": "retrieved",
+    "sha256": "0540b08e2007d76223fdb156f87c5f019889ad0db6f1c1f17f2429b04b88abbf",
+    "file": "sources/2023.acl.xml",
+    "error": "",
+    "title_matches": [
+      {
+        "id": "2023.acl-long.18",
+        "title": "WeCheck: Strong Factual Consistency Checker via Weakly Supervised Learning",
+        "authors": [
+          "Wenhao Wu Peking University",
+          "Wei Li Baidu Inc.",
+          "Xinyan Xiao Baidu Inc.",
+          "Jiachen Liu Baidu",
+          "Sujian Li pku.edu.cn",
+          "Yajuan Lyu Baidu Inc."
+        ],
+        "abstract": "A crucial issue of current text generation models is that they often uncontrollably generate text that is factually inconsistent with inputs. Due to lack of annotated data, existing factual consistency metrics usually train evaluation models on synthetic texts or directly transfer from other related tasks, such as question answering (QA) and natural language inference (NLI).Bias in synthetic text or upstream tasks makes them perform poorly on text actually generated by language models, especially for general evaluation for various tasks. To alleviate this problem, we propose a weakly supervised framework named WeCheck that is directly trained on actual generated samples from language models with weakly annotated labels.WeCheck first utilizes a generative model to infer the factual labels of generated samples by aggregating weak labels from multiple resources.Next, we train a simple noise-aware classification model as the target metric using the inferred weakly supervised information.Comprehensive experiments on various tasks demonstrate the strong performance of WeCheck, achieving an average absolute improvement of 3.3% on the TRUE benchmark over 11B state-of-the-art methods using only 435M parameters.Furthermore, it is up to 30 times faster than previous evaluation methods, greatly improving the accuracy and efficiency of factual consistency evaluation.",
+        "url": "https://aclanthology.org/2023.acl-long.18/"
+      },
+      {
+        "id": "2023.acl-long.261",
+        "title": "Incorporating Attribution Importance for Improving Faithfulness Metrics",
+        "authors": [
+          "Zhixue Zhao University of Sheffield",
+          "Nikolaos Aletras University of Sheffield"
+        ],
+        "abstract": "Feature attribution methods (FAs) are popular approaches for providing insights into the model reasoning process of making predictions. The more faithful a FA is, the more accurately it reflects which parts of the input are more important for the prediction. Widely used faithfulness metrics, such as sufficiency and comprehensiveness use a hard erasure criterion, i.e. entirely removing or retaining the top most important tokens ranked by a given FA and observing the changes in predictive likelihood. However, this hard criterion ignores the importance of each individual token, treating them all equally for computing sufficiency and comprehensiveness. In this paper, we propose a simple yet effective soft erasure criterion. Instead of entirely removing or retaining tokens from the input, we randomly mask parts of the token vector representations proportionately to their FA importance. Extensive experiments across various natural language processing tasks and different FAs show that our soft-sufficiency and soft-comprehensiveness metrics consistently prefer more faithful explanations compared to hard sufficiency and comprehensiveness.",
+        "url": "https://aclanthology.org/2023.acl-long.261/"
+      },
+      {
+        "id": "2023.acl-long.471",
+        "title": "AD-KD: Attribution-Driven Knowledge Distillation for Language Model Compression",
+        "authors": [
+          "Siyue Wu School of Computer Science and Engineering, Sun Yat-sen University",
+          "Hongzhan Chen Computer Science and Engineering, Sun Yat-sen University",
+          "Xiaojun Quan School of Computer Science and Engineering, Sun Yat-sen University",
+          "Qifan Wang Meta AI",
+          "Rui Wang Vipshop (China) Co., Ltd."
+        ],
+        "abstract": "Knowledge distillation has attracted a great deal of interest recently to compress large language models. However, existing knowledge distillation methods suffer from two limitations. First, the student model simply imitates the teacher’s behavior while ignoring the reasoning behind it. Second, these methods usually focus on the transfer of sophisticated model-specific knowledge but overlook data-specific knowledge. In this paper, we present a novel attribution-driven knowledge distillation approach, which explores the token-level rationale behind the teacher model based on Integrated Gradients (IG) and transfers attribution knowledge to the student model. To enhance the knowledge transfer of model reasoning and generalization, we further explore multi-view attribution distillation on all potential decisions of the teacher. Comprehensive experiments are conducted with BERT on the GLUE benchmark. The experimental results demonstrate the superior performance of our approach to several state-of-the-art methods.",
+        "url": "https://aclanthology.org/2023.acl-long.471/"
+      },
+      {
+        "id": "2023.acl-long.473",
+        "title": "Attributable and Scalable Opinion Summarization",
+        "authors": [
+          "Tom Hosking University of Edinburgh",
+          "Hao Tang University of Edinburgh",
+          "Mirella Lapata School of Informatics, University of Edinburgh"
+        ],
+        "abstract": "We propose a method for unsupervised opinion summarization that encodes sentences from customer reviews into a hierarchical discrete latent space, then identifies common opinions based on the frequency of their encodings. We are able to generate both abstractive summaries by decoding these frequent encodings, and extractive summaries by selecting the sentences assigned to the same frequent encodings. Our method is attributable, because the model identifies sentences used to generate the summary as part of the summarization process. It scales easily to many hundreds of input reviews, because aggregation is performed in the latent space rather than over long sequences of tokens. We also demonstrate that our appraoch enables a degree of control, generating aspect-specific summaries by restricting the model to parts of the encoding space that correspond to desired aspects (e.g., location or food). Automatic and human evaluation on two datasets from different domains demonstrates that our method generates summaries that are more informative than prior work and better grounded in the input reviews.",
+        "url": "https://aclanthology.org/2023.acl-long.473/"
+      },
+      {
+        "id": "2023.acl-long.634",
+        "title": "AlignScore: Evaluating Factual Consistency with A Unified Alignment Function",
+        "authors": [
+          "Yuheng Zha UC San Diego",
+          "Yichi Yang University of California San Diego",
+          "Ruichen Li University of California, San Diego",
+          "Zhiting Hu UC San Diego"
+        ],
+        "abstract": "Many text generation applications require the generated text to be factually consistent with input information. Automatic evaluation of factual consistency is challenging. Previous work has developed various metrics that often depend on specific functions, such as natural language inference (NLI) or question answering (QA), trained on limited data. Those metrics thus can hardly assess diverse factual inconsistencies (e.g., contradictions, hallucinations) that occur in varying inputs/outputs (e.g., sentences, documents) from different tasks. In this paper, we propose AlignScore, a new holistic metric that applies to a variety of factual inconsistency scenarios as above. AlignScore is based on a general function of information alignment between two arbitrary text pieces. Crucially, we develop a unified training framework of the alignment function by integrating a large diversity of data sources, resulting in 4.7M training examples from 7 well-established tasks (NLI, QA, paraphrasing, fact verification, information retrieval, semantic similarity, and summarization). We conduct extensive experiments on large-scale benchmarks including 22 evaluation datasets, where 19 of the datasets were never seen in the alignment training. AlignScore achieves substantial improvement over a wide range of previous metrics. Moreover, AlignScore (355M parameters) matches or even outperforms metrics based on ChatGPT and GPT-4 that are orders of magnitude larger.",
+        "url": "https://aclanthology.org/2023.acl-long.634/"
+      },
+      {
+        "id": "2023.acl-long.643",
+        "title": "Contrastive Error Attribution for Finetuned Language Models",
+        "authors": [
+          "Faisal Ladhak Columbia University",
+          "Esin Durmus Stanford University",
+          "Tatsunori Hashimoto Stanford"
+        ],
+        "abstract": "Recent work has identified noisy and misannotated data as a core cause of hallucinations and unfaithful outputs in Natural Language Generation (NLG) tasks. Consequently, identifying and removing these examples is a key open challenge in creating reliable NLG systems. In this work, we introduce a framework to identify and remove low-quality training instances that lead to undesirable outputs, such as faithfulness errors in text summarization. We show that existing approaches for error tracing, such as gradient-based influence measures, do not perform reliably for detecting faithfulness errors in NLG datasets. We overcome the drawbacks of existing error tracing methods through a new, contrast-based estimate that compares undesired generations to human-corrected outputs. Our proposed method can achieve a mean average precision of 0.93 at detecting known data errors across synthetic tasks with known ground truth, substantially outperforming existing approaches. Using this approach and re-training models on cleaned data leads to a 70% reduction in entity hallucinations on the NYT dataset and a 55% reduction in semantic errors on the E2E dataset.",
+        "url": "https://aclanthology.org/2023.acl-long.643/"
+      },
+      {
+        "id": "2023.acl-long.844",
+        "title": "On Improving Summarization Factual Consistency from Natural Language Feedback",
+        "authors": [
+          "Yixin Liu Yale University",
+          "Budhaditya Deb Microsoft Corporation",
+          "Milagro Teruel Microsoft Research",
+          "Aaron Halfaker Microsoft",
+          "Dragomir Radev Yale University",
+          "Ahmed Hassan Awadallah Microsoft Research"
+        ],
+        "abstract": "Despite the recent progress in language generation models, their outputs may not always meet user expectations. In this work, we study whether informational feedback in natural language can be leveraged to improve generation quality and user preference alignment. To this end, we consider factual consistency in summarization, the quality that the summary should only contain information supported by the input documents, as the user-expected preference. We collect a high-quality dataset, DeFacto, containing human demonstrations and informational natural language feedback consisting of corrective instructions, edited summaries, and explanations with respect to the factual consistency of the summary. Using our dataset, we study three natural language generation tasks: (1) editing a summary by following the human feedback, (2) generating human feedback for editing the original summary, and (3) revising the initial summary to correct factual errors by generating both the human feedback and edited summary. We show that DeFacto can provide factually consistent human-edited summaries and further insights into summarization factual consistency thanks to its informational natural language feedback. We further demonstrate that fine-tuned language models can leverage our dataset to improve the summary factual consistency, while large language models lack the zero-shot learning ability in our proposed tasks that require controllable text generation.",
+        "url": "https://aclanthology.org/2023.acl-long.844/"
+      },
+      {
+        "id": "2023.acl-long.910",
+        "title": "RARR: Researching and Revising What Language Models Say, Using Language Models",
+        "authors": [
+          "Luyu Gao Carnegie Mellon University",
+          "Zhuyun Dai Google",
+          "Panupong Pasupat Google",
+          "Anthony Chen University of California, Irvine",
+          "Arun Tejasvi Chaganty Google Inc.",
+          "Yicheng Fan Google LLC",
+          "Vincent Zhao Google",
+          "Ni Lao Alphabet",
+          "Hongrae Lee Google",
+          "Da-Cheng Juan National Tsing Hua University",
+          "Kelvin Guu Google"
+        ],
+        "abstract": "Language models (LMs) now excel at many tasks such as question answering, reasoning, and dialog. However, they sometimes generate unsupported or misleading content. A user cannot easily determine whether their outputs are trustworthy or not, because most LMs do not have any built-in mechanism for attribution to external evidence. To enable attribution while still preserving all the powerful advantages of recent generation models, we propose RARR (Retrofit Attribution using Research and Revision), a system that 1) automatically finds attribution for the output of any text generation model, and 2) post-edits the output to fix unsupported content while preserving the original output as much as possible. When applied to the output of several state-of-the-art LMs on a diverse set of generation tasks, we find that RARR significantly improves attribution while otherwise preserving the original input to a much greater degree than previously explored edit models. Furthermore, the implementation of RARR requires only a handful of training examples, a large language model, and standard web search.",
+        "url": "https://aclanthology.org/2023.acl-long.910/"
+      },
+      {
+        "id": "2023.acl-short.64",
+        "title": "Improving Automatic Quotation Attribution in Literary Novels",
+        "authors": [
+          "Krishnapriya Vishnubhotla University of Toronto",
+          "Frank Rudzicz Dalhousie University",
+          "Graeme Hirst University of Toronto",
+          "Adam Hammond University of Toronto"
+        ],
+        "abstract": "Current models for quotation attribution in literary novels assume varying levels of available information in their training and test data, which poses a challenge for in-the-wild inference. Here, we approach quotation attribution as a set of four interconnected sub-tasks: character identification, coreference resolution, quotation identification, and speaker attribution. We benchmark state-of-the-art models on each of these sub-tasks independently, using a large dataset of annotated coreferences and quotations in literary novels (the Project Dialogism Novel Corpus). We also train and evaluate models for the speaker attribution task in particular, showing that a simple sequential prediction model achieves accuracy scores on par with state-of-the-art models.",
+        "url": "https://aclanthology.org/2023.acl-short.64/"
+      },
+      {
+        "id": "2023.acl-srw.44",
+        "title": "Authorship Attribution of Late 19th Century Novels using GAN-BERT",
+        "authors": [
+          "Kanishka Silva University of Wolverhampton",
+          "Burcu Can University of Stirling",
+          "Frédéric Blain Tilburg University",
+          "Raheem Sarwar OTEHM, Manchester Metropolitan University",
+          "Laura Ugolini University of Wolverhampton",
+          "Ruslan Mitkov University of Wolverhampton"
+        ],
+        "abstract": "Authorship attribution aims to identify the author of an anonymous text. The task becomes even more worthwhile when it comes to literary works. For example, pen names were commonly used by female authors in the 19th century resulting in some literary works being incorrectly attributed or claimed. With this motivation, we collated a dataset of late 19th century novels in English. Due to the imbalance in the dataset and the unavailability of enough data per author, we employed the GANBERT model along with data sampling strategies to fine-tune a transformer-based model for authorship attribution. Differently from the earlier studies on the GAN-BERT model, we conducted transfer learning on comparatively smaller author subsets to train more focused author-specific models yielding performance over 0.88 accuracy and F1 scores. Furthermore, we observed that increasing the sample size has a negative impact on the model’s performance. Our research mainly contributes to the ongoing authorship attribution research using GAN-BERT architecture, especially in attributing disputed novelists in the late 19th century.",
+        "url": "https://aclanthology.org/2023.acl-srw.44/"
+      },
+      {
+        "id": "2023.acl-industry.58",
+        "title": "Unified Contextual Query Rewriting",
+        "authors": [
+          "Yingxue Zhou Amazon",
+          "Jie Hao Amazon",
+          "Mukund Rungta Georgia Institute of Technology",
+          "Yang Liu Amazon",
+          "Eunah Cho Amazon, Alexa AI",
+          "Xing Fan Amazon Corporation",
+          "Yanbin Lu Amazon",
+          "Vishal Vasudevan Amazon",
+          "Kellen Gillespie Amazon",
+          "Zeynab Raeesy Amazon"
+        ],
+        "abstract": "Query rewriting (QR) is an important technique for user friction (i.e. recovering ASR error or system error) reduction and contextual carryover (i.e. ellipsis and co-reference) in conversational AI systems. Recently, generation-based QR models have achieved promising results on these two tasks separately. Although these two tasks have many similarities such as they both use the previous dialogue along with the current request as model input, there is no unified model to solve them jointly. To this end, we propose a unified contextual query rewriting model that unifies QR for both reducing friction and contextual carryover purpose. Moreover, we involve multiple auxiliary tasks such as trigger prediction and NLU interpretation tasks to boost the performance of the rewrite. We leverage the text-to-text unified framework which uses independent tasks with weighted loss to account for task importance. Then we propose new unified multitask learning strategies including a sequential model which outputs one sentence for multi-tasks, and a hybrid model where some tasks are independent and some tasks are sequentially generated. Our experimental results demonstrate the effectiveness of the proposed unified learning methods.",
+        "url": "https://aclanthology.org/2023.acl-industry.58/"
+      },
+      {
+        "id": "2023.acl-industry.59",
+        "title": "Context-Aware Query Rewriting for Improving Users’ Search Experience on E-commerce Websites",
+        "authors": [
+          "Simiao Zuo Georgia Institute of Technology",
+          "Qingyu Yin Amazon",
+          "Haoming Jiang Amazon Search",
+          "Shaohui Xi University of Science and Technology of China",
+          "Bing Yin Amazon.com",
+          "Chao Zhang Georgia Tech",
+          "Tuo Zhao Georgia Tech"
+        ],
+        "abstract": "E-commerce queries are often short and ambiguous. Consequently, query understanding often uses query rewriting to disambiguate user-input queries. While using e-commerce search tools, users tend to enter multiple searches, which we call context, before purchasing. These history searches contain contextual insights about users’ true shopping intents. Therefore, modeling such contextual information is critical to a better query rewriting model. However, existing query rewriting models ignore users’ history behaviors and consider only the instant search query, which is often a short string offering limited information about the true shopping intent. We propose an end-to-end context-aware query rewriting model to bridge this gap, which takes the search context into account. Specifically, our model builds a session graph using the history search queries and their contained words. We then employ a graph attention mechanism that models cross-query relations and computes contextual information of the session. The model subsequently calculates session representations by combining the contextual information with the instant search query using an aggregation network. The session representations are then decoded to generate rewritten queries. Empirically, we demonstrate the superiority of our method to state-of-the-art approaches under various metrics.",
+        "url": "https://aclanthology.org/2023.acl-industry.59/"
+      }
+    ]
+  },
+  {
+    "key": "cue_r_unverified",
+    "url": "https://arxiv.org/html/2604.05467v1",
+    "http_status": "000",
+    "curl_exit_code": 35,
+    "retrieved_at": "2026-09-10T00:58:05.114637+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (35) Recv failure: Connection reset by peer\n"
+  },
+  {
+    "key": "pair_id_unverified",
+    "url": "https://arxiv.org/html/2608.08944v1",
+    "http_status": "000",
+    "curl_exit_code": 35,
+    "retrieved_at": "2026-09-10T00:58:05.228141+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (35) Recv failure: Connection reset by peer\n"
+  },
+  {
+    "key": "grab_rag_unverified",
+    "url": "https://arxiv.org/html/2608.22228v1",
+    "http_status": "000",
+    "curl_exit_code": 35,
+    "retrieved_at": "2026-09-10T00:58:05.338585+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (35) Recv failure: Connection reset by peer\n"
+  }
+]

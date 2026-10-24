@@ -1,0 +1,66 @@
+[
+  {
+    "key": "2026.acl-long.1362",
+    "url": "https://aclanthology.org/2026.acl-long.1362.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:15:51.144996+08:00",
+    "status": "retrieved",
+    "sha256": "55ae8265d61c3cf90c25ba6664515be5b74186acba2302fc7921625ecc759a7d",
+    "file": "sources/near_neighbors_attempt1/2026.acl-long.1362.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/near_neighbors_attempt1/2026.acl-long.1362.txt",
+    "text_sha256": "0a4cd20ec4acbeafaa88be9ec321fbc8111d69c2c1217398f82ec58232561811"
+  },
+  {
+    "key": "2026.acl-long.814",
+    "url": "https://aclanthology.org/2026.acl-long.814.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:15:45.228030+08:00",
+    "status": "retrieved",
+    "sha256": "0a9aad918a40693bda30264f4e41500a35abd90f9555ea423f3a5c44554e82fe",
+    "file": "sources/near_neighbors_attempt1/2026.acl-long.814.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/near_neighbors_attempt1/2026.acl-long.814.txt",
+    "text_sha256": "22a202476c469b73fb8053b02816c788218a9db008e4fb5106812ac806def092"
+  },
+  {
+    "key": "2025.acl-long.837",
+    "url": "https://aclanthology.org/2025.acl-long.837.pdf",
+    "http_status": "200",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:16:02.118781+08:00",
+    "status": "unverified",
+    "sha256": "99ae4b8784c4490e1d78cbf0c98e28b3524a088b575dac7d18adbfc57edb295a",
+    "file": "sources/near_neighbors_attempt1/2025.acl-long.837.pdf",
+    "error": "curl: (28) Operation timed out after 25000 milliseconds with 589824 out of 1697137 bytes received\n"
+  },
+  {
+    "key": "2025.acl-long.828",
+    "url": "https://aclanthology.org/2025.acl-long.828.pdf",
+    "http_status": "200",
+    "curl_exit_code": 0,
+    "retrieved_at": "2026-09-10T01:15:43.150713+08:00",
+    "status": "retrieved",
+    "sha256": "9837ae0f3331d9b0c9f399258797d9ff6128d301270e340292e9566c69f26e46",
+    "file": "sources/near_neighbors_attempt1/2025.acl-long.828.pdf",
+    "error": "",
+    "pdftotext_exit_code": 0,
+    "text_file": "sources/near_neighbors_attempt1/2025.acl-long.828.txt",
+    "text_sha256": "e5bcf06eb43aff373b22ed964791b7f762a9128563e36d1af1156fa3f5113afc"
+  },
+  {
+    "key": "2026.acl-long.1054",
+    "url": "https://aclanthology.org/2026.acl-long.1054.pdf",
+    "http_status": "200",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:16:02.097338+08:00",
+    "status": "unverified",
+    "sha256": "6fc05c6b94703b19b1b35c24410b18f5100c6c8e4a83d4337aa9924bfb63d134",
+    "file": "sources/near_neighbors_attempt1/2026.acl-long.1054.pdf",
+    "error": "curl: (28) Operation timed out after 25000 milliseconds with 540672 out of 1044406 bytes received\n"
+  }
+]

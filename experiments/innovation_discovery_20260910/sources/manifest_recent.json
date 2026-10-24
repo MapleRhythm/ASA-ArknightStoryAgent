@@ -1,0 +1,46 @@
+[
+  {
+    "key": "2025.acl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2025.acl.xml",
+    "http_status": "000",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:02:32.037934+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (28) Operation timed out after 25001 milliseconds with 0 bytes received\n"
+  },
+  {
+    "key": "2025.emnlp",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2025.emnlp.xml",
+    "http_status": "000",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:02:32.040143+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (28) Operation timed out after 25001 milliseconds with 0 bytes received\n"
+  },
+  {
+    "key": "2026.acl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2026.acl.xml",
+    "http_status": "000",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:02:32.039239+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (28) Operation timed out after 25002 milliseconds with 0 bytes received\n"
+  },
+  {
+    "key": "2026.eacl",
+    "url": "https://raw.githubusercontent.com/acl-org/acl-anthology/master/data/xml/2026.eacl.xml",
+    "http_status": "000",
+    "curl_exit_code": 28,
+    "retrieved_at": "2026-09-10T01:02:32.037592+08:00",
+    "status": "unverified",
+    "sha256": null,
+    "file": null,
+    "error": "curl: (28) Operation timed out after 25001 milliseconds with 0 bytes received\n"
+  }
+]

@@ -1,0 +1,46 @@
+{
+  "generation_status": "not_run",
+  "thinking": false,
+  "training_started": false,
+  "natural_rows": 124,
+  "natural_pairs": 184,
+  "natural_status_counts": {
+    "sufficient": 80,
+    "insufficient": 12,
+    "unknown": 32
+  },
+  "natural_pair_types": {
+    "round": 62,
+    "whole_hypothesis_package": 62,
+    "context_addition_not_length_matched": 16,
+    "eid_permutation": 44
+  },
+  "synthetic_rows": 512,
+  "synthetic_pairs": 1536,
+  "synthetic_worlds": 8,
+  "synthetic_status_counts": {
+    "insufficient": 288,
+    "sufficient": 224
+  },
+  "synthetic_pair_types": {
+    "round": 256,
+    "eid_permutation": 256,
+    "repair_relation_1": 256,
+    "repair_relation_2": 256,
+    "repair_relation_3": 256,
+    "repair_relation_4": 256
+  },
+  "all_controls_evaluation_only": true,
+  "all_pairs_field_difference_checked": true,
+  "synthetic_char_length_and_document_count_matched": true,
+  "synthetic_token_length_matched": "not measured; character equality does not ensure token equality",
+  "files": {
+    "data/natural_controls.json": "3c3b1065bed97ff8b2dafa7982c729f11f21c236c2aa1a7e8681d1d894e86a59",
+    "data/natural_pairs.json": "353aa78ddf049f67449a378b4ca5b3255f1b4c6a3c7009d41f3b2754a857c71a",
+    "data/synthetic_controls.json": "9b7cea10ba4e7263baf12fe0d99a8afedee2ea22e8c58ce1336868de120d2df2",
+    "data/synthetic_pairs.json": "89ef4296a6a2e6ea693b9e28948ba11193f895ddb6e6db349642ed6b96a4888b",
+    "data/synthetic_truth_table.json": "0d8e53e652760058e3d782594c0bc90f4f1a1452543e6c87b12a1bba1a5a0d89"
+  },
+  "builder_sha256": "3af4025ae49fe983c7ceb5a7530cee14141f821c649c925ebdd9add120cc6aa7",
+  "prompt_renderer_sha256": "e49c5d4fb14c18ea94e907a9a8412623f0e157a8db192f75cc2d2d70799441c3"
+}
