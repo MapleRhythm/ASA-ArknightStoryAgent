@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,22 @@ def chat_messages(row: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def assert_gpu_idle(gpu_uuid: str) -> str:
+    if not gpu_uuid.startswith("GPU-") or os.environ.get("CUDA_VISIBLE_DEVICES") != gpu_uuid:
+        raise ValueError("require CUDA_VISIBLE_DEVICES to match the explicit GPU UUID")
+    result = subprocess.run(
+        ["nvidia-smi", "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+         "--format=csv,noheader"], check=True, capture_output=True, text=True,
+    )
+    if any(line.split(",")[0].strip() == gpu_uuid for line in result.stdout.splitlines()):
+        raise ValueError("target GPU has a compute process; refusing to share or stop it")
+    return subprocess.run(
+        ["nvidia-smi", f"--id={gpu_uuid}",
+         "--query-gpu=uuid,name,memory.used,memory.free,utilization.gpu",
+         "--format=csv"], check=True, capture_output=True, text=True,
+    ).stdout
+
+
 def generation_hit_token_limit(
     completion_ids: Any, *, max_new_tokens: int, eos_token_id: int | list[int] | None
 ) -> bool:
@@ -92,8 +110,12 @@ def prediction_row(
         "finish_reason": "length" if hit_max_new_tokens else "stop",
         "hit_max_new_tokens": hit_max_new_tokens,
     }
-    if isinstance(row.get("diagnostic"), dict):
-        result["diagnostic"] = row["diagnostic"]
+    for name in ("diagnostic", "state_provenance", "meta"):
+        if name in row:
+            result[name] = row[name]
+    result["input_row_sha256"] = hashlib.sha256(
+        json.dumps(row, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
     return result
 
 
@@ -112,6 +134,8 @@ def main() -> int:
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-new-tokens", type=int, default=768)
+    parser.add_argument("--max-context", type=int, default=16384)
+    parser.add_argument("--gpu-uuid", help="Refuse to run unless this explicitly selected GPU is idle.")
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
@@ -130,14 +154,32 @@ def main() -> int:
     if adapter_model is not None and not adapter_model.is_file():
         parser.error(f"missing adapter weights: {adapter_model}")
 
+    if args.max_context < 1 or args.max_new_tokens < 1:
+        parser.error("context and output budgets must be positive")
+    gpu_before = assert_gpu_idle(args.gpu_uuid) if args.gpu_uuid else None
     import torch
+    import transformers
     from transformers import AutoModelForImageTextToText, AutoTokenizer
 
     rows = json.loads(args.gold.read_text(encoding="utf-8"))
     rows = [row for row in rows if row.get("task_type") == "grounded_action_generation"]
     if args.limit:
         rows = rows[: args.limit]
+    if not rows or len({row.get("id") for row in rows}) != len(rows) or any(not row.get("id") for row in rows):
+        parser.error("rows must be nonempty with unique IDs")
     tokenizer = AutoTokenizer.from_pretrained(str(args.base_model), trust_remote_code=True)
+    prompts = [
+        tokenizer.apply_chat_template(
+            chat_messages(row), tokenize=False, add_generation_prompt=True, enable_thinking=False,
+        ) for row in rows
+    ]
+    lengths = [len(tokenizer.encode(prompt, add_special_tokens=False)) for prompt in prompts]
+    if max(lengths) + args.max_new_tokens > args.max_context:
+        parser.error("prompt plus output exceeds context; refusing to truncate evidence")
+    assets = model_asset_manifest(args.base_model)
+    if args.gpu_uuid:
+        assert_gpu_idle(args.gpu_uuid)
+    torch.manual_seed(20260908)
     model = AutoModelForImageTextToText.from_pretrained(
         str(args.base_model), trust_remote_code=True, dtype=torch.bfloat16, device_map="cuda"
     )
@@ -152,22 +194,15 @@ def main() -> int:
     predictions = []
     truncated_rows = 0
     started = time.monotonic()
-    for index, row in enumerate(rows, start=1):
-        messages = chat_messages(row)
-        encoded = tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            enable_thinking=False,
-            return_tensors="pt",
-            return_dict=True,
-        )
+    for index, (row, actual_prompt) in enumerate(zip(rows, prompts), start=1):
+        encoded = tokenizer(actual_prompt, add_special_tokens=False, return_tensors="pt")
         encoded = {key: value.to(model.device) for key, value in encoded.items()}
         prompt_tokens = int(encoded["input_ids"].shape[-1])
         with torch.inference_mode():
             generated = model.generate(
                 **encoded,
                 do_sample=False,
+                repetition_penalty=1.0,
                 max_new_tokens=args.max_new_tokens,
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
@@ -190,6 +225,9 @@ def main() -> int:
                 hit_max_new_tokens=hit_max_new_tokens,
             )
         )
+        predictions[-1]["actual_prompt"] = actual_prompt
+        predictions[-1]["actual_prompt_sha256"] = hashlib.sha256(actual_prompt.encode()).hexdigest()
+        predictions[-1]["raw_output_with_special_tokens"] = tokenizer.decode(completion_ids, skip_special_tokens=False)
         if index == 1 or index % 10 == 0 or index == len(rows):
             print(json.dumps({"completed": index, "total": len(rows)}), flush=True)
 
@@ -201,7 +239,7 @@ def main() -> int:
         "gold": str(args.gold),
         "gold_sha256": sha256_file(args.gold),
         "base_model": str(args.base_model),
-        "base_model_assets": model_asset_manifest(args.base_model),
+        "base_model_assets": assets,
         "reader_name": args.reader_name
         or ("lora_adapter" if args.adapter is not None else "base"),
         "reader_type": "lora_adapter" if args.adapter is not None else "base",
@@ -214,7 +252,16 @@ def main() -> int:
         "rows": len(predictions),
         "truncated_rows": truncated_rows,
         "seconds": time.monotonic() - started,
-        "decoding": {"do_sample": False, "max_new_tokens": args.max_new_tokens},
+        "decoding": {
+            "do_sample": False, "max_new_tokens": args.max_new_tokens,
+            "max_context": args.max_context, "repetition_penalty": 1.0,
+            "dtype": "bfloat16", "enable_thinking": False, "seed": 20260908,
+        },
+        "gpu_uuid": args.gpu_uuid, "gpu_before": gpu_before,
+        "torch": torch.__version__, "transformers": transformers.__version__,
+        "runner_sha256": sha256_file(Path(__file__)),
+        "peak_cuda_memory_bytes": torch.cuda.max_memory_allocated(),
+        "max_input_tokens": max(lengths),
         "evidence_truncated": False,
         "diagnostic_metadata_preserved": True,
     }

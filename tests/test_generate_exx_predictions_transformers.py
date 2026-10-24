@@ -1,6 +1,10 @@
 import importlib.util
 import sys
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "generate_exx_predictions_transformers.py"
@@ -90,3 +94,46 @@ def test_model_asset_manifest_hashes_top_level_checkpoint_files(
         "config.json",
         "model.safetensors",
     }
+
+
+def test_prediction_preserves_nontraining_state_provenance():
+    row = {
+        "id": "probe", "system": "system",
+        "conversations": [{"from": "human", "value": "visible only"},
+                          {"from": "gpt", "value": "hidden target"}],
+        "meta": {"training_eligible": False, "requires_reaudit": True},
+        "state_provenance": {"condition": "missing_candidate"},
+    }
+    result = MODULE.prediction_row(
+        row=row, text="prediction", prompt_token_count=10,
+        generated_token_count=4, hit_max_new_tokens=False,
+    )
+    assert result["meta"] == row["meta"]
+    assert result["state_provenance"] == row["state_provenance"]
+    assert len(result["input_row_sha256"]) == 64
+    assert "hidden target" not in str(MODULE.chat_messages(row))
+
+
+def test_gpu_preflight_rejects_foreign_compute_even_at_zero_utilization(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-target")
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **kw: SimpleNamespace(stdout="GPU-target, 123, other-user-python, 100 MiB\n"),
+    )
+    with pytest.raises(ValueError, match="has a compute process"):
+        MODULE.assert_gpu_idle("GPU-target")
+
+
+def test_gpu_preflight_checks_exact_uuid(monkeypatch):
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-target")
+    with pytest.raises(ValueError, match="match the explicit GPU UUID"):
+        MODULE.assert_gpu_idle("GPU-other")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(stdout="GPU-other, 123, busy, 100 MiB\n" if len(calls) == 1 else "idle")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert MODULE.assert_gpu_idle("GPU-target") == "idle"
+    assert len(calls) == 2
