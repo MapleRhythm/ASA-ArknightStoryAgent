@@ -13,9 +13,10 @@ GLM-confirmed missed evidence as additional positive variants.  An optional
 ambiguity sidecar can override the strict merged/individual decision for the
 86 contradiction rows: union-supported labels are retained, while
 partially-supported claims, ambiguous rows and explicitly unsupported rows
-are excluded.  A ``supported_by_some`` claim must be atomized or rewritten
-before it can become a positive; keeping an E-ID does not make the original
-compound claim fully supported.
+are excluded. Legacy ``supported_by_some`` labels first require a support-scope
+rejudgement, because some mean one document supports the entire claim. Truly
+partial claims must then be atomized or rewritten and re-audited; keeping an
+E-ID does not make a compound claim fully supported.
 
 Gold judgements whose status failed, recorded input was truncated, or merged
 and individual verdicts conflict are rejected by default.  An unsafe judgement
@@ -24,7 +25,8 @@ fingerprint matches the manifest.  ``--allow-unverified-gold-judgements`` is
 available solely to reproduce historical datasets.
 
 The output is grouped by source record before the deterministic train/eval
-split so a question cannot leak across the two sets.
+split. This alone does not isolate paraphrases, related questions, or external
+story families; these files remain diagnostic candidates, not a training gate.
 """
 
 from __future__ import annotations
@@ -387,6 +389,9 @@ def main() -> int:
             stats["missing_join"] += 1
             continue
         adjudication = adjudications.get(str(judgement.get("fact_id") or ""))
+        if adjudication and adjudication.get("training_eligible") is False:
+            stats["dropped_gold:secondary_review_quarantine"] += 1
+            continue
         coverage_issue = judgement_coverage_issue(task, judgement)
         conflict = contradiction_kind(judgement)
         status_issues = judgement_status_issues(judgement)
@@ -619,6 +624,8 @@ def main() -> int:
             ),
         },
         "include_suspected_missed_positives": args.include_suspected_missed_positives,
+        "training_ready": False,
+        "split_scope": "source_record_only_not_external_question_or_story_family",
         "allow_unverified_gold_judgements": args.allow_unverified_gold_judgements,
         "allow_truncated_negative_candidates": args.allow_truncated_negative_candidates,
         "seed": args.seed,

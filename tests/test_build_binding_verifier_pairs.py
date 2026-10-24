@@ -141,6 +141,18 @@ def test_build_includes_confirmed_missed_positive(tmp_path: Path, monkeypatch) -
         "suspected_missed_positive",
     }
     assert {tuple(row["positive_chain"]) for row in pairs} == {("E1",), ("E2",)}
+    # A later content-reviewed quarantine must not fall back to the otherwise
+    # positive legacy judgement, even though all original text is unchanged.
+    write_jsonl(ambiguity, [{
+        "fact_id": "fact-1", "label": "supported_by_union", "keep_eids": ["E1"],
+        "training_eligible": False, "scope_review_quarantine": {"reason": "因果有疑问"},
+    }])
+    quarantined_dir = tmp_path / "quarantined"
+    monkeypatch.setattr(sys, "argv", sys.argv[:-1] + [str(quarantined_dir)])
+    assert MODULE.main() == 0
+    assert MODULE.read_jsonl(quarantined_dir / "pairwise.jsonl") == []
+    report = json.loads((quarantined_dir / "report.json").read_text())
+    assert report["stats"]["dropped_gold:secondary_review_quarantine"] == 1
 
 
 def test_build_drops_gold_when_judge_input_was_truncated(

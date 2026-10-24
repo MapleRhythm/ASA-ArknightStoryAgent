@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import getpass
 import hashlib
 import json
 import os
@@ -58,6 +59,19 @@ def prompt_value(row: dict[str, Any]) -> str:
 
 def completion_value(row: dict[str, Any]) -> str:
     return str(row.get("raw_output") or row.get("output") or row.get("conversations", [{}])[-1].get("value") or "")
+
+
+def audited_input_sha256(row: dict[str, Any]) -> str:
+    """Bind a verdict to the exact source prompt/output, not merely its ID."""
+    content = {
+        "protocol": PROTOCOL,
+        "system": str(row.get("system") or ""),
+        "prompt": prompt_value(row),
+        "completion": completion_value(row),
+    }
+    return hashlib.sha256(
+        json.dumps(content, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def build_messages(context: dict[str, str], payload: dict[str, Any]) -> list[dict[str, str]]:
@@ -232,7 +246,11 @@ def judge_row(
     prompt = prompt_value(row)
     context = extract_judge_context(prompt)
     payload = parse_json_object(completion_value(row))
-    result: dict[str, Any] = {"id": row.get("id"), "status": "ineligible"}
+    result: dict[str, Any] = {
+        "id": row.get("id"), "status": "ineligible",
+        "audited_input_sha256": audited_input_sha256(row),
+        "full_evidence": True,
+    }
     # Duplicate facts are a structural defect, not a reason to hide semantic
     # failures in one model and thereby bias a paired comparison.
     if payload is None or not payload_is_judge_eligible(payload, context["evidence"], allow_duplicate_facts=True):
@@ -264,7 +282,16 @@ def judge_row(
             choices = response_payload.get("choices") or []
             choice = choices[0] if choices else {}
             content = completion_text((choice.get("message") or {}).get("content"))
-            result.update(raw_content=content, usage=response_payload.get("usage"), finish_reason=choice.get("finish_reason"))
+            result.update(
+                raw_content=content,
+                usage=response_payload.get("usage"),
+                finish_reason=choice.get("finish_reason"),
+                requested_model=model,
+                # A server-reported name is provenance, not proof of the
+                # weights/backend actually used by an API gateway.
+                response_model=response_payload.get("model"),
+                response_id=response_payload.get("id"),
+            )
             if choice.get("finish_reason") != "stop":
                 raise ValueError(f"set_judge_incomplete:{choice.get('finish_reason')}")
             judgement = parse_json_object(content)
@@ -315,6 +342,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--api-key-env", default="BIGMODEL_API_KEY")
+    parser.add_argument("--ask-key", action="store_true", help="Read API key without echo or storing it.")
     parser.add_argument("--endpoint", default="https://open.bigmodel.cn/api/coding/paas/v4/chat/completions")
     parser.add_argument("--model", default="glm-5.3")
     parser.add_argument("--timeout", type=float, default=240.0)
@@ -324,7 +352,10 @@ def main() -> int:
     parser.add_argument("--sample-families", action="store_true")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    api_key = os.environ.get(args.api_key_env, "").strip()
+    api_key = (
+        getpass.getpass("API key (not echoed): ")
+        if args.ask_key else os.environ.get(args.api_key_env, "").strip()
+    )
     if not api_key:
         raise SystemExit(f"missing {args.api_key_env}")
     rows = read_rows(args.predictions)
@@ -362,7 +393,14 @@ def main() -> int:
         }
         for index, key in enumerate(keys):
             if key in cached:
-                results.append({**cached[key], "id": rows[index].get("id"), "index": index, "reused": True})
+                # The computed input_key matches all judge-visible messages
+                # and contract settings, so a cached verdict may be rebound
+                # to this exact source representation (including its ID).
+                results.append({
+                    **cached[key], "id": rows[index].get("id"), "index": index, "reused": True,
+                    "audited_input_sha256": audited_input_sha256(rows[index]),
+                    "full_evidence": True,
+                })
         for future in as_completed(futures):
             index = futures[future]
             try:
@@ -381,6 +419,9 @@ def main() -> int:
         "predictions": str(args.predictions),
         "protocol": PROTOCOL,
         "judge_model": args.model,
+        "endpoint": args.endpoint,
+        "max_tokens": args.max_tokens,
+        "predictions_sha256": hashlib.sha256(args.predictions.read_bytes()).hexdigest(),
         "seed": args.seed,
         "sample_families": args.sample_families,
         "selected_ids": [row.get("id") for row in rows],
@@ -389,6 +430,13 @@ def main() -> int:
         "ok": sum(item["status"] == "ok" for item in results),
         "ineligible": sum(item["status"] == "ineligible" for item in results),
         "errors": sum(item["status"] == "error" for item in results),
+        "response_models": sorted({
+            item["response_model"] for item in results
+            if isinstance(item.get("response_model"), str) and item["response_model"]
+        }),
+        "missing_response_model": sum(
+            item["status"] == "ok" and not item.get("response_model") for item in results
+        ),
         "set_support": {
             label: sum(
                 item.get("judgement", {}).get("set_support") == label
@@ -426,7 +474,7 @@ def main() -> int:
     )
     temporary.replace(args.output)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0
+    return 1 if summary["errors"] else 0
 
 
 if __name__ == "__main__":

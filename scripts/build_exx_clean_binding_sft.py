@@ -4,8 +4,10 @@
 The recalibration job writes one JSON object per source row.  Llama-Factory
 expects JSON arrays plus a dataset_info.json registry, so this utility makes a
 new, immutable dataset directory without touching the original data or model
-artifacts.  It also performs the same structural checks used by the runtime
-validator, including prompt-local E-ID bindings.
+artifacts. This legacy materializer checks structure only, not full-evidence
+label provenance or answer completeness. Use stage_full_evidence_sft_candidates
+and a fresh set audit for new training. Invalid inputs must not leave train
+files or a usable registry behind.
 """
 
 from __future__ import annotations
@@ -203,7 +205,10 @@ def main() -> int:
         "prefix": args.prefix,
         "splits": {},
         "validation_errors": [],
+        "training_ready": False,
+        "validation_scope": "structure_only_not_semantic_or_family_audit",
     }
+    outputs: dict[str, list[dict[str, Any]]] = {}
     for split in ("train", "val", "test"):
         source = args.strict_dir / f"gold_recalibrated_v1_strict_{split}.jsonl"
         rows = read_jsonl(source) if source.exists() else []
@@ -241,29 +246,38 @@ def main() -> int:
                 if not isinstance(row.get(key), str):
                     row[key] = compact(row.get(key, ""))
             converted.append(row)
-        target = args.out_dir / f"{split}.json"
-        target.write_text(json.dumps(converted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        outputs[split] = converted
         report["splits"][split] = {
             "rows": len(converted),
             "task_types": dict(task_types),
             "actions": dict(actions),
             "supported_fact_count": facts,
-            "sha256": sha256(target),
             "source": str(source),
         }
 
+    report["validation_error_count"] = len(report["validation_errors"])
+    if report["validation_errors"]:
+        # Write diagnostics only: returning nonzero after materializing a
+        # valid-looking registry still exposes the rejected rows to training.
+        (args.out_dir / "build_report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1
+    if not any(outputs.values()):
+        raise ValueError("no source records; refusing to materialize empty dataset")
+    for split, converted in outputs.items():
+        target = args.out_dir / f"{split}.json"
+        target.write_text(json.dumps(converted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        report["splits"][split]["sha256"] = sha256(target)
     (args.out_dir / "dataset_info.json").write_text(
         json.dumps(registry(args.prefix), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    report["validation_error_count"] = len(report["validation_errors"])
     (args.out_dir / "build_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps({k: v for k, v in report.items() if k != "validation_errors"}, ensure_ascii=False, indent=2))
-    if report["validation_errors"]:
-        print(json.dumps(report["validation_errors"][:20], ensure_ascii=False, indent=2))
-        return 1
     return 0
 
 
