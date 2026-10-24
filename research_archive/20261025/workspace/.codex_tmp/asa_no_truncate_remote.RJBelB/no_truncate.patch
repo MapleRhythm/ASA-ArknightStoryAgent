@@ -1,0 +1,406 @@
+diff --git a/original/configs/runtime_inference_gpu.json b/updated/configs/runtime_inference_gpu.json
+index 7a1c721..5e932a7 100755
+--- a/original/configs/runtime_inference_gpu.json
++++ b/updated/configs/runtime_inference_gpu.json
+@@ -60,14 +60,15 @@
+   },
+   "inference": {
+     "max_retrieval_rounds": 2,
+-    "prompt_evidence_top_k": 10,
+-    "prompt_evidence_max_chars_per_doc": 1000,
+-    "prompt_conclusion_evidence_max_total_chars": 12000,
++    "prompt_evidence_top_k": 20,
++    "prompt_evidence_require_full_documents": true,
++    "prompt_evidence_max_chars_per_doc": 0,
++    "prompt_conclusion_evidence_max_total_chars": 0,
+     "enable_mmr": false,
+     "mmr_lambda": 0.72,
+     "enable_pyramid_order": false,
+     "enable_evidence_pinning": false,
+-    "enable_crag_refinement": true,
++    "enable_crag_refinement": false,
+     "crag_refine_top_sentences": 5,
+     "crag_refine_max_sentences": 32,
+     "self_consistency_samples": 1,
+diff --git a/original/scripts/run_latest_kto_interactive.sh b/updated/scripts/run_latest_kto_interactive.sh
+index ff15b35..51e551a 100755
+--- a/original/scripts/run_latest_kto_interactive.sh
++++ b/updated/scripts/run_latest_kto_interactive.sh
+@@ -29,8 +29,7 @@ CTX_SIZE="${CTX_SIZE:-10000}"
+ MAX_TOKENS="${MAX_TOKENS:-1536}"
+ TEMPERATURE="${TEMPERATURE:-0.2}"
+ TOP_P="${TOP_P:-0.9}"
+-PROMPT_EVIDENCE_MAX_CHARS_PER_DOC="${PROMPT_EVIDENCE_MAX_CHARS_PER_DOC:-1000}"
+-PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS="${PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS:-12000}"
++PROMPT_EVIDENCE_TOP_K="${PROMPT_EVIDENCE_TOP_K:-20}"
+ ANSWER_GROUNDING_MODE="${ANSWER_GROUNDING_MODE:-quote}"
+ CONCLUSION_PROMPT_MODE="${CONCLUSION_PROMPT_MODE:-minimal}"
+ ENFORCE_EAGER="${ENFORCE_EAGER:-1}"
+@@ -61,8 +60,11 @@ cmd=(
+   --max-tokens "$MAX_TOKENS"
+   --temperature "$TEMPERATURE"
+   --top-p "$TOP_P"
+-  --prompt-evidence-max-chars-per-doc "$PROMPT_EVIDENCE_MAX_CHARS_PER_DOC"
+-  --prompt-conclusion-evidence-max-total-chars "$PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS"
++  --prompt-evidence-top-k "$PROMPT_EVIDENCE_TOP_K"
++  --require-full-prompt-evidence
++  --disable-crag-refinement
++  --prompt-evidence-max-chars-per-doc 0
++  --prompt-conclusion-evidence-max-total-chars 0
+   --answer-grounding-mode "$ANSWER_GROUNDING_MODE"
+   --conclusion-prompt-mode "$CONCLUSION_PROMPT_MODE"
+ )
+diff --git a/original/src/goldenglow/inference/cpu_pipeline.py b/updated/src/goldenglow/inference/cpu_pipeline.py
+index a780309..5ad29de 100644
+--- a/original/src/goldenglow/inference/cpu_pipeline.py
++++ b/updated/src/goldenglow/inference/cpu_pipeline.py
+@@ -1046,6 +1046,7 @@ def build_follow_up_hypothesis_prompt(
+     max_retrieval_rounds: int,
+     prompt_evidence_top_k: int,
+     prompt_evidence: list[dict[str, Any]] | None = None,
++    require_full_prompt_evidence: bool = False,
+ ) -> str:
+     rendered_dialogue_context = _truncate_text(
+         render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
+@@ -1061,8 +1062,8 @@ def build_follow_up_hypothesis_prompt(
+             evidence,
+             prompt_evidence_top_k=prompt_evidence_top_k,
+         ),
+-        max_chars_per_doc=260,
+-        max_total_chars=1200,
++        max_chars_per_doc=None if require_full_prompt_evidence else 260,
++        max_total_chars=None if require_full_prompt_evidence else 1200,
+     )
+     user_prompt = "\n".join(
+         [
+@@ -5862,6 +5863,10 @@ class LlamaCppRunner:
+         return sanitize_generation_output(completed.stdout, prompt)
+ 
+ 
++class PromptContextOverflowError(ValueError):
++    """The complete prompt cannot fit; never convert this into an abstention."""
++
++
+ class VllmRunner:
+     backend_name = "vllm"
+ 
+@@ -5992,16 +5997,24 @@ class VllmRunner:
+                 f"Original import error: {type(exc).__name__}: {exc}"
+             ) from exc
+ 
++        output_budget = max_tokens if max_tokens is not None else self.max_tokens
++        prompt_token_ids = llm.get_tokenizer().encode(prompt, add_special_tokens=True)
++        if len(prompt_token_ids) + output_budget > self.max_model_len:
++            raise PromptContextOverflowError(
++                "Complete prompt exceeds context capacity: "
++                f"input_tokens={len(prompt_token_ids)}, output_budget={output_budget}, "
++                f"max_model_len={self.max_model_len}. No evidence was truncated."
++            )
+         sampling_params = SamplingParams(
+             temperature=temperature if temperature is not None else self.temperature,
+             top_p=top_p if top_p is not None else self.top_p,
+             repetition_penalty=repeat_penalty if repeat_penalty is not None else self.repeat_penalty,
+-            max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
++            max_tokens=output_budget,
+             stop=["<|im_end|>", "<|endoftext|>"],
+             skip_special_tokens=False,
+         )
+         outputs = llm.generate(
+-            [prompt],
++            [{"prompt_token_ids": prompt_token_ids}],
+             sampling_params,
+             use_tqdm=False,
+             lora_request=lora_request,
+@@ -6082,6 +6095,7 @@ class CPUInferencePipeline:
+         )
+         if self.prompt_evidence_require_full_documents:
+             normalized_per_doc_limit = None
++            normalized_total_limit = None
+         if normalized_per_doc_limit is not None and normalized_total_limit is not None:
+             normalized_total_limit = max(normalized_per_doc_limit, normalized_total_limit)
+         self.prompt_evidence_max_chars_per_doc = normalized_per_doc_limit
+@@ -6100,6 +6114,21 @@ class CPUInferencePipeline:
+             if isinstance(web_context_config, WebContextConfig)
+             else build_web_context_config(web_context_config)
+         )
++        self.prompt_snapshots: list[dict[str, Any]] = []
++
++    def record_full_prompt(
++        self, stage: str, prompt: str, evidence: list[dict[str, Any]]
++    ) -> None:
++        if self.prompt_evidence_require_full_documents:
++            self.prompt_snapshots.append(
++                {
++                    "stage": stage,
++                    "prompt": prompt,
++                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
++                    "evidence_ids": [item["document"]["id"] for item in evidence],
++                    "evidence_truncated": False,
++                }
++            )
+ 
+     def limit_retrieval_queries(self, queries: list[str]) -> list[str]:
+         """Deduplicate and cap model-expanded retrieval queries per round.
+@@ -6119,6 +6148,17 @@ class CPUInferencePipeline:
+         hypothesis: HypothesisDocument,
+         evidence: list[dict[str, Any]],
+     ) -> list[dict[str, Any]]:
++        if self.prompt_evidence_require_full_documents:
++            # Preserve the first K retrieved documents, including similar ones.
++            # Do not replace their bodies with a chain, deduplicate, re-pin, or
++            # run sentence refinement after selecting these documents.
++            selected = []
++            for item in evidence[: self.prompt_evidence_top_k]:
++                prepared = dict(item)
++                prepared["prompt_prefer_clean_text"] = True
++                prepared.pop("evidence_chain_text", None)
++                selected.append(prepared)
++            return selected
+         forced_evidence = [
+             item
+             for item in evidence
+@@ -6352,6 +6392,7 @@ class CPUInferencePipeline:
+             retrieval_trace,
+             previous_conclusion.missing_slots,
+         )
++        prompt_evidence = self.prepare_prompt_evidence(question, current_hypothesis, evidence)
+         prompt = build_follow_up_hypothesis_prompt(
+             question=question,
+             current_hypothesis=current_hypothesis,
+@@ -6362,8 +6403,10 @@ class CPUInferencePipeline:
+             current_round=current_round,
+             max_retrieval_rounds=self.max_retrieval_rounds,
+             prompt_evidence_top_k=self.prompt_evidence_top_k,
+-            prompt_evidence=self.prepare_prompt_evidence(question, current_hypothesis, evidence),
++            prompt_evidence=prompt_evidence,
++            require_full_prompt_evidence=self.prompt_evidence_require_full_documents,
+         )
++        self.record_full_prompt("follow_up_hypothesis", prompt, prompt_evidence)
+         generator_max_tokens = getattr(self.generator, "max_tokens", None)
+         raw_output = self.generator.generate(
+             prompt,
+@@ -6410,6 +6453,7 @@ class CPUInferencePipeline:
+             evidence_max_total_chars=self.prompt_conclusion_evidence_max_total_chars,
+             prompt_mode=self.conclusion_prompt_mode,
+         )
++        self.record_full_prompt("conclusion", prompt, prompt_evidence)
+         conclusions: list[ConclusionResult] = []
+         errors: list[Exception] = []
+         sample_count = self.self_consistency_samples
+@@ -6462,6 +6506,8 @@ class CPUInferencePipeline:
+                     evidence_prompt_text=prompt,
+                 )
+                 conclusions.append(conclusion)
++            except PromptContextOverflowError:
++                raise
+             except Exception as exc:
+                 errors.append(exc)
+                 if sample_count == 1 and not (
+@@ -6477,6 +6523,8 @@ class CPUInferencePipeline:
+                 if current_hypothesis.intent != "out_of_scope" and _has_answerable_evidence(prompt_evidence):
+                     try:
+                         return self.generate_direct_answer(question, current_hypothesis, prompt_evidence)
++                    except PromptContextOverflowError:
++                        raise
+                     except Exception as exc:
+                         print(f"[warn] final direct answer fallback failed: {exc}", flush=True)
+                 return ConclusionResult(
+@@ -6510,6 +6558,8 @@ class CPUInferencePipeline:
+         ):
+             try:
+                 return self.generate_direct_answer(question, current_hypothesis, prompt_evidence)
++            except PromptContextOverflowError:
++                raise
+             except Exception as exc:
+                 print(f"[warn] final direct answer fallback failed: {exc}", flush=True)
+         return winning_conclusion
+@@ -6530,6 +6580,7 @@ class CPUInferencePipeline:
+             evidence_max_chars_per_doc=self.prompt_evidence_max_chars_per_doc,
+             evidence_max_total_chars=self.prompt_conclusion_evidence_max_total_chars,
+         )
++        self.record_full_prompt("direct_answer", prompt, prompt_evidence)
+         generator_max_tokens = getattr(self.generator, "max_tokens", None)
+         answer_max_tokens = (
+             min(max(generator_max_tokens, 1536), 2048)
+@@ -6992,6 +7043,7 @@ class CPUInferencePipeline:
+         dialogue_context: str = "",
+         progress_callback: Callable[[str], None] | None = None,
+     ) -> InferenceResult:
++        self.prompt_snapshots = []
+         if progress_callback:
+             progress_callback(INITIAL_HYPOTHESIS_TASK_TYPE)
+         current_hypothesis = self.build_hypothesis(question, dialogue_context)
+@@ -7192,6 +7244,7 @@ class CPUInferencePipeline:
+             hypothesis=asdict(current_hypothesis),
+             model_runtime={
+                 **self.generator.describe_runtime(),
++                "full_prompt_snapshots": list(self.prompt_snapshots),
+                 "prompt_evidence_strategy": {
+                     "top_k": self.prompt_evidence_top_k,
+                     "require_full_documents": self.prompt_evidence_require_full_documents,
+diff --git a/updated/tests/test_full_evidence_contract.py b/updated/tests/test_full_evidence_contract.py
+new file mode 100644
+index 0000000..9e8735a
+--- /dev/null
++++ b/updated/tests/test_full_evidence_contract.py
+@@ -0,0 +1,160 @@
++"""Offline tests of the real module, with only retrieval imports excluded."""
++import ast
++import json
++from pathlib import Path
++import re
++import sys
++import types
++import unittest
++from unittest.mock import Mock, patch
++
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE = ROOT / "src/goldenglow/inference/cpu_pipeline.py"
++tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
++tree.body = [
++    node for node in tree.body
++    if not (
++        isinstance(node, ast.ImportFrom)
++        and (node.module or "").startswith("goldenglow")
++    )
++]
++module = types.ModuleType("full_evidence_contract_module")
++module.__file__ = str(SOURCE)
++sys.modules[module.__name__] = module
++exec(compile(tree, str(SOURCE), "exec"), module.__dict__)
++
++
++def norm(text):
++    return re.sub(r"\s+", " ", text).strip()
++
++
++def hypothesis():
++    return module.HypothesisDocument(
++        question="薇卡是谁？为什么保留她的东西？", intent="character_relation",
++        query_type="fact", entities=["薇卡", "真理"], keywords=["薇卡"],
++        expected_answer_type="short_text", dialogue_context="",
++    )
++
++
++def evidence():
++    body = "\n".join(f"这是前置背景第{i}段。" for i in range(100))
++    return [
++        {
++            "document": {"id": f"doc-{i}", "clean_text": body + f"\n完整结尾{i}：最好的朋友。"},
++            "evidence_chain_text": "不应替换完整正文的链。",
++        }
++        for i in range(32)
++    ]
++
++
++def pipeline(generator=None):
++    return module.CPUInferencePipeline(
++        retriever=Mock(), generator=generator or Mock(),
++        query_config=types.SimpleNamespace(max_retrieval_queries=0),
++        prompt_evidence_top_k=20, prompt_evidence_require_full_documents=True,
++        # Even a stale caller supplying old limits must not truncate full mode.
++        prompt_evidence_max_chars_per_doc=1000,
++        prompt_conclusion_evidence_max_total_chars=12000,
++        enable_crag_refinement=True, conclusion_prompt_mode="minimal",
++    )
++
++
++class FullEvidenceTests(unittest.TestCase):
++    def test_full_flag_overrides_all_character_limits(self):
++        obj = pipeline()
++        self.assertIsNone(obj.prompt_evidence_max_chars_per_doc)
++        self.assertIsNone(obj.prompt_conclusion_evidence_max_total_chars)
++
++    def test_first_twenty_bypass_dedupe_refinement_and_chain_replacement(self):
++        obj, items = pipeline(), evidence()
++        obj.refine_evidence_strips = Mock(side_effect=AssertionError("Must not refine"))
++        selected = obj.prepare_prompt_evidence(hypothesis().question, hypothesis(), items)
++        self.assertEqual(len(selected), 20)
++        self.assertEqual([x["document"]["id"] for x in selected], [f"doc-{i}" for i in range(20)])
++        for old, new in zip(items, selected):
++            self.assertEqual(old["document"]["clean_text"], new["document"]["clean_text"])
++            self.assertNotIn("evidence_chain_text", new)
++        self.assertIn("evidence_chain_text", items[0])
++
++    def test_all_renderers_keep_long_tails_and_total_over_twelve_thousand(self):
++        obj, hyp = pipeline(), hypothesis()
++        selected = obj.prepare_prompt_evidence(hyp.question, hyp, evidence())
++        for mode in ("minimal", "full"):
++            prompt = module.build_conclusion_prompt(
++                hyp.question, hyp, selected, [], 1, 2, 20,
++                prompt_evidence=selected, evidence_max_chars_per_doc=None,
++                evidence_max_total_chars=None, prompt_mode=mode,
++            )
++            self.assertGreater(len(prompt), 12000)
++            for item in selected:
++                self.assertIn(norm(item["document"]["clean_text"]), norm(prompt))
++        direct = module.build_answer_prompt(
++            hyp.question, hyp, selected, prompt_evidence_top_k=20,
++            prompt_evidence=selected, evidence_max_chars_per_doc=None,
++            evidence_max_total_chars=None,
++        )
++        for item in selected:
++            self.assertIn(norm(item["document"]["clean_text"]), norm(direct))
++
++    def test_followup_preserves_full_evidence_only_when_requested(self):
++        obj, hyp = pipeline(), hypothesis()
++        selected = obj.prepare_prompt_evidence(hyp.question, hyp, evidence())
++        previous = types.SimpleNamespace(next_action="retrieve_more")
++        kwargs = dict(
++            question=hyp.question, current_hypothesis=hyp, evidence=selected,
++            unresolved_points=[], retrieval_trace=[], previous_conclusion=previous,
++            current_round=2, max_retrieval_rounds=2, prompt_evidence_top_k=20,
++            prompt_evidence=selected,
++        )
++        full = module.build_follow_up_hypothesis_prompt(**kwargs, require_full_prompt_evidence=True)
++        legacy = module.build_follow_up_hypothesis_prompt(**kwargs)
++        for item in selected:
++            self.assertIn(norm(item["document"]["clean_text"]), norm(full))
++        self.assertNotIn("完整结尾19", legacy)
++
++    def test_context_overflow_is_not_converted_to_abstention(self):
++        generator = Mock()
++        generator.max_tokens = 512
++        generator.generate.side_effect = module.PromptContextOverflowError("No evidence was truncated")
++        obj, hyp = pipeline(generator), hypothesis()
++        with self.assertRaises(module.PromptContextOverflowError):
++            obj.generate_conclusion(hyp.question, hyp, evidence(), [], 2)
++        self.assertEqual(generator.generate.call_count, 1)
++        self.assertIn("完整结尾19", obj.prompt_snapshots[-1]["prompt"])
++
++    def test_vllm_sends_exact_checked_tokens_and_rejects_overflow(self):
++        runner = module.VllmRunner(base_model_path=Path("."), max_model_len=10, max_tokens=2)
++        engine = Mock()
++        engine.get_tokenizer.return_value.encode.return_value = list(range(8))
++        engine.generate.return_value = [types.SimpleNamespace(outputs=[types.SimpleNamespace(text="ok")])]
++        runner._llm = engine
++        fake_vllm = types.ModuleType("vllm")
++        fake_vllm.SamplingParams = lambda **kwargs: kwargs
++        with patch.dict(sys.modules, {"vllm": fake_vllm}):
++            runner.generate("complete prompt")
++            sent = engine.generate.call_args.args[0]
++            self.assertEqual(sent, [{"prompt_token_ids": list(range(8))}])
++            with self.assertRaises(module.PromptContextOverflowError):
++                runner.generate("complete prompt", max_tokens=3)
++            self.assertEqual(engine.generate.call_count, 1)
++
++    def test_snapshot_reset_between_questions(self):
++        obj = pipeline()
++        obj.record_full_prompt("test", "previous", [])
++        obj.build_hypothesis = Mock(side_effect=RuntimeError("stop before retrieval"))
++        with self.assertRaises(RuntimeError):
++            obj.run("new question")
++        self.assertEqual(obj.prompt_snapshots, [])
++
++    def test_active_gpu_config_enables_full_twenty(self):
++        cfg = json.loads((ROOT / "configs/runtime_inference_gpu.json").read_text())["inference"]
++        self.assertEqual(cfg["prompt_evidence_top_k"], 20)
++        self.assertTrue(cfg["prompt_evidence_require_full_documents"])
++        self.assertFalse(cfg["enable_crag_refinement"])
++        self.assertEqual(cfg["prompt_evidence_max_chars_per_doc"], 0)
++        self.assertEqual(cfg["prompt_conclusion_evidence_max_total_chars"], 0)
++
++
++if __name__ == "__main__":
++    unittest.main()

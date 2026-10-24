@@ -1,0 +1,8 @@
+from __future__ import annotations
+
+from asa_arknight_story_agent.inference.generation.answer_generation import AnswerGenerationMixin
+from asa_arknight_story_agent.inference.generation.hypothesis_generation import HypothesisGenerationMixin
+
+
+class GenerationPipelineMixin(HypothesisGenerationMixin, AnswerGenerationMixin):
+    pass

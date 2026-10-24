@@ -290,7 +290,7 @@ GLM 自复核不等于独立人工金标；助手逐条语义复核也不是独�
 
 6. **GitHub 仓库**
    - 已有仓库：https://github.com/MapleRhythm/ASA-ArknightStoryAgent
-   - 当前状态：Git SSH 已可读；研究分支已通过 fast-forward 推送至 `ec203a3`（本交接文档基线），未改写 `main` 或发布分支。链接：https://github.com/MapleRhythm/ASA-ArknightStoryAgent/tree/fix/grounding-pool-chain-priority
+   - 当前状态：Git SSH 已可读；研究分支已完成 fast-forward 发布，当前公开区包含 `research_archive/20261025/` 的 1,948 份历史研究源码、协议、测试和报告及逐文件校验 manifest。该归档是路径脱敏保存副本，不是运行时安装包或生产集成；链接：https://github.com/MapleRhythm/ASA-ArknightStoryAgent/tree/fix/grounding-pool-chain-priority
 
 7. **HuggingFace 模型**
    - 已有项目：`MapleRhythm/ASA-ArknightStoryAgent`、对应 4b-lora / gguf / reranker 仓库

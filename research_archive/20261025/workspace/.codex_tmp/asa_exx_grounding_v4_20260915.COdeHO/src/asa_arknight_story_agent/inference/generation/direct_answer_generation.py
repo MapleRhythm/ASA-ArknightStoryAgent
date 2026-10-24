@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from asa_arknight_story_agent.inference.grounding.validation import validate_conclusion_grounding
+from asa_arknight_story_agent.inference.payload.json_utils import extract_json_object, repair_json_like_output
+from asa_arknight_story_agent.inference.model_runtime.output_cleaning import sanitize_generation_output
+from asa_arknight_story_agent.inference.payload.normalization import normalize_conclusion_payload
+from asa_arknight_story_agent.inference.pipeline.types import ConclusionResult, HypothesisDocument
+from asa_arknight_story_agent.inference.generation.direct_answer_prompt import build_answer_prompt
+from asa_arknight_story_agent.inference.evidence.full_document_contract import validate_full_document_prompt
+
+
+def generate_direct_answer_from_model(
+    *,
+    pipeline: Any,
+    question: str,
+    current_hypothesis: HypothesisDocument,
+    evidence: list[dict[str, Any]],
+) -> ConclusionResult:
+    prompt_evidence = pipeline.prepare_prompt_evidence(question, current_hypothesis, evidence)
+    evidence_packing_trace: list[dict[str, Any]] = []
+    prompt, evidence_prompt_text = build_answer_prompt(
+        question,
+        current_hypothesis,
+        evidence,
+        prompt_evidence_top_k=pipeline.prompt_evidence_top_k,
+        prompt_evidence=prompt_evidence,
+        evidence_max_chars_per_doc=pipeline.prompt_evidence_max_chars_per_doc,
+        evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
+        grounding_mode=pipeline.answer_grounding_mode,
+        round_value=f"{pipeline.max_retrieval_rounds}/{pipeline.max_retrieval_rounds}",
+        evidence_packing_trace=evidence_packing_trace,
+    )
+    validate_full_document_prompt(pipeline, prompt, prompt_evidence)
+    generation_max_tokens = (
+        pipeline.generator.max_tokens
+        if pipeline.answer_grounding_mode.strip().lower() == "evidence_id"
+        else min(max(pipeline.generator.max_tokens, 1536), 2048)
+    )
+    raw_output = pipeline.generator.generate(
+        prompt,
+        max_tokens=generation_max_tokens,
+        temperature=0.1,
+        top_p=0.8,
+        repeat_penalty=pipeline.generator.repeat_penalty,
+    )
+    original_raw_output = raw_output
+    try:
+        raw_payload = json.loads(original_raw_output.strip())
+        parse_status = "strict_json" if isinstance(raw_payload, dict) else "non_object_json"
+    except json.JSONDecodeError:
+        parse_status = "repaired_json"
+    if not raw_output.lstrip().startswith(("{", "<think>")):
+        raw_output = "{" + raw_output
+    raw_output = repair_json_like_output(raw_output)
+    payload = extract_json_object(raw_output)
+    if payload:
+        conclusion = normalize_conclusion_payload(
+            payload,
+            question=question,
+            dialogue_context=current_hypothesis.dialogue_context,
+            current_intent=current_hypothesis.intent,
+            current_hypothesis=current_hypothesis,
+            max_round_reached=True,
+        )
+    else:
+        answer = sanitize_generation_output(raw_output, prompt).strip()
+        if not answer:
+            answer = "现有检索证据不足以确认。"
+        conclusion = ConclusionResult(
+            next_action="answer_directly",
+            answer=answer,
+            missing_slots=[],
+            clarification_question="",
+            follow_up_hypothesis=None,
+        )
+    conclusion = validate_conclusion_grounding(
+        question=question,
+        hypothesis=current_hypothesis,
+        evidence=prompt_evidence,
+        conclusion=conclusion,
+        max_round_reached=True,
+        mode=pipeline.answer_grounding_mode,
+        evidence_prompt_text=evidence_prompt_text,
+    )
+    conclusion.generation_diagnostics = {
+        **conclusion.generation_diagnostics,
+        "raw_output": original_raw_output,
+        "normalized_output": raw_output,
+        "parse_status": parse_status if payload else "unparsed_fallback",
+        "grounding_status": conclusion.generation_diagnostics.get(
+            "grounding_status",
+            "accepted" if conclusion.next_action == "answer_directly" else conclusion.next_action,
+        ),
+        "grounding_warnings": list(conclusion.grounding_warnings),
+        "direct_answer_fallback": True,
+        "evidence_packing": evidence_packing_trace,
+    }
+    return conclusion

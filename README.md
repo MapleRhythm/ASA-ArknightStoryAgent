@@ -2,6 +2,15 @@
 
 这里是 ASA（ArknightStoryAgent）！这个项目旨在搭建一个可以纯本地离线部署的 ai agent。项目采用RAG检索+微调Qwen 3.5 4b模型，明日方舟游戏文本数据以及萌娘百科设定数据作为检索对象，旨在从千万级文本内容中对剧情细节进行挖掘以及对复杂情节进行推理，项目配套有交互式前端以及一键环境配置脚本！（温蒂赛高！）
 
+## 研究归档与交接
+
+经公开审查的历史研究源码、协议、测试和报告保存在
+[`research_archive/20261025/`](research_archive/20261025/)。这是机器路径脱敏的
+保存副本，不是运行时安装包，也不将旧实验接入生产；逐文件 SHA-256 与大小见
+[`PUBLIC_MANIFEST.jsonl`](research_archive/20261025/PUBLIC_MANIFEST.jsonl)。当前
+项目状态、发布边界和未完成验证见
+[`docs/PI_HANDOFF_20261025.md`](docs/PI_HANDOFF_20261025.md)。
+
 ## 配置要求
 
 推荐环境：
