@@ -117,8 +117,9 @@ GLM-5.3 裁决，不等于人工 gold；训练门禁只允许把它作为可追�
 full-evidence 结果按如下规则合并：
 
 - `supported_by_union`：保留完整 E-ID 联集；
-- `supported_by_some`：原复合 claim 不能作为正例；先拆出受支持的原子子句，
-  再独立复核并绑定 `keep_eids`；
+- `supported_by_some`：旧标签本身不足以放行原 claim。2026-09-08 续审发现
+  其中混入“单段已支持整条”的判定，须先盲重判支持范围；只有真正的 partial
+  才拆出受支持的原子子句，再独立复核并绑定 `keep_eids`；
 - `ambiguous`：隔离或人工复核，不转 hard negative；
 - `unsupported`：移除 fact；只有一题所有 fact 均可靠移除后，才重新判断动作。
 

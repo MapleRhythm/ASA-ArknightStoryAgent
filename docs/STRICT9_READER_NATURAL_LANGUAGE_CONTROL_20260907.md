@@ -2,6 +2,9 @@
 
 日期：2026-09-07
 
+> 2026-09-08 provenance 更正：本文“人工”指历史 Codex 对照原文复核，
+> 不是外部独立人审；strict9 已被多次观察，只是开发 smoke。
+
 ## 目的
 
 上一轮 strict9 reader × evidence smoke 在人工最小充分证据上，Qwen3.5-4B
@@ -83,12 +86,15 @@ incorrect；协议不合格且语义未审计的 base 行根据原始输出人�
 说话人和关系方向错误没有随协议移除而消失。因此：
 
 - Exx 协议负担存在，但目前证据只支持它是局部瓶颈；
-- sufficiency/action controller 需要单独校准，杰克逊是直接训练样本；
+- sufficiency/action controller 需要单独校准，杰克逊是失败类型示例，不能
+  一边训练这道 strict9 题、一边继续把它当 held-out 验收题；
 - 主要训练优先级仍应是 reader 的主体、说话人、关系方向、时间与对照阅读；
 - 不应通过改成自由自然语言输出来绕开 grounding，也不应据此启动 RLVR。
 
 由于同日回查发现历史 clean-SFT 的 strict-v1 judge 只看每个 E-ID 前 600 字，
-下一步要先闭环 326 个截断/冲突 fact 的 full-evidence 复判，再构造同问题的
-`Full / Full + hard distractor / One-edge-missing / Decoy-full` 配对 SFT，
-并把女妖、芙蕾达、莫斯提马、老天师变成最小可解释 hard-negative 模板。
+326 个截断/冲突 fact 的 full-evidence 复判现已完成。下一步先处理 some
+原子化、set-level 动作标签和 family 隔离，再从训练分区内的其他问题构造
+`Full / Full + hard distractor / One-edge-missing / Decoy-full` 配对 SFT。
+女妖、芙蕾达、莫斯提马、老天师仅用于启发失败类型；不把本组评测原题及其
+答案直接作为训练数据。
 详见 `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。

@@ -2,6 +2,11 @@
 
 日期：2026-09-07
 
+> 2026-09-08 provenance 更正：本报告原称“人工/人审”的复核实际由
+> `codex-primary-source-review-20260907` 完成，是 Codex 对照原文的模型复核，
+> 不是外部人工标注或独立盲审。以下数字保留作为开发 smoke 的模型复核读数；
+> GLM 加 Codex 复核仍不能替代独立人审 gold。
+
 ## 结论
 
 这是固定证据条件下的 **P0 流程 smoke**，不是生产系统或线上问答正确率。
@@ -26,9 +31,10 @@ smoke 的生成结果仍然有效，但它只描述历史 adapter，不能代表
 干净 SFT 的上限。
 
 当前不应启动正式 RLVR，也不应为了这 9 题修改生产 MiniRAG、top-k、MMR、
-chain packing 或自动二次检索。先完成
-`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md` 定义的 326 项完整证据复判，
-再构造同题配对的 RAFT 风格 SFT 数据，补充主体、说话人、关系方向、时间和
+chain packing 或自动二次检索。
+`docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md` 定义的 326 项完整证据复判
+已在提交 `bba2195` 完成；下一步先完成 some 原子化、set-level 与 family
+隔离，再构造同题配对的 RAFT 风格 SFT 数据，补充主体、说话人、关系方向、时间和
 否定 hard negatives，最后完成约 60 题正式 P0。
 
 ## 实验身份与可追溯性
@@ -142,16 +148,17 @@ clean prediction SHA 为
 
 ## 下一步
 
-1. 先完成 GOLD_RECAL 326 个隔离 fact 的 full-evidence 复判，重建带内容
-   指纹的候选正例与动作标签。
+1. GOLD_RECAL 326 个隔离 fact 的 full-evidence 复判已完成。后续依据带
+   内容指纹的结果处理 some 原子化和 set-level 动作标签，不再重复复判。
 2. 从 strict9 的失败样式扩成同题配对的
    `Full / Full + hard distractor / One-edge-missing / Decoy-full /
    None-or-conflicting` 数据；每个状态保持长度与格式尽量匹配。
 3. 第一轮训练采用 RAFT 风格 paired SFT，重点加入说话人、主体、对象、
    关系方向、时间、否定和职业/种族混淆 hard negatives；保留 clean-SFT
    只作为历史格式基线。
-4. 在 minimal 失败题上补自然语言短答对照，区分 Exx 协议负担与基础阅读
-   能力；不要把自然语言分数直接混入 Exx 模型排名。
+4. minimal 自然语言短答对照已完成，见
+   `docs/STRICT9_READER_NATURAL_LANGUAGE_CONTROL_20260907.md`；不要把自然语言
+   分数直接混入 Exx 模型排名。
 5. 以约 60 个 family-held-out 开发问题完成正式 3-reader × 3-evidence
    P0；只有取得可核验 9B 资产时才加入 9B。
 6. 正式 P0 与独立人工验收完成前，不启动 RLVR，不改生产检索默认。

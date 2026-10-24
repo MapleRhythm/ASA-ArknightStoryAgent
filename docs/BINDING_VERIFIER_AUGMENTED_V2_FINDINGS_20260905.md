@@ -33,7 +33,9 @@ conservative pairs from 65 record groups (360 train / 33 eval). A subsequent
 full-evidence rejudgement completed all 480 quarantined candidates (131
 `supported`, 349 `unsupported`); the sidecar is now consumed by the builder.
 This yields 817 pairs (744 train / 73 eval), or 1019 pairs (907 / 112) when
-98 confirmed missed-positive variants are explicitly included. These remain
+98 GLM-supported missed-positive variants passing the coverage gates are
+explicitly included (both new full-evidence rejudgements and older untruncated
+supported candidates, not 98 newly rejudged positives). These remain
 record-held-out, not question/story-family-held-out, and the single GLM judge
 does not constitute human gold.
 
@@ -85,7 +87,9 @@ Do not switch this checkpoint into production. Before considering a replacement:
 1. complete the remaining set-level and family-held-out review; the quarantined
    gold and hard-negative candidates now have complete-evidence sidecars with
    matching content fingerprints;
-2. atomize every `supported_by_some` compound claim before positive training;
+2. rejudge the support scope of legacy `supported_by_some` labels, which
+   conflated single-document full support with genuinely partial support;
+   atomize and re-audit only genuinely partial claims before positive training;
 3. split by question and story family before training;
 4. rerun blind pairwise/listwise evaluation and full retrieval recall;
 5. check runtime latency with `reranker_max_length=1536`.

@@ -4,6 +4,11 @@
 
 **核心建议：先用受控实验拆开阅读能力、训练退化和检索缺口，再做“保留事件上下文的检索 + 可学习的证据缺口控制 + 抗干扰的证据问答训练”。第一轮不扩大端到端 RLVR。**
 
+2026-09-08 执行进展：见 `SYSTEM_ACCURACY_DIAGNOSIS_20260908.md`。96条旧
+some已按支持范围重判为GLM full72/partial24，其中1条full因因果证据争议
+另行隔离；真实clean-SFT分区审计后重建176条候选，12条set抽审及Codex复核
+仅导出10条样本。尚未重训或证明生产正确率提高，不能把标签修正数当作收益。
+
 本文是设计与实验建议，没有访问 ASA 源码、运行模型或复核原始实验产物。所有新增参数、样本规模与晋级阈值都是实验起点，不是已验证的最优配置或效果承诺。
 
 > 源码复核补记（2026-09-07）：后续检查确认，在本文所依据总结的基准提交
@@ -14,9 +19,9 @@
 > 独立正确率 A/B 支持改成默认关闭，P0 reader 诊断期间应冻结 `c692f28`
 > 既有配置，不改变任一方向的生产默认。
 
-> Reader P0 补记（2026-09-07）：随后已用人工复核的 strict9 构造
+> Reader P0 补记（2026-09-07）：随后已用 Codex 对照原文复核的 strict9 构造
 > 9 个问题族 × 3 个 evidence condition，并在同一 Qwen3.5-4B 基座上公平
-> 对照 untouched base 与当前 clean-SFT。人工修正后，base/clean-SFT 在
+> 对照 untouched base 与当前 clean-SFT。Codex 复核修正后，base/clean-SFT 在
 > 最小充分证据上均为 4/9，加入真实 hard distractor 后分别为 0/9 与 1/9，
 > 实际 prompt 分别为 2/9 与 1/9。该结果证明 clean-SFT 的格式改善没有在
 > 这 9 题上传导成语义改善，并暴露出明显的抗干扰、主体/关系绑定和
@@ -30,6 +35,16 @@
 > 芙蕾达、莫斯提马与老天师的主体/关系错误仍存在。因此协议负担是局部瓶颈，
 > 当前主优先级仍是 reader hard negatives 与配对证据状态 SFT。详见
 > `docs/STRICT9_READER_NATURAL_LANGUAGE_CONTROL_20260907.md`。
+
+> 工程审计补记（2026-09-08）：已修复显式空证据退回隐藏候选池、quote
+> 严格模式的无引用兜底旁路，以及多样本异常路径未传入 retrieval_trace。
+> 这些修复封闭校验漏洞，不构成回答正确率提升的实测证明；检索配置、
+> reader checkpoint 和默认 prompt 均未改变。旧文档“人工复核”的 reviewer
+> 实际为 Codex，不能据此宣称独立人审。新换行/主体约束实验仍限于开发 smoke。
+> 108 条对照现已完成：统一复核与协议门禁下，两种 reader 原提示均为
+> 4/18，换行+主体约束均为 5/18，同时存在原可答题退化；不推广到默认提示。
+> 分母实际只有 9 个问题族，完整结果和评分差异见
+> `docs/SYSTEM_ACCURACY_DIAGNOSIS_20260908.md`。
 
 **1．如何解读现有证据**
 
@@ -164,7 +179,8 @@ novel-doc rate 只作诊断或轻量 tie-break。全新但无关的文档没有�
 claim verifier 的 100% clean pair accuracy 不能当 retrieval reranker 证据。某段材料不支持一个 claim，却可能支持同一问题的另一个必要要点；而历史 1005
 个 `claim-negative` 中有 286 个只判断了 2000 字前缀。480 个被截断 candidate
 现已完成 full-evidence 复判（131 supported、349 unsupported），接入安全 gold
-后可重建 817 个 pair；显式纳入 98 个 confirmed missed-positive 变体后为
+后可重建 817 个 pair；显式纳入 98 个通过完整性门禁的 GLM-supported
+missed-positive 变体（含新复判和旧未截断支持判定）后为
 1019 个 pair。两者仍只按 record 隔离，不能原样训练 question-document
 reranker，也不能跳过原子化 claim 与 family-held-out split 直接重训 verifier。
 详见 `docs/HARDNEG_V2_SAFETY_AUDIT_20260907.md`。
@@ -199,7 +215,8 @@ Qwen3-Embedding-0.6B 官方模型卡给出 query instruction、last-token poolin
 1929 个 fact 中有 326 个因截断或内部冲突被隔离，现已完成 full-evidence 复判，
 详见 `docs/GOLD_RECALIBRATION_SAFETY_AUDIT_20260907.md`。复判是单一 GLM 裁决，
 不是人工 gold；下一轮 SFT 仍不能直接复用原“clean”标签集，必须先处理
-`supported_by_some` 原子化、动作 set-level 复核和 family-held-out 切分，随后再增加真实的阅读、
+`supported_by_some` 支持范围重判（旧标签混淆了“单段支持全部”与“只支持部分”，
+只对真 partial 再原子化）、动作 set-level 复核和 family-held-out 切分，随后再增加真实的阅读、
 缺口和抗干扰监督。RAFT 的可借鉴点是在相关证据中混入 distractors，并监督
 基于正确证据作答；ASA 需要额外加入证据不足时的动作训练，这属于本项目适配，
 不是 RAFT 原方案的同义复述。[RAFT](https://arxiv.org/abs/2403.10131)

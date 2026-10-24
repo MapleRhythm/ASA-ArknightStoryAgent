@@ -99,7 +99,8 @@ python3 scripts/build_binding_verifier_pairs.py \
 
 这 393 条仍不是最终训练集。接入 full-evidence sidecar 后，默认不纳入
 suspected missed positives 时得到 817 对、123 个 record group（744 train /
-73 eval）；显式加入 98 条完整证据确认的 missed-positive 变体后得到 1019
+73 eval）；显式加入 98 条通过完整性门禁的 GLM-supported missed-positive
+变体（包括新 full-evidence 复判及旧的未截断支持判定，并非全是新复判）后得到 1019
 对、123 个 group（907 train / 112 eval）。builder 仍只按 `record_id` 隔离；
 原 hard-neg 1706 行中有 1331 行没有 `question_key`，也没有完成 story-family
 分组，因此这些规模不能替代正式 family-held-out 训练集。
@@ -128,8 +129,11 @@ question-document retrieval 能力或生产切换依据。生产 runtime 保持�
 只有 `status=ok`、指纹与当前 source 完全一致的结果才能解封。此次 480/480
 通过校验：新 verdict 为 `supported=131`、`unsupported=349`；旧→新翻转矩阵
 见 `data/eval/binding_hardneg_full_evidence_rejudgements_20260907.report.json`。
-API 错误、超时和截断结果不计入完成数。`supported_by_some` 必须先拆成原子
-claim 再复核，不能通过保留某个 E-ID 把原复合主张变成正例。
+API 错误、超时和截断结果不计入完成数。2026-09-08 的续审发现旧
+`supported_by_some` 混淆“单段支持整条”与“主张只部分成立”，因此必须先
+盲重判支持范围；真正的 partial 再拆成原子 claim 复核。不能通过保留某个
+E-ID 把原复合主张变成正例，也不能将旧 96 个 some 全称作真实 partial。
+详见 `SYSTEM_ACCURACY_DIAGNOSIS_20260908.md` 的训练入口续审。
 
 ## 产物与 SHA256
 

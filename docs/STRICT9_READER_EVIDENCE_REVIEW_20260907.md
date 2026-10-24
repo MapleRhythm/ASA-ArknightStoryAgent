@@ -1,6 +1,11 @@
-# ASA strict9 reader × evidence 人工复核
+# ASA strict9 reader × evidence 原文复核
 
 日期：2026-09-07
+
+> 2026-09-08 更正：实际 reviewer 为
+> `codex-primary-source-review-20260907`，即 Codex 对照原文复核。本文历史
+> “人工标注/人工重校”措辞不代表独立人类审核。既有 JSONL 不改写，保留原始
+> 内容指纹；此 rubric 仅用于开发诊断，正式测试仍需独立验收。
 
 ## 结论
 
