@@ -19,6 +19,7 @@ def generate_direct_answer_from_model(
     evidence: list[dict[str, Any]],
 ) -> ConclusionResult:
     prompt_evidence = pipeline.prepare_prompt_evidence(question, current_hypothesis, evidence)
+    evidence_packing_trace: list[dict[str, Any]] = []
     prompt, evidence_prompt_text = build_answer_prompt(
         question,
         current_hypothesis,
@@ -29,6 +30,7 @@ def generate_direct_answer_from_model(
         evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
         grounding_mode=pipeline.answer_grounding_mode,
         round_value=f"{pipeline.max_retrieval_rounds}/{pipeline.max_retrieval_rounds}",
+        evidence_packing_trace=evidence_packing_trace,
     )
     generation_max_tokens = (
         min(pipeline.generator.max_tokens, 512)
@@ -92,5 +94,6 @@ def generate_direct_answer_from_model(
         ),
         "grounding_warnings": list(conclusion.grounding_warnings),
         "direct_answer_fallback": True,
+        "evidence_packing": evidence_packing_trace,
     }
     return conclusion

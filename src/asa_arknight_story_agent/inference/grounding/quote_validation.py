@@ -32,9 +32,19 @@ def validate_grounded_quotes(
     issues: list[str] = []
     warnings: list[str] = []
     # evidence_id -> 该编号对应的证据文本(与渲染进 prompt 的 [E编号] 一致)
-    eid_map = evidence_id_text_map_from_prompt(evidence_prompt_text) or evidence_id_text_map(evidence)
+    # Only None permits the legacy offline fallback. Empty rendered evidence
+    # is authoritative, including when no [E#] block could be parsed.
+    eid_map = (
+        evidence_id_text_map(evidence)
+        if evidence_prompt_text is None
+        else evidence_id_text_map_from_prompt(evidence_prompt_text)
+    )
     # 证据全池(用于 evidence_id 缺失时的兜底 quote 核对)
-    evidence_pool = normalize_for_evidence_match(evidence_prompt_text or grounding_evidence_pool(evidence))
+    evidence_pool = normalize_for_evidence_match(
+        grounding_evidence_pool(evidence)
+        if evidence_prompt_text is None
+        else evidence_prompt_text
+    )
     if not conclusion.supported_facts:
         issues.append("missing_supported_facts")
         return issues, warnings
@@ -62,7 +72,7 @@ def validate_grounded_quotes(
             eid = str(ref.get("evidence_id") or "").strip()
             if not eid:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_missing_evidence_id")
-            elif eid_map and eid not in eid_map:
+            elif eid not in eid_map:
                 issues.append(f"supported_fact_{fact_index}_ref_{ref_index}_evidence_id_not_found:{eid}")
             quote = str(ref.get("quote") or "").strip()
             if not quote:

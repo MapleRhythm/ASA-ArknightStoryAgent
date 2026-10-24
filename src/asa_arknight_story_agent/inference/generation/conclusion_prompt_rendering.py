@@ -39,6 +39,7 @@ def build_conclusion_prompt(
     evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
     prompt_mode: str = "full",
     grounding_mode: str = "quote",
+    evidence_packing_trace: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Build the conclusion prompt and the evidence text shown to the model.
 
@@ -46,22 +47,6 @@ def build_conclusion_prompt(
     (the minimal brief, or the full rendered blocks), so quote grounding can
     validate against what the model actually saw.
     """
-    rendered_dialogue_context = truncate_text(
-        render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
-        PROMPT_DIALOGUE_CONTEXT_MAX_CHARS,
-    )
-    rendered_evidence = render_evidence_blocks(
-        prompt_evidence
-        if prompt_evidence is not None
-        else select_prompt_evidence(
-            question,
-            current_hypothesis,
-            evidence,
-            prompt_evidence_top_k=prompt_evidence_top_k,
-        ),
-        max_chars_per_doc=evidence_max_chars_per_doc,
-        max_total_chars=evidence_max_total_chars,
-    )
     # Evidence-id output uses the compact structured-facts schema.  Reuse that
     # schema even if a legacy deployment still requests the verbose prompt.
     if prompt_mode == "minimal" or grounding_mode.strip().lower() == "evidence_id":
@@ -76,7 +61,28 @@ def build_conclusion_prompt(
             evidence_max_chars_per_doc=evidence_max_chars_per_doc,
             evidence_max_total_chars=evidence_max_total_chars,
             grounding_mode=grounding_mode,
+            evidence_packing_trace=evidence_packing_trace,
         )
+    rendered_dialogue_context = truncate_text(
+        render_dialogue_context_for_prompt(current_hypothesis.dialogue_context),
+        PROMPT_DIALOGUE_CONTEXT_MAX_CHARS,
+    )
+    whole_quotes = grounding_mode.strip().lower() in {"quote", "strict", "grounded"}
+    rendered_evidence = render_evidence_blocks(
+        prompt_evidence
+        if prompt_evidence is not None
+        else select_prompt_evidence(
+            question,
+            current_hypothesis,
+            evidence,
+            prompt_evidence_top_k=prompt_evidence_top_k,
+        ),
+        max_chars_per_doc=evidence_max_chars_per_doc,
+        max_total_chars=evidence_max_total_chars,
+        preserve_complete_evidence=whole_quotes,
+        overflow_policy="skip" if whole_quotes else "break",
+        packing_trace=evidence_packing_trace,
+    )
     system_prompt = "\n".join(
         [
             "你是《明日方舟》剧情问答系统中的 conclusion_generator。",

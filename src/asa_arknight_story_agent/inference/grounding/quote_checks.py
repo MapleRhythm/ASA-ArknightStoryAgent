@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from asa_arknight_story_agent.inference.planning.follow_up_hypothesis import build_heuristic_follow_up_hypothesis
-from asa_arknight_story_agent.inference.grounding.fallback import build_grounded_fallback_answer
 from asa_arknight_story_agent.inference.pipeline.types import ConclusionResult, HypothesisDocument
 from asa_arknight_story_agent.inference.grounding.grounded_fact_answers import answer_from_grounded_facts
 from asa_arknight_story_agent.inference.grounding.quote_validation import validate_grounded_quotes
@@ -34,19 +33,20 @@ def validate_quote_grounding(
             ]
         )
         if max_round_reached:
-            grounded_answer = build_grounded_fallback_answer(
-                question=question,
-                hypothesis=hypothesis,
-                evidence=evidence,
-                missing_tokens=missing_slots,
-            )
             return ConclusionResult(
                 next_action="abstain",
-                answer=grounded_answer,
+                # Rejected claims and unvalidated retrieval snippets must not
+                # become a pseudo-answer merely because the budget ran out.
+                answer="现有检索证据不足以给出可校验的回答。",
                 missing_slots=missing_slots,
                 clarification_question="",
                 follow_up_hypothesis=None,
                 grounding_warnings=quote_issues,
+                generation_diagnostics={
+                    **conclusion.generation_diagnostics,
+                    "grounding_status": "rejected_to_abstain",
+                    "grounding_issues": quote_issues,
+                },
             )
         return ConclusionResult(
             next_action="retrieve_more",
@@ -55,6 +55,11 @@ def validate_quote_grounding(
             clarification_question="",
             follow_up_hypothesis=build_heuristic_follow_up_hypothesis(question, hypothesis, missing_slots),
             grounding_warnings=quote_issues,
+            generation_diagnostics={
+                **conclusion.generation_diagnostics,
+                "grounding_status": "rejected_to_retrieve_more",
+                "grounding_issues": quote_issues,
+            },
         )
 
     if not quote_warnings:

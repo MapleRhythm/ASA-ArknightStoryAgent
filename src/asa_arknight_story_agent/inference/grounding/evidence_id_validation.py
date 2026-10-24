@@ -86,9 +86,13 @@ def validate_evidence_id_grounding(
     """
     issues: list[str] = []
     warnings: list[str] = []
-    # Prefer exactly what the model saw.  Falling back to the evidence objects
-    # keeps the function usable in offline validation and legacy callers.
-    evidence_map = evidence_id_text_map_from_prompt(evidence_prompt_text) or evidence_id_text_map(evidence)
+    # None means a legacy/offline caller did not supply rendered evidence.
+    # An explicit empty or unparseable prompt must never expose hidden docs.
+    evidence_map = (
+        evidence_id_text_map(evidence)
+        if evidence_prompt_text is None
+        else evidence_id_text_map_from_prompt(evidence_prompt_text)
+    )
     if not conclusion.supported_facts:
         return ["missing_supported_facts"], warnings
     if len(conclusion.supported_facts) > 8:

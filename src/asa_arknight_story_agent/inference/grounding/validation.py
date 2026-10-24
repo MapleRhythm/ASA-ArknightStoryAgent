@@ -31,9 +31,10 @@ def validate_conclusion_grounding(
         return conclusion
     grounding_mode = normalize_grounding_mode(mode)
     # The legacy deterministic fallbacks do not carry structured evidence
-    # references.  Letting them bypass evidence-id validation would recreate a
-    # hallucination path, so they remain available only for legacy modes.
-    if grounding_mode != "evidence_id":
+    # references. They cannot bypass either structured grounding protocol;
+    # keep them only for legacy token-based modes.
+    structured_grounding = grounding_mode in {"evidence_id", "quote", "grounded", "strict"}
+    if not structured_grounding:
         fallback_result = answer_from_retrieval_fallbacks(
             question=question,
             hypothesis=hypothesis,
@@ -47,7 +48,7 @@ def validate_conclusion_grounding(
     if conclusion.next_action != "answer_directly" or not conclusion.answer:
         return conclusion
 
-    if grounding_mode != "evidence_id":
+    if not structured_grounding:
         special_answer = corrected_special_answer(
             question=question,
             hypothesis=hypothesis,

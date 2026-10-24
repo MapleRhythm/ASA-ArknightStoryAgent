@@ -32,6 +32,7 @@ def build_minimal_conclusion_prompt(
     evidence_max_chars_per_doc: int = PROMPT_EVIDENCE_MAX_CHARS_PER_DOC,
     evidence_max_total_chars: int = PROMPT_CONCLUSION_EVIDENCE_MAX_TOTAL_CHARS,
     grounding_mode: str = "quote",
+    evidence_packing_trace: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Build the minimal conclusion prompt and its rendered evidence brief.
 
@@ -61,14 +62,25 @@ def build_minimal_conclusion_prompt(
         if grounding_mode.strip().lower() == "evidence_id"
         else "你是《明日方舟》剧情问答系统的结构化输出模块。只输出指定 JSON。"
     )
+    mode = grounding_mode.strip().lower()
+    whole_quotes = mode in {"quote", "strict", "grounded"}
+    packing: list[dict[str, Any]] = []
     evidence_brief = render_short_evidence_brief(
         selected_evidence,
         max_chars_per_doc=evidence_max_chars_per_doc,
         max_total_chars=evidence_max_total_chars,
-        preserve_complete_evidence=grounding_mode.strip().lower() == "evidence_id",
+        preserve_complete_evidence=whole_quotes or mode == "evidence_id",
         label_on_own_line=grounding_mode.strip().lower() == "evidence_id",
+        overflow_policy="skip" if whole_quotes else "break",
+        packing_trace=packing,
     )
-    minirag_hints = render_minirag_hints_for_prompt(selected_evidence, current_hypothesis)
+    if evidence_packing_trace is not None:
+        evidence_packing_trace.extend(packing)
+    visible_evidence = (
+        [selected_evidence[entry["input_index"]] for entry in packing if entry["status"] == "included"]
+        if whole_quotes else selected_evidence
+    )
+    minirag_hints = render_minirag_hints_for_prompt(visible_evidence, current_hypothesis)
     evidence_id_only = grounding_mode.strip().lower() == "evidence_id"
     answer_schema = (
         'answer_directly: {"next_action":"answer_directly","supported_facts":[{"fact":"","evidence_ids":["E1"]}]}'

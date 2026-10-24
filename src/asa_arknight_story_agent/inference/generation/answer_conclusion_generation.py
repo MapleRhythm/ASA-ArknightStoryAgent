@@ -30,6 +30,7 @@ def generate_conclusion_from_model(
     current_round: int,
 ) -> ConclusionResult:
     prompt_evidence = pipeline.prepare_prompt_evidence(question, current_hypothesis, evidence)
+    evidence_packing_trace: list[dict[str, Any]] = []
     prompt, evidence_prompt_text = build_conclusion_prompt(
         question,
         current_hypothesis,
@@ -43,7 +44,10 @@ def generate_conclusion_from_model(
         evidence_max_total_chars=pipeline.prompt_conclusion_evidence_max_total_chars,
         prompt_mode=pipeline.conclusion_prompt_mode,
         grounding_mode=pipeline.answer_grounding_mode,
+        evidence_packing_trace=evidence_packing_trace,
     )
+    if retrieval_trace:
+        retrieval_trace[-1]["evidence_packing"] = evidence_packing_trace
     conclusions = sample_grounded_conclusions(
         pipeline=pipeline,
         question=question,
@@ -52,6 +56,8 @@ def generate_conclusion_from_model(
         prompt=prompt,
         evidence_prompt_text=evidence_prompt_text,
         current_round=current_round,
+        retrieval_trace=retrieval_trace,
+        evidence_packing_trace=evidence_packing_trace,
     )
 
     if not conclusions:
@@ -93,6 +99,8 @@ def sample_grounded_conclusions(
     prompt: str,
     evidence_prompt_text: str | None = None,
     current_round: int,
+    retrieval_trace: list[dict[str, Any]] | None = None,
+    evidence_packing_trace: list[dict[str, Any]] | None = None,
 ) -> list[ConclusionResult]:
     conclusions: list[ConclusionResult] = []
     sample_count = pipeline.self_consistency_samples
@@ -135,7 +143,9 @@ def sample_grounded_conclusions(
                 conclusion=conclusion,
                 max_round_reached=current_round >= pipeline.max_retrieval_rounds,
                 mode=pipeline.answer_grounding_mode,
-                evidence_prompt_text=evidence_prompt_text or prompt,
+                evidence_prompt_text=(
+                    prompt if evidence_prompt_text is None else evidence_prompt_text
+                ),
             )
             conclusion.generation_diagnostics = {
                 **conclusion.generation_diagnostics,
@@ -147,6 +157,7 @@ def sample_grounded_conclusions(
                     "accepted" if conclusion.next_action == "answer_directly" else conclusion.next_action,
                 ),
                 "grounding_warnings": list(conclusion.grounding_warnings),
+                "evidence_packing": evidence_packing_trace or [],
             }
             conclusions.append(conclusion)
         except Exception as exc:
@@ -164,7 +175,9 @@ def sample_grounded_conclusions(
                         conclusion=recovered,
                         max_round_reached=current_round >= pipeline.max_retrieval_rounds,
                         mode=pipeline.answer_grounding_mode,
-                        evidence_prompt_text=evidence_prompt_text or prompt,
+                        evidence_prompt_text=(
+                            prompt if evidence_prompt_text is None else evidence_prompt_text
+                        ),
                     )
                     recovered.generation_diagnostics = {
                         **recovered.generation_diagnostics,
@@ -177,6 +190,7 @@ def sample_grounded_conclusions(
                             "accepted" if recovered.next_action == "answer_directly" else recovered.next_action,
                         ),
                         "grounding_warnings": list(recovered.grounding_warnings),
+                        "evidence_packing": evidence_packing_trace or [],
                     }
                     conclusions.append(recovered)
                     continue
