@@ -1,0 +1,25 @@
+{
+  "arm_id": "question_slots_binding_v1_1",
+  "status": "prepared_not_generated",
+  "application": "Append this instruction after the unchanged full evidence and question, before the unchanged assistant generation boundary. Keep existing action/output schema and all 20 evidence passages.",
+  "instruction": "回答前在内部核对问题要求的全部必要信息位：所问主体、事件或阶段，以及问题明确要求的原因、关系、方法或对照双方。最终仍只使用原有动作和输出格式。先完整回答这些必要信息位；每条事实只保留直接解释这些信息位所必需的内容，不因为证据中出现相关背景就补写人物生平、其他场景或重复事实。逐条核对事实中的说话者、受话对象、施事、受事与所属阶段；不要把对话中的你、她或泛称人物跨段合并，也不要把同一名词在不同场景中的用途合并。没有明确身份连接时保持证据原有称谓，不补推姓名、上下级或因果时序。推测保留推测限定，直接动机不能被更早的推测或现象描述替代。遇到缺证时按原有协议处理，不能用相邻事件或无关背景填补。事实条数由覆盖全部必要信息位决定：不为凑数增写事实，也不为减少条数删去必要信息位，仍在原协议1至8条范围内。",
+  "evaluation": "Fresh native generation, same checkpoint/evidence/question/decoding. Whole-answer content is primary; retain all omissions and newly introduced errors. No offline deletion.",
+  "protected_positions": {
+    "first_fact_or_core_entangled_error": [
+      21,
+      22,
+      27,
+      45
+    ],
+    "necessary_cause_late_in_historical_output": [
+      1,
+      17
+    ]
+  },
+  "revision": {
+    "from_arm_id": "question_slots_binding_v1",
+    "from_file_sha256": "c7ca62ac9b4309cfad97338f2be3af55360cb8a08ed6996b66b1970d834c3db9",
+    "change": "Final clause no longer says there is no fact cap without qualification; it now restates the native 1-to-8 range and forbids both padding and dropping necessary slots.",
+    "why": "Historical v2 already produced >=8 facts on 19/46 questions; an unqualified no-cap clause invites more tail facts, the opposite of the scope mechanism under test. Revised before any generation."
+  }
+}

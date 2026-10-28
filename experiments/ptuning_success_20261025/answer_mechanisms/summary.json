@@ -1,0 +1,169 @@
+{
+  "source_integrity_and_offsets_match": true,
+  "semantic_judgments": "manual assistant audit; not independent human gold",
+  "denominator": "selected 13 historical losses and 4 gains; not all 46",
+  "lost_scope_status_counts": {
+    "boundary_clean_prefix": 2,
+    "clear_clean_prefix": 7,
+    "first_fact_error": 3,
+    "core_entangled_error": 1
+  },
+  "new_generation_performed": false,
+  "new_model_accuracy_measured": false,
+  "counterfactual_accuracy_claimed": false,
+  "cases": [
+    {
+      "position": 8,
+      "transition": "lost_complete",
+      "mechanism": "unsupported_inference",
+      "scope_status": "boundary_clean_prefix",
+      "first_material_error_fact": 6,
+      "adequate_clean_prefix_end_fact": 4,
+      "evidence_passages_read": 8
+    },
+    {
+      "position": 10,
+      "transition": "lost_complete",
+      "mechanism": "speaker_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 3,
+      "adequate_clean_prefix_end_fact": 2,
+      "evidence_passages_read": 2
+    },
+    {
+      "position": 13,
+      "transition": "lost_complete",
+      "mechanism": "participant_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 2,
+      "adequate_clean_prefix_end_fact": 1,
+      "evidence_passages_read": 5
+    },
+    {
+      "position": 16,
+      "transition": "lost_complete",
+      "mechanism": "speaker_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 4,
+      "adequate_clean_prefix_end_fact": 2,
+      "evidence_passages_read": 5
+    },
+    {
+      "position": 21,
+      "transition": "lost_complete",
+      "mechanism": "relation_binding",
+      "scope_status": "first_fact_error",
+      "first_material_error_fact": 1,
+      "adequate_clean_prefix_end_fact": null,
+      "evidence_passages_read": 7
+    },
+    {
+      "position": 22,
+      "transition": "lost_complete",
+      "mechanism": "identity_binding",
+      "scope_status": "core_entangled_error",
+      "first_material_error_fact": 2,
+      "adequate_clean_prefix_end_fact": null,
+      "evidence_passages_read": 4
+    },
+    {
+      "position": 27,
+      "transition": "lost_complete",
+      "mechanism": "participant_binding_and_omission",
+      "scope_status": "first_fact_error",
+      "first_material_error_fact": 1,
+      "adequate_clean_prefix_end_fact": null,
+      "evidence_passages_read": 5
+    },
+    {
+      "position": 30,
+      "transition": "lost_complete",
+      "mechanism": "phase_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 4,
+      "adequate_clean_prefix_end_fact": 3,
+      "evidence_passages_read": 9
+    },
+    {
+      "position": 32,
+      "transition": "lost_complete",
+      "mechanism": "speaker_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 6,
+      "adequate_clean_prefix_end_fact": 4,
+      "evidence_passages_read": 6
+    },
+    {
+      "position": 33,
+      "transition": "lost_complete",
+      "mechanism": "scene_binding",
+      "scope_status": "boundary_clean_prefix",
+      "first_material_error_fact": 5,
+      "adequate_clean_prefix_end_fact": 3,
+      "evidence_passages_read": 7
+    },
+    {
+      "position": 35,
+      "transition": "lost_complete",
+      "mechanism": "participant_direction",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 5,
+      "adequate_clean_prefix_end_fact": 3,
+      "evidence_passages_read": 7
+    },
+    {
+      "position": 41,
+      "transition": "lost_complete",
+      "mechanism": "addressee_binding",
+      "scope_status": "clear_clean_prefix",
+      "first_material_error_fact": 5,
+      "adequate_clean_prefix_end_fact": 4,
+      "evidence_passages_read": 6
+    },
+    {
+      "position": 45,
+      "transition": "lost_complete",
+      "mechanism": "unsupported_identity_and_participant",
+      "scope_status": "first_fact_error",
+      "first_material_error_fact": 1,
+      "adequate_clean_prefix_end_fact": null,
+      "evidence_passages_read": 20
+    },
+    {
+      "position": 1,
+      "transition": "gained_complete",
+      "mechanism": "gained_required_cause",
+      "scope_status": "gain_late_necessary",
+      "first_material_error_fact": null,
+      "adequate_clean_prefix_end_fact": 4,
+      "evidence_passages_read": 5
+    },
+    {
+      "position": 17,
+      "transition": "gained_complete",
+      "mechanism": "gained_required_cause",
+      "scope_status": "gain_late_necessary",
+      "first_material_error_fact": null,
+      "adequate_clean_prefix_end_fact": 6,
+      "evidence_passages_read": 6
+    },
+    {
+      "position": 24,
+      "transition": "gained_complete",
+      "mechanism": "gained_identity_error_removed",
+      "scope_status": "gain_binding_repaired",
+      "first_material_error_fact": null,
+      "adequate_clean_prefix_end_fact": 3,
+      "evidence_passages_read": 4
+    },
+    {
+      "position": 31,
+      "transition": "gained_complete",
+      "mechanism": "gained_question_relevance",
+      "scope_status": "gain_required_context",
+      "first_material_error_fact": null,
+      "adequate_clean_prefix_end_fact": 3,
+      "evidence_passages_read": 4
+    }
+  ]
+}

@@ -1,0 +1,391 @@
+{
+  "kind": "available_samples_label_diagnostic",
+  "semantic_accuracy_measured": false,
+  "sampling": "deterministic risk strata plus high-fact controls; not random",
+  "scope": "Each dataset is separate; no inference to absent 1117 or final repaired 180.",
+  "units": "Unicode characters are not model tokens. Token counts optional and local-only.",
+  "datasets": {
+    "snapshot171": {
+      "source_sha256": "05dd60657291e3a9066f5a1ed76ddd3204624fc51e8273b6a71020734a125339",
+      "all": {
+        "rows": 171,
+        "actions": {
+          "abstain": 4,
+          "answer_directly": 158,
+          "retrieve_more": 9
+        },
+        "fact_counts": {
+          "0": 13,
+          "1": 2,
+          "2": 44,
+          "3": 78,
+          "4": 32,
+          "5": 2
+        },
+        "target_chars": {
+          "min": 110,
+          "median": 300,
+          "p90_nearest_rank": 414,
+          "max": 618,
+          "mean": 304.5964912280702
+        },
+        "target_tokens_no_eos": null,
+        "selection_flags_not_errors": {
+          "multi_stage_citations": 45,
+          "high_fact_core_or_partial": 19
+        }
+      },
+      "by_kind": {
+        "event_state_scope": {
+          "rows": 29,
+          "actions": {
+            "answer_directly": 28,
+            "retrieve_more": 1
+          },
+          "fact_counts": {
+            "0": 1,
+            "2": 7,
+            "3": 12,
+            "4": 8,
+            "5": 1
+          },
+          "target_chars": {
+            "min": 200,
+            "median": 320,
+            "p90_nearest_rank": 410,
+            "max": 618,
+            "mean": 320.1034482758621
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 9
+          }
+        },
+        "evidence_boundary": {
+          "rows": 28,
+          "actions": {
+            "abstain": 4,
+            "answer_directly": 16,
+            "retrieve_more": 8
+          },
+          "fact_counts": {
+            "0": 12,
+            "3": 12,
+            "4": 4
+          },
+          "target_chars": {
+            "min": 110,
+            "median": 318.0,
+            "p90_nearest_rank": 440,
+            "max": 470,
+            "mean": 318.4642857142857
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 10
+          }
+        },
+        "minimal_complete": {
+          "rows": 28,
+          "actions": {
+            "answer_directly": 28
+          },
+          "fact_counts": {
+            "2": 2,
+            "3": 18,
+            "4": 8
+          },
+          "target_chars": {
+            "min": 210,
+            "median": 346.0,
+            "p90_nearest_rank": 433,
+            "max": 500,
+            "mean": 352.2857142857143
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 3,
+            "high_fact_core_or_partial": 8
+          }
+        },
+        "partial_support": {
+          "rows": 29,
+          "actions": {
+            "answer_directly": 29
+          },
+          "fact_counts": {
+            "2": 6,
+            "3": 12,
+            "4": 10,
+            "5": 1
+          },
+          "target_chars": {
+            "min": 200,
+            "median": 332,
+            "p90_nearest_rank": 471,
+            "max": 493,
+            "mean": 335.7241379310345
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "high_fact_core_or_partial": 11,
+            "multi_stage_citations": 10
+          }
+        },
+        "speaker_direction": {
+          "rows": 57,
+          "actions": {
+            "answer_directly": 57
+          },
+          "fact_counts": {
+            "1": 2,
+            "2": 29,
+            "3": 24,
+            "4": 2
+          },
+          "target_chars": {
+            "min": 125,
+            "median": 236,
+            "p90_nearest_rank": 310,
+            "max": 424,
+            "mean": 250.6315789473684
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 13
+          }
+        }
+      },
+      "selected_review_rows": 10
+    },
+    "historical486": {
+      "source_sha256": "5fc6e331c9d02a24003c0aa89ea9b402c08f1b6907d3fb624bf31961f73a8ca4",
+      "all": {
+        "rows": 486,
+        "actions": {
+          "abstain": 24,
+          "answer_directly": 368,
+          "retrieve_more": 94
+        },
+        "fact_counts": {
+          "0": 118,
+          "1": 6,
+          "2": 87,
+          "3": 156,
+          "4": 93,
+          "5": 23,
+          "6": 2,
+          "7": 1
+        },
+        "target_chars": {
+          "min": 104,
+          "median": 314.0,
+          "p90_nearest_rank": 435,
+          "max": 568,
+          "mean": 310.0329218106996
+        },
+        "target_tokens_no_eos": null,
+        "selection_flags_not_errors": {
+          "multi_stage_citations": 71,
+          "high_fact_core_or_partial": 58,
+          "partial_action_review": 26
+        }
+      },
+      "by_kind": {
+        "event_state_scope": {
+          "rows": 81,
+          "actions": {
+            "abstain": 1,
+            "answer_directly": 80
+          },
+          "fact_counts": {
+            "0": 1,
+            "2": 23,
+            "3": 39,
+            "4": 16,
+            "5": 2
+          },
+          "target_chars": {
+            "min": 121,
+            "median": 282,
+            "p90_nearest_rank": 377,
+            "max": 481,
+            "mean": 288.82716049382714
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 10
+          }
+        },
+        "evidence_boundary": {
+          "rows": 150,
+          "actions": {
+            "abstain": 21,
+            "answer_directly": 60,
+            "retrieve_more": 69
+          },
+          "fact_counts": {
+            "0": 90,
+            "1": 1,
+            "2": 7,
+            "3": 22,
+            "4": 22,
+            "5": 7,
+            "6": 1
+          },
+          "target_chars": {
+            "min": 108,
+            "median": 341.0,
+            "p90_nearest_rank": 439,
+            "max": 520,
+            "mean": 320.79333333333335
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 21
+          }
+        },
+        "minimal_complete": {
+          "rows": 90,
+          "actions": {
+            "answer_directly": 90
+          },
+          "fact_counts": {
+            "1": 1,
+            "2": 13,
+            "3": 47,
+            "4": 27,
+            "5": 2
+          },
+          "target_chars": {
+            "min": 144,
+            "median": 315.0,
+            "p90_nearest_rank": 417,
+            "max": 501,
+            "mean": 319.77777777777777
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "high_fact_core_or_partial": 29,
+            "multi_stage_citations": 16
+          }
+        },
+        "partial_support": {
+          "rows": 76,
+          "actions": {
+            "abstain": 2,
+            "answer_directly": 50,
+            "retrieve_more": 24
+          },
+          "fact_counts": {
+            "0": 26,
+            "2": 6,
+            "3": 15,
+            "4": 20,
+            "5": 7,
+            "6": 1,
+            "7": 1
+          },
+          "target_chars": {
+            "min": 104,
+            "median": 363.0,
+            "p90_nearest_rank": 448,
+            "max": 568,
+            "mean": 359.61842105263156
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 16,
+            "high_fact_core_or_partial": 29,
+            "partial_action_review": 26
+          }
+        },
+        "speaker_direction": {
+          "rows": 89,
+          "actions": {
+            "answer_directly": 88,
+            "retrieve_more": 1
+          },
+          "fact_counts": {
+            "0": 1,
+            "1": 4,
+            "2": 38,
+            "3": 33,
+            "4": 8,
+            "5": 5
+          },
+          "target_chars": {
+            "min": 118,
+            "median": 243,
+            "p90_nearest_rank": 393,
+            "max": 466,
+            "mean": 259
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 8
+          }
+        }
+      },
+      "selected_review_rows": 36
+    },
+    "baseval46": {
+      "source_sha256": "046adcee638d5a7c36c93836eb12e96ec29e883337153bee0d687849069a3d8d",
+      "all": {
+        "rows": 46,
+        "actions": {
+          "abstain": 4,
+          "answer_directly": 41,
+          "retrieve_more": 1
+        },
+        "fact_counts": {
+          "0": 5,
+          "3": 7,
+          "4": 18,
+          "5": 11,
+          "6": 5
+        },
+        "target_chars": {
+          "min": 142,
+          "median": 431.5,
+          "p90_nearest_rank": 587,
+          "max": 757,
+          "mean": 423.04347826086956
+        },
+        "target_tokens_no_eos": null,
+        "selection_flags_not_errors": {
+          "multi_stage_citations": 20
+        }
+      },
+      "by_kind": {
+        "unspecified": {
+          "rows": 46,
+          "actions": {
+            "abstain": 4,
+            "answer_directly": 41,
+            "retrieve_more": 1
+          },
+          "fact_counts": {
+            "0": 5,
+            "3": 7,
+            "4": 18,
+            "5": 11,
+            "6": 5
+          },
+          "target_chars": {
+            "min": 142,
+            "median": 431.5,
+            "p90_nearest_rank": 587,
+            "max": 757,
+            "mean": 423.04347826086956
+          },
+          "target_tokens_no_eos": null,
+          "selection_flags_not_errors": {
+            "multi_stage_citations": 20
+          }
+        }
+      },
+      "selected_review_rows": 2
+    }
+  }
+}

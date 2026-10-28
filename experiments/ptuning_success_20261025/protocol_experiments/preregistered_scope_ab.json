@@ -1,0 +1,197 @@
+{
+  "experiment_id": "full20_slot_binding_scope_ab_v2",
+  "supersedes": {
+    "experiment_id": "full20_v2_minimal_sufficient_scope_ab_v1",
+    "arm_B_suffix_sha256": "4eaf75bd75d98ff0c24f16fb42248aba3090be13950bb08b8a8aaff21c8037a1",
+    "reason": "v1 never generated. Its arm B and answer_mechanisms/prompt_arm.json were two different untested instructions; v2 makes prompt_arm.json the single arm-B source (it was written from the 17-pair binding audit) and binds the content rule SLOT_RUBRIC.md by hash. Plans prepared under v1 (none generated) are void."
+  },
+  "synthetic": false,
+  "status": "preregistered_not_run",
+  "frozen_inputs": {
+    "note": "Paths relative to experiments/ptuning_success_20261025/. paired_protocol.py prepare refuses to plan if any hash differs or arm B text differs from prompt_arm.json[field]. Change = new preregistration version, never an in-place edit; the only exception is replacing per_task_slots.sha256 before the first generation.",
+    "prompt_arm": {
+      "path": "answer_mechanisms/prompt_arm.json",
+      "sha256": "2367daa1fb68d6050262db936950a4238f80ca642bee77d228880c556b53586d",
+      "arm": "B",
+      "field": "instruction"
+    },
+    "slot_rubric": {
+      "path": "protocol_experiments/SLOT_RUBRIC.md",
+      "sha256": "9e30d0566e9b14badb450af7d4ba838809c74ab7777c2f01bd681c635355d45f",
+      "version": "v1.1"
+    },
+    "per_task_slots": {
+      "location": "private task evidence (contains question wording); not in Git",
+      "sha256": "da0ead6bb91bd95b2303b858023d76587b21731bef413205cf7e79ddade10489",
+      "task_count": 46,
+      "slot_count": 62,
+      "status": "assistant draft from question text under SLOT_RUBRIC v1.1; evidence_checked=false. Reviewers may amend slots only before the first generation of either panel, recording the replacement hash here; after that the file is frozen. The author had read 17 historical case reviews, so these slots are not blind to historical outputs."
+    }
+  },
+  "decision": "First verify decoder invariants when final runtime assets return; absent a demonstrated invariant violation, run the fixed-v2 scope A/B before spending a new training run.",
+  "branches": [
+    {
+      "if": "real_final_adapter_same_prefix_logits_or_stop_invariants_fail",
+      "then": "localize first divergence with common teacher-forced prefix; fix demonstrated defect and rerun parity; do not combine defect repair with prompt intervention"
+    },
+    {
+      "if": "real_final_adapter_decoder_invariants_pass",
+      "then": "run_only_the_scope_AB_defined_here_with_identical_final_v2_adapter_and_decoder"
+    }
+  ],
+  "model_bundle": {
+    "model": "Bonsai2 27B frozen backbone",
+    "adapter": "optimized_v2_final_step1117",
+    "adapter_sha256": "c392ebc7701cb2bcde57602dc763594f5fbe71d4caeaa2f47ae425e13c823ae5",
+    "tokenizer_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+    "backend_sha256": "397cbfa82e943bee67ea513cf6516170ccfc7eec6a12c2723a2697369effbd82",
+    "decoder_source_sha256": "4b1f00288ac04704192efc7775796756b036376675591f308ec6c04c0e1a467b",
+    "artifact_manifest_sha256": "77b2c71cfb46fb3a056385a9a613e0b4c5ba2aa4630b7933db1664e0600121b2",
+    "runtime_required": "Bind actual file hashes, library versions, device/dtype, full effective generation config and parity receipt before any model execution; metadata hashes above are historical records, not local weight rehashes."
+  },
+  "generation": {
+    "decoder": "ptuning_v2_hybrid.greedy_generate",
+    "max_new_tokens": 1024,
+    "do_sample": false,
+    "num_beams": 1,
+    "num_return_sequences": 1,
+    "use_cache": true,
+    "eos_token_ids": [
+      248046,
+      248044
+    ],
+    "pad_token_id": 248046,
+    "bos_token_id": 248044,
+    "repetition_penalty": 1.0,
+    "length_penalty": 1.0,
+    "logits_processors": [],
+    "stop": "append argmax token; stop at first EOS or 1024 generated tokens",
+    "seed": 20261025,
+    "dtype": "bfloat16",
+    "input_truncation": false,
+    "context_limit": 32768,
+    "prefix_tokens": 16
+  },
+  "panels": {
+    "input_layer": {
+      "why": "Objective is whole-answer correctness of the best adapter (input-layer, historical 24/46). The v2 panel tests the scope/binding mechanism where it was diagnosed; only the input-layer panel can move the best model. Panels are prepared, reviewed and analyzed separately and never pooled.",
+      "model_bundle": {
+        "model": "Bonsai2 27B frozen backbone",
+        "adapter": "input_layer_curated_final_step1117",
+        "adapter_sha256": "157456cc075a6e3387ab094b906f8da625f448b8fe8519a2cf441e3fb4a0e607",
+        "data_source_sha256": "53107f530aa52eb00912263ab1ee29bd199261c87cd7b4ad4ca1318c1fe33ee3",
+        "backend_sha256": "397cbfa82e943bee67ea513cf6516170ccfc7eec6a12c2723a2697369effbd82",
+        "runtime_required": "Same as top-level model_bundle.runtime_required; hashes are historical receipts, not local weight rehashes."
+      },
+      "generation": {
+        "decoder": "historical input-layer evaluate path (HF model.generate); replace with the decoder chosen by the decode-parity gate before preparing, and record it here as a new version",
+        "max_new_tokens": 1024,
+        "do_sample": false,
+        "num_beams": 1,
+        "num_return_sequences": 1,
+        "use_cache": true,
+        "eos_token_ids": [
+          248046,
+          248044
+        ],
+        "pad_token_id": 248046,
+        "bos_token_id": 248044,
+        "repetition_penalty": 1.0,
+        "length_penalty": 1.0,
+        "logits_processors": [],
+        "stop": "append argmax token; stop at first EOS or 1024 generated tokens",
+        "seed": 20261025,
+        "dtype": "bfloat16",
+        "input_truncation": false,
+        "context_limit": 32768,
+        "prefix_tokens": 16
+      }
+    }
+  },
+  "arms": [
+    {
+      "id": "A",
+      "description": "unchanged native trained prompt",
+      "user_instruction_suffix": ""
+    },
+    {
+      "id": "B",
+      "description": "question-slot completeness + role/phase binding check + scope stop; no cap below the native 1-to-8 range (answer_mechanisms/prompt_arm.json)",
+      "user_instruction_suffix": "回答前在内部核对问题要求的全部必要信息位：所问主体、事件或阶段，以及问题明确要求的原因、关系、方法或对照双方。最终仍只使用原有动作和输出格式。先完整回答这些必要信息位；每条事实只保留直接解释这些信息位所必需的内容，不因为证据中出现相关背景就补写人物生平、其他场景或重复事实。逐条核对事实中的说话者、受话对象、施事、受事与所属阶段；不要把对话中的你、她或泛称人物跨段合并，也不要把同一名词在不同场景中的用途合并。没有明确身份连接时保持证据原有称谓，不补推姓名、上下级或因果时序。推测保留推测限定，直接动机不能被更早的推测或现象描述替代。遇到缺证时按原有协议处理，不能用相邻事件或无关背景填补。事实条数由覆盖全部必要信息位决定：不为凑数增写事实，也不为减少条数删去必要信息位，仍在原协议1至8条范围内。"
+    }
+  ],
+  "invariants": [
+    "All 20 documents byte-identical and in original order in both prompts; only the specified final-user instruction differs.",
+    "Keep original round, question and legal next_action schema. Existing 1-to-8 fact rule is unchanged; no hard 1/3/4-fact ceiling.",
+    "Same final adapter, tokenizer, numeric backend, decoder, EOS, cache, 1024 generation cap and per-question scheduling; preflight all context budgets before generating.",
+    "One native completion per planned task-arm. No retries, repairs, best-of, post-hoc sentence deletion or selective exclusions. Preserve failure receipts.",
+    "Pre-register packet/file hashes before human judgments; reviewers see neither model/arm/prompt condition nor historical grades. Style may still reveal condition: assess blinding limitations."
+  ],
+  "order_seed": 20261025,
+  "blind_seed": 158272,
+  "primary": {
+    "metric": "paired difference B-A in fraction of all planned questions with whole-answer correct content",
+    "whole_correct": "Defined by protocol_experiments/SLOT_RUBRIC.md (hash in frozen_inputs): all frozen necessary slots satisfied with their speaker/addressee/actor/identity/phase/modality qualifiers, no material error anywhere in the readable completion (required or extra), action appropriate.",
+    "denominator": "Every preregistered question-arm including execution failures; repeated round/evidence variants remain but are not independent questions.",
+    "syntax": "Malformed JSON is scored for readable whole-answer content. JSON validity, fact count, protocol action schema and citation binding are separate deployment diagnostics.",
+    "execution_failures": "Missing output, OOM, timeout, generation error and hitting length limit without EOS count as failures; do not repair or replace them.",
+    "judge": "Independent human reviewers using all20 evidence, predeclared necessary slots, then blinded adjudication of disagreements. Assistant-only provisional review must remain labeled non-independent.",
+    "analysis": "Report gained/lost/both-correct/both-failed and B-A; also equal-weight question-group result. No iid confidence claim for 46 rows/43 groups."
+  },
+  "diagnostics": [
+    "Required/core error vs unnecessary/extra-fact error vs necessary-slot omission, with claim locator and evidence rationale; never infer error from output length.",
+    "Role/recipient, phase/modality, unsupported assertion and contradiction are recorded separately; multiple causes may coexist.",
+    "Raw text length, generated-token count, JSON, action-schema/citation validity, EOS/length and resource failures are descriptive, not substitutes for content accuracy.",
+    "Per item: first_material_error_fact index and unnecessary_supported list (SLOT_RUBRIC §5) separate 'error after a sufficient prefix' from 'error in the core'.",
+    "Mechanism panels on dev46 positions (diagnostic only, not the primary metric). v2: clear_clean_prefix [10,13,16,30,32,35,41] (6 question groups), first_fact_or_core [21,22,27,45] (answer_mechanisms/README.md). Input-layer: clean-prefix-then-error only [15,24,26,38]; its other 18 non-complete answers fail at facts 1-2 or by omission (input_errors/README.md). Both panels: late_necessary [1,17,31] must keep facts beyond the first relevant one; action_risk [4,5,12,19,43] (teacher label retrieve/abstain, both historical adapters answered).",
+    "Secondary outcome, per arm and panel: parsed next_action distribution (answer_directly / retrieve_more / abstain / unparsed), computed by analyze. A slot-focused instruction may push toward answering; report B-A shifts on action_risk positions separately. A justified 2/2 abstain on a question with no determinable content counts as correct (SLOT_RUBRIC §4)."
+  ],
+  "mechanism_predictions": [
+    {
+      "mechanism": "scope expansion: correct core, then extra facts with wrong bindings",
+      "prediction": "v2 panel: B removes the extra-scope error in most of [10,13,16,30,32,35,41] and lowers items with_extra_error overall, without new omissions on [1,17].",
+      "falsifier": "Extra errors persist in those positions under B, or B shortens answers but the errors move into the core slots."
+    },
+    {
+      "mechanism": "binding is instruction-sensitive (the model can bind correctly when asked to check roles/phases)",
+      "prediction": "Some of [21,22,27,45], whose first fact is already misbound, become correct under B; required actor_recipient/identity/phase errors drop.",
+      "falsifier": "[21,22,27,45] stay wrong in the core under B while extra errors drop: binding is not instruction-recoverable and the next intervention is training-side (data_mechanisms/BINDING_TARGET_SPEC.md)."
+    },
+    {
+      "mechanism": "premature stop (instruction causes omissions)",
+      "prediction": "Absent if the no-cap clause works: [1,17] keep their late necessary cause; with_omission does not rise.",
+      "falsifier": "B loses [1] or [17] or raises with_omission: reword stop criterion before any confirmation set."
+    },
+    {
+      "mechanism": "input-layer panel headroom",
+      "prediction": "Input-layer has only four clean-prefix-then-error positions [15,24,26,38], so scope stopping alone can add at most about +4 (24->28) even if perfect; reaching 28 additionally needs core binding/omission fixes, which B can only reach through its binding-check clause. Expected input-layer B-A smaller than v2's.",
+      "falsifier": "Input-layer gains outside [15,24,26,38] that come from fixed core bindings would show binding is instruction-sensitive on the best adapter; gains concentrated in extra-error removal elsewhere would contradict input_errors/ localisation."
+    },
+    {
+      "mechanism": "instruction shifts action calibration",
+      "prediction": "B does not change actions on action_risk [4,5,12,19,43] or on 45 relative to A.",
+      "falsifier": "B converts justified retrieve/abstain into answer_directly (or the reverse) on those positions; report as a separate regression even if whole-answer counts improve."
+    }
+  ],
+  "decision_rule": {
+    "development_pilot": "Run each panel on the full 46 (all retained). Per panel advance only if gained > lost and extra-error reductions exceed new omissions. The objective (28/46 on the best adapter) is read only from the input-layer panel; a v2 gain alone does not meet it. Dev46 is reused development data and cannot establish generalization.",
+    "confirmation": "Freeze wording and code before generating 120 new independent question families from source families excluded from training and repeated dev46. Balance role/recipient, stage/modality, multi-slot partial-answer and ordinary controls (30 each). Prepare slots and acceptable uncertainty/actions before seeing outputs. Two blinded human ratings per item, adjudicate all disagreements; 240 outputs plus adjudication. If source-family exclusion cannot be checked against complete1117, label the set unverified and do not claim independent testing.",
+    "confirmation_success": "Positive whole-answer B-A with positive paired question-family bootstrap 95% lower bound (10000 resamples, seed20261025) and no increase in omission item rate; this is a conservative decision criterion, not a power guarantee. If interval spans zero, more evidence is needed, not success by fact count.",
+    "secondary_only_after_first": "If B leaves core binding errors (second prediction falsified), the next training comparison follows data_mechanisms/BINDING_TARGET_SPEC.md (forward-only binding probe first, then matched-count training arms). If omissions dominate, use the reviewed slot-complete target contract in data_mechanisms/README.md. Never combine with LR or architecture changes. No merge or training authorized here."
+  },
+  "resources": {
+    "local_protocol": "Python3 standard library; no GPU/network/model calls",
+    "pilot": "Per panel: 92 real full20 generations (184 for both) after authorization/assets, same runtime per panel; 92 independent human item ratings per panel plus duplicate rating/adjudication as available",
+    "confirmation": "240 real generations, 480 initial human ratings plus adjudication; annotate slots before output generation",
+    "missing": [
+      "final v2 adapter weights/config locally",
+      "backbone packed artifact manifest/tensors locally",
+      "complete1117 data for leakage exclusions",
+      "runtime effective generation config/parity receipt",
+      "new human-reviewed heldout question families",
+      "input-layer final adapter weights locally",
+      "evidence check of the 62 draft slots by reviewers"
+    ]
+  },
+  "attribution_boundary": "A/B estimates an instruction intervention on fixed v2. It does not establish why historical input-only24/46 differed from v2 15/46. Different optimization bundles, parameterizations and non-blind reused baseline ratings remain confounded. The two panels use different adapters (and possibly decoders); compare B-A within a panel only."
+}
