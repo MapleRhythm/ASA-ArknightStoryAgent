@@ -1,0 +1,334 @@
+{
+ "version": "input_layer_1117",
+ "n_questions": 46,
+ "baseline_complete": 24,
+ "unannotated_complete": 24,
+ "judgment_status": "assistant oracle annotation; not independent human gold; 46-question repeated dev set",
+ "annotation_source": "input-errors 22-case review (fixable/borderline subset + case 6) + fact-verifier alignment check",
+ "cases": [
+  {
+   "position": 15,
+   "historical": "partial",
+   "required_points": [
+    "manfred",
+    "pardoner"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "manfred"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "pardoner"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "pardoner"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "identity"
+    }
+   ]
+  },
+  {
+   "position": 24,
+   "historical": "partial",
+   "required_points": [
+    "threat",
+    "punish"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "threat"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "punish"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "identity"
+    }
+   ]
+  },
+  {
+   "position": 26,
+   "historical": "partial",
+   "required_points": [
+    "busy",
+    "distant"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "busy"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "distant"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 38,
+   "historical": "partial",
+   "required_points": [
+    "plan",
+    "chance"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "chance"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "plan"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "possessor"
+    }
+   ]
+  },
+  {
+   "position": 18,
+   "historical": "partial",
+   "required_points": [
+    "identity",
+    "relation"
+   ],
+   "facts": [
+    {
+     "label": "binding_error",
+     "covers": [],
+     "covers_after_repair": [
+      "identity"
+     ],
+     "role": "identity"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "identity",
+      "relation"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 20,
+   "historical": "partial",
+   "boundary": [
+    "fact"
+   ],
+   "required_points": [
+    "identity",
+    "relation"
+   ],
+   "facts": [
+    {
+     "label": "binding_error",
+     "covers": [],
+     "covers_after_repair": [
+      "identity"
+     ],
+     "role": "identity"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "relation"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "identity"
+     ]
+    }
+   ]
+  },
+  {
+   "position": 46,
+   "historical": "partial",
+   "boundary": [
+    "fact"
+   ],
+   "required_points": [
+    "hypocrisy",
+    "concealed"
+   ],
+   "facts": [
+    {
+     "label": "binding_error",
+     "covers": [],
+     "covers_after_repair": [
+      "concealed"
+     ],
+     "role": "participant"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "concealed"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "hypocrisy"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "hypocrisy"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 39,
+   "historical": "partial",
+   "boundary": true,
+   "required_points": [
+    "prophecy",
+    "crown",
+    "challenge"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "prophecy"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "crown"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "challenge"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 6,
+   "historical": "partial",
+   "required_points": [
+    "warning",
+    "stance"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "stance"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    }
+   ]
+  }
+ ]
+}

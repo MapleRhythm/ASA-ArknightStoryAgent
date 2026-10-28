@@ -1,0 +1,698 @@
+{
+ "version": "v2_optimized_1117",
+ "n_questions": 46,
+ "baseline_complete": 15,
+ "unannotated_complete": 11,
+ "judgment_status": "assistant oracle annotation; not independent human gold; 46-question repeated dev set",
+ "annotation_source": "round-1 answer-mechanisms 17 cases + fact-verifier per-fact review",
+ "cases": [
+  {
+   "position": 8,
+   "historical": "partial",
+   "boundary": true,
+   "required_points": [
+    "how_lost"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "motive"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "how_lost"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "unsupported",
+     "covers": [],
+     "role": "other"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 10,
+   "historical": "partial",
+   "required_points": [
+    "motive"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "motive"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 4
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 5
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 4
+    }
+   ]
+  },
+  {
+   "position": 13,
+   "historical": "partial",
+   "required_points": [
+    "inspector",
+    "friend"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "inspector",
+      "friend"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "participant"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "friend"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "inspector"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [],
+     "dup_of": 5
+    },
+    {
+     "label": "supported",
+     "covers": [],
+     "dup_of": 5
+    },
+    {
+     "label": "supported",
+     "covers": [],
+     "dup_of": 5
+    }
+   ]
+  },
+  {
+   "position": 16,
+   "historical": "partial",
+   "required_points": [
+    "motive"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "motive"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 5
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 6
+    }
+   ]
+  },
+  {
+   "position": 21,
+   "historical": "partial",
+   "required_points": [
+    "comrades",
+    "cooperate"
+   ],
+   "facts": [
+    {
+     "label": "binding_error",
+     "covers": [],
+     "covers_after_repair": [
+      "comrades"
+     ],
+     "role": "relation"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "betrayal"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "cooperate"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "identity"
+    }
+   ]
+  },
+  {
+   "position": 22,
+   "historical": "partial",
+   "required_points": [
+    "barrier",
+    "she_is_chang"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "barrier"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "covers_after_repair": [
+      "she_is_chang",
+      "motive"
+     ],
+     "role": "identity"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "tried"
+     ]
+    }
+   ]
+  },
+  {
+   "position": 27,
+   "historical": "partial",
+   "required_points": [
+    "no_revenge_path"
+   ],
+   "facts": [
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "participant"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "participant"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "debt"
+     ]
+    }
+   ]
+  },
+  {
+   "position": 30,
+   "historical": "partial",
+   "required_points": [
+    "unique",
+    "witness",
+    "amulet"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "unique"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "witness"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "amulet"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "phase"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 32,
+   "historical": "partial",
+   "required_points": [
+    "likes",
+    "journey"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "likes"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "journey"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "speaker",
+     "dup_of": 6
+    }
+   ]
+  },
+  {
+   "position": 33,
+   "historical": "partial",
+   "boundary": true,
+   "required_points": [
+    "access",
+    "protect"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "access"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "access"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "protect"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "scene"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 35,
+   "historical": "partial",
+   "required_points": [
+    "amiya",
+    "rosmontis"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "amiya"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "rosmontis"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "participant"
+    }
+   ]
+  },
+  {
+   "position": 41,
+   "historical": "partial",
+   "required_points": [
+    "enemy",
+    "trap",
+    "cut_loop",
+    "not_creator"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "enemy"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "trap"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "cut_loop"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "not_creator"
+     ]
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "addressee"
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 45,
+   "historical": "partial",
+   "required_points": [
+    "cannot_confirm"
+   ],
+   "facts": [
+    {
+     "label": "unsupported",
+     "covers": [],
+     "role": "identity"
+    },
+    {
+     "label": "binding_error",
+     "covers": [],
+     "role": "participant"
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "cannot_confirm"
+     ]
+    }
+   ]
+  },
+  {
+   "position": 1,
+   "historical": "complete",
+   "required_points": [
+    "direct_motive"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "direct_motive"
+     ]
+    }
+   ]
+  },
+  {
+   "position": 17,
+   "historical": "complete",
+   "required_points": [
+    "fetch_daughter"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "fetch_daughter"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 24,
+   "historical": "complete",
+   "required_points": [
+    "threat",
+    "punish"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": [
+      "threat"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "punish"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "threat",
+      "punish"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  },
+  {
+   "position": 31,
+   "historical": "complete",
+   "required_points": [
+    "unafraid",
+    "rebirth"
+   ],
+   "facts": [
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "unafraid"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": [
+      "rebirth"
+     ]
+    },
+    {
+     "label": "supported",
+     "covers": []
+    },
+    {
+     "label": "supported",
+     "covers": []
+    }
+   ]
+  }
+ ]
+}

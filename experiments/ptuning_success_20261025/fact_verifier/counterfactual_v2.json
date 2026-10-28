@@ -1,0 +1,653 @@
+{
+  "version": "v2_optimized_1117",
+  "status": "assistant_judgment_upper_bound_not_model_accuracy",
+  "baseline_complete": 15,
+  "n_questions": 46,
+  "annotated_cases": 17,
+  "unannotated_complete": 11,
+  "oracle": {
+    "fact": {
+      "complete_positions": [
+        1,
+        10,
+        13,
+        16,
+        17,
+        24,
+        30,
+        31,
+        32,
+        35,
+        41,
+        45
+      ],
+      "boundary_positions": [
+        8,
+        33
+      ],
+      "not_complete_positions": [
+        21,
+        22,
+        27
+      ],
+      "historically_complete_lost": [],
+      "total_complete_low": 23,
+      "total_complete_high": 25
+    },
+    "clause": {
+      "complete_positions": [
+        1,
+        10,
+        13,
+        16,
+        17,
+        21,
+        22,
+        24,
+        30,
+        31,
+        32,
+        35,
+        41,
+        45
+      ],
+      "boundary_positions": [
+        8,
+        33
+      ],
+      "not_complete_positions": [
+        27
+      ],
+      "historically_complete_lost": [],
+      "total_complete_low": 25,
+      "total_complete_high": 27
+    }
+  },
+  "grid": [
+    {
+      "q": 0.0,
+      "r": 1.0,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 23.0,
+        "expected_complete_high": 25.0
+      },
+      "clause": {
+        "expected_complete_low": 25.0,
+        "expected_complete_high": 27.0
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 1.0,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 23.0,
+        "expected_complete_high": 25.0
+      },
+      "clause": {
+        "expected_complete_low": 25.0,
+        "expected_complete_high": 27.0
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 1.0,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 23.0,
+        "expected_complete_high": 25.0
+      },
+      "clause": {
+        "expected_complete_low": 25.0,
+        "expected_complete_high": 27.0
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.9,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 21.768,
+        "expected_complete_high": 23.568
+      },
+      "clause": {
+        "expected_complete_low": 23.478,
+        "expected_complete_high": 25.278
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.9,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 21.768,
+        "expected_complete_high": 23.568
+      },
+      "clause": {
+        "expected_complete_low": 23.478,
+        "expected_complete_high": 25.278
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.9,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 21.768,
+        "expected_complete_high": 23.568
+      },
+      "clause": {
+        "expected_complete_low": 23.478,
+        "expected_complete_high": 25.278
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.818,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 20.854,
+        "expected_complete_high": 22.49
+      },
+      "clause": {
+        "expected_complete_low": 22.341,
+        "expected_complete_high": 23.977
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.818,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 20.854,
+        "expected_complete_high": 22.49
+      },
+      "clause": {
+        "expected_complete_low": 22.341,
+        "expected_complete_high": 23.977
+      }
+    },
+    {
+      "q": 0.0,
+      "r": 0.818,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 20.854,
+        "expected_complete_high": 22.49
+      },
+      "clause": {
+        "expected_complete_low": 22.341,
+        "expected_complete_high": 23.977
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 1.0,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 22.711,
+        "expected_complete_high": 24.691
+      },
+      "clause": {
+        "expected_complete_low": 24.691,
+        "expected_complete_high": 26.671
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 1.0,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 22.602,
+        "expected_complete_high": 24.582
+      },
+      "clause": {
+        "expected_complete_low": 24.582,
+        "expected_complete_high": 26.562
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 1.0,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 22.494,
+        "expected_complete_high": 24.474
+      },
+      "clause": {
+        "expected_complete_low": 24.474,
+        "expected_complete_high": 26.454
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.9,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 21.497,
+        "expected_complete_high": 23.279
+      },
+      "clause": {
+        "expected_complete_low": 23.19,
+        "expected_complete_high": 24.972
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.9,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 21.388,
+        "expected_complete_high": 23.17
+      },
+      "clause": {
+        "expected_complete_low": 23.081,
+        "expected_complete_high": 24.863
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.9,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 21.28,
+        "expected_complete_high": 23.062
+      },
+      "clause": {
+        "expected_complete_low": 22.973,
+        "expected_complete_high": 24.755
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.818,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 20.597,
+        "expected_complete_high": 22.216
+      },
+      "clause": {
+        "expected_complete_low": 22.069,
+        "expected_complete_high": 23.689
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.818,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 20.488,
+        "expected_complete_high": 22.107
+      },
+      "clause": {
+        "expected_complete_low": 21.96,
+        "expected_complete_high": 23.58
+      }
+    },
+    {
+      "q": 0.01,
+      "r": 0.818,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 20.38,
+        "expected_complete_high": 22.0
+      },
+      "clause": {
+        "expected_complete_low": 21.852,
+        "expected_complete_high": 23.472
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 1.0,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 22.423,
+        "expected_complete_high": 24.383
+      },
+      "clause": {
+        "expected_complete_low": 24.383,
+        "expected_complete_high": 26.343
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 1.0,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 22.208,
+        "expected_complete_high": 24.167
+      },
+      "clause": {
+        "expected_complete_low": 24.168,
+        "expected_complete_high": 26.127
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 1.0,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 21.996,
+        "expected_complete_high": 23.956
+      },
+      "clause": {
+        "expected_complete_low": 23.956,
+        "expected_complete_high": 25.916
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.9,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 21.227,
+        "expected_complete_high": 22.991
+      },
+      "clause": {
+        "expected_complete_low": 22.903,
+        "expected_complete_high": 24.667
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.9,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 21.012,
+        "expected_complete_high": 22.776
+      },
+      "clause": {
+        "expected_complete_low": 22.688,
+        "expected_complete_high": 24.451
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.9,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 20.801,
+        "expected_complete_high": 22.564
+      },
+      "clause": {
+        "expected_complete_low": 22.476,
+        "expected_complete_high": 24.24
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.818,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 20.341,
+        "expected_complete_high": 21.944
+      },
+      "clause": {
+        "expected_complete_low": 21.798,
+        "expected_complete_high": 23.401
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.818,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 20.126,
+        "expected_complete_high": 21.728
+      },
+      "clause": {
+        "expected_complete_low": 21.583,
+        "expected_complete_high": 23.186
+      }
+    },
+    {
+      "q": 0.02,
+      "r": 0.818,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 19.914,
+        "expected_complete_high": 21.517
+      },
+      "clause": {
+        "expected_complete_low": 21.372,
+        "expected_complete_high": 22.975
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 1.0,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 21.57,
+        "expected_complete_high": 23.467
+      },
+      "clause": {
+        "expected_complete_low": 23.47,
+        "expected_complete_high": 25.367
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 1.0,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 21.047,
+        "expected_complete_high": 22.945
+      },
+      "clause": {
+        "expected_complete_low": 22.947,
+        "expected_complete_high": 24.845
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 1.0,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 20.551,
+        "expected_complete_high": 22.448
+      },
+      "clause": {
+        "expected_complete_low": 22.451,
+        "expected_complete_high": 24.348
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.9,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 20.427,
+        "expected_complete_high": 22.135
+      },
+      "clause": {
+        "expected_complete_low": 22.052,
+        "expected_complete_high": 23.759
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.9,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 19.905,
+        "expected_complete_high": 21.612
+      },
+      "clause": {
+        "expected_complete_low": 21.529,
+        "expected_complete_high": 23.237
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.9,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 19.408,
+        "expected_complete_high": 21.116
+      },
+      "clause": {
+        "expected_complete_low": 21.033,
+        "expected_complete_high": 22.741
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.818,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 19.581,
+        "expected_complete_high": 21.134
+      },
+      "clause": {
+        "expected_complete_low": 20.994,
+        "expected_complete_high": 22.546
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.818,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 19.059,
+        "expected_complete_high": 20.611
+      },
+      "clause": {
+        "expected_complete_low": 20.472,
+        "expected_complete_high": 22.024
+      }
+    },
+    {
+      "q": 0.05,
+      "r": 0.818,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 18.562,
+        "expected_complete_high": 20.115
+      },
+      "clause": {
+        "expected_complete_low": 19.975,
+        "expected_complete_high": 21.527
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 1.0,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 19.93,
+        "expected_complete_high": 21.702
+      },
+      "clause": {
+        "expected_complete_low": 21.712,
+        "expected_complete_high": 23.484
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 1.0,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 18.862,
+        "expected_complete_high": 20.633
+      },
+      "clause": {
+        "expected_complete_low": 20.644,
+        "expected_complete_high": 22.415
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 1.0,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 17.91,
+        "expected_complete_high": 19.682
+      },
+      "clause": {
+        "expected_complete_low": 19.692,
+        "expected_complete_high": 21.464
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.9,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 18.888,
+        "expected_complete_high": 20.482
+      },
+      "clause": {
+        "expected_complete_low": 20.411,
+        "expected_complete_high": 22.006
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.9,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 17.819,
+        "expected_complete_high": 19.414
+      },
+      "clause": {
+        "expected_complete_low": 19.343,
+        "expected_complete_high": 20.937
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.9,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 16.868,
+        "expected_complete_high": 18.462
+      },
+      "clause": {
+        "expected_complete_low": 18.391,
+        "expected_complete_high": 19.986
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.818,
+      "k_necessary_unannotated": 1,
+      "fact": {
+        "expected_complete_low": 18.119,
+        "expected_complete_high": 19.568
+      },
+      "clause": {
+        "expected_complete_low": 19.444,
+        "expected_complete_high": 20.893
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.818,
+      "k_necessary_unannotated": 2,
+      "fact": {
+        "expected_complete_low": 17.05,
+        "expected_complete_high": 18.499
+      },
+      "clause": {
+        "expected_complete_low": 18.375,
+        "expected_complete_high": 19.824
+      }
+    },
+    {
+      "q": 0.109,
+      "r": 0.818,
+      "k_necessary_unannotated": 3,
+      "fact": {
+        "expected_complete_low": 16.098,
+        "expected_complete_high": 17.547
+      },
+      "clause": {
+        "expected_complete_low": 17.423,
+        "expected_complete_high": 18.872
+      }
+    }
+  ]
+}
