@@ -1,0 +1,667 @@
+{
+  "source_integrity_and_offsets_match": true,
+  "semantic_judgments": "manual assistant audit after reading listed passages; not independent human gold",
+  "denominator": "22 historical non-complete input-layer answers (13 partial, 9 wrong) of the repeatedly used 46-question dev set",
+  "new_generation_performed": false,
+  "new_model_accuracy_measured": false,
+  "primary_category_counts": {
+    "1": 5,
+    "2": 11,
+    "4": 6
+  },
+  "primary_by_historical": {
+    "partial": {
+      "1": 3,
+      "2": 9,
+      "4": 1
+    },
+    "wrong": {
+      "1": 2,
+      "2": 2,
+      "4": 5
+    }
+  },
+  "any_binding_error_count": 16,
+  "fix_class_counts": {
+    "A": 4,
+    "B": 4,
+    "C": 5,
+    "D": 9
+  },
+  "offline_conversion_likelihood_counts": {
+    "high": 8,
+    "low": 7,
+    "medium": 7
+  },
+  "high_likelihood_positions": [
+    5,
+    12,
+    15,
+    18,
+    19,
+    24,
+    26,
+    38
+  ],
+  "counterfactual_note": "high = assistant judges the historical rubric would accept the answer after the named minimal change; an offline counterfactual upper bound, never a model accuracy",
+  "action_calibration": {
+    "input_answer_directly_on_46": 45,
+    "non_complete_where_teacher_label_is_not_answer": [
+      4,
+      5,
+      12,
+      19,
+      43
+    ]
+  },
+  "premise_term_coverage": {
+    "rule": "pre-specified key terms from question text; flag if any term occurs in none of the 20 passages",
+    "flagged_positions": [
+      4,
+      5,
+      12,
+      19,
+      29,
+      39,
+      40,
+      42,
+      44,
+      45
+    ],
+    "flagged_by_historical_category": {
+      "wrong": 5,
+      "complete": 2,
+      "partial": 3
+    },
+    "unflagged_by_historical_category": {
+      "partial": 10,
+      "complete": 22,
+      "wrong": 4
+    }
+  },
+  "binding_cue": {
+    "definition": "cued = question names both the correct and the wrongly bound party AND the misbound proposition sits under an explicit speaker label naming the correct agent; otherwise uncued (pronoun, second person, vocative, alias, reported speech, unlabeled line, scene)",
+    "instances": 21,
+    "cases_with_binding": 16,
+    "cued_instances": 0,
+    "question_cue_counts": {
+      "none": 7,
+      "both": 5,
+      "both_alias": 2,
+      "one": 7
+    },
+    "evidence_locus_counts": {
+      "scene": 3,
+      "reported_speech": 1,
+      "second_person": 3,
+      "alias": 5,
+      "pronoun": 2,
+      "explicit_label": 3,
+      "vocative": 3,
+      "unlabeled_line": 1
+    },
+    "primary_binding_cases_first_instance_cued": 0,
+    "primary_binding_cases": 11
+  },
+  "boundary_training_vs_dev": {
+    "sampling": "deterministic: non-answer evidence_boundary rows sorted by sha256(id), first 14; manual reading",
+    "training_sample_n": 14,
+    "training_sample_class_counts": {
+      "anchor_present_attribute_missing": 13,
+      "anchor_present_with_neighbor_distractor": 1
+    },
+    "dev_action_failure_class_counts": {
+      "neighbor_substitution_premise_absent": 5
+    },
+    "dev_action_failure_positions": [
+      4,
+      5,
+      12,
+      19,
+      43
+    ],
+    "all486_questions_generated_from_evidence": 486,
+    "all486_rows": 486
+  },
+  "cases": [
+    {
+      "position": 1,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        1,
+        2,
+        7
+      ],
+      "question_overlap_rank_required_unused": [
+        3
+      ],
+      "historical_input_category": "partial",
+      "primary_category": 1,
+      "secondary_categories": [
+        5
+      ],
+      "mechanism": "lexical_anchor_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": null,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 5,
+      "all20_read": false
+    },
+    {
+      "position": 4,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        3,
+        6,
+        16,
+        17,
+        19,
+        20
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "wrong",
+      "primary_category": 4,
+      "secondary_categories": [],
+      "mechanism": "presupposition_failure_answered",
+      "fix_class": "C",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "retrieve_more",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 5,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        3,
+        4,
+        8
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "wrong",
+      "primary_category": 4,
+      "secondary_categories": [
+        2
+      ],
+      "mechanism": "presupposition_failure_answered",
+      "fix_class": "C",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "abstain",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 6,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        4,
+        6,
+        10,
+        13,
+        17
+      ],
+      "question_overlap_rank_required_unused": [
+        5
+      ],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [
+        1
+      ],
+      "mechanism": "stance_and_speaker_binding_plus_slot_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 3,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 13,
+      "all20_read": false
+    },
+    {
+      "position": 12,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        5,
+        6,
+        8,
+        9,
+        14
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "wrong",
+      "primary_category": 4,
+      "secondary_categories": [
+        2
+      ],
+      "mechanism": "presupposition_failure_answered",
+      "fix_class": "C",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 8,
+      "teacher_label_action": "abstain",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 15,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        2
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [
+        3
+      ],
+      "mechanism": "identity_pronoun_binding_after_sufficient_core",
+      "fix_class": "A",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 4,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 3,
+      "all20_read": false
+    },
+    {
+      "position": 17,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        1,
+        2
+      ],
+      "question_overlap_rank_required_unused": [
+        12
+      ],
+      "historical_input_category": "partial",
+      "primary_category": 1,
+      "secondary_categories": [],
+      "mechanism": "lexical_anchor_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": null,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 6,
+      "all20_read": false
+    },
+    {
+      "position": 18,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        6,
+        12,
+        14
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "alias_identity_binding_core_entangled",
+      "fix_class": "B",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 10,
+      "all20_read": false
+    },
+    {
+      "position": 19,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "wrong",
+      "primary_category": 4,
+      "secondary_categories": [
+        2
+      ],
+      "mechanism": "presupposition_failure_answered",
+      "fix_class": "C",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "abstain",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 20,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        4,
+        6,
+        7,
+        10,
+        14
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "alias_identity_binding_core_entangled",
+      "fix_class": "B",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 12,
+      "all20_read": false
+    },
+    {
+      "position": 24,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        2,
+        5
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "alias_identity_binding_after_sufficient_core",
+      "fix_class": "A",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 4,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 4,
+      "all20_read": false
+    },
+    {
+      "position": 26,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        2,
+        3,
+        12,
+        19
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "speaker_target_reversal_after_sufficient_core",
+      "fix_class": "A",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 4,
+      "input_fact_count": 6,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 6,
+      "all20_read": false
+    },
+    {
+      "position": 31,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        1,
+        5
+      ],
+      "question_overlap_rank_required_unused": [
+        2,
+        3
+      ],
+      "historical_input_category": "wrong",
+      "primary_category": 1,
+      "secondary_categories": [],
+      "mechanism": "lexical_anchor_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": null,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 4,
+      "all20_read": false
+    },
+    {
+      "position": 36,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        14,
+        18,
+        19,
+        20
+      ],
+      "question_overlap_rank_required_unused": [
+        1,
+        2
+      ],
+      "historical_input_category": "wrong",
+      "primary_category": 1,
+      "secondary_categories": [
+        2,
+        3
+      ],
+      "mechanism": "phase_selection_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 2,
+      "input_fact_count": 6,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 37,
+      "round": "1/2",
+      "question_overlap_rank_cited": [
+        7
+      ],
+      "question_overlap_rank_required_unused": [
+        5
+      ],
+      "historical_input_category": "wrong",
+      "primary_category": 2,
+      "secondary_categories": [
+        5
+      ],
+      "mechanism": "scene_selection_and_speaker_negation",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 38,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        6,
+        16
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [
+        5
+      ],
+      "mechanism": "possessor_binding_after_sufficient_core",
+      "fix_class": "A",
+      "offline_conversion_likelihood": "high",
+      "first_issue_fact_index": 4,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 5,
+      "all20_read": false
+    },
+    {
+      "position": 39,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        2,
+        3,
+        6,
+        8,
+        9,
+        14,
+        17
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [
+        4,
+        5
+      ],
+      "mechanism": "speaker_binding_adjacent_turn",
+      "fix_class": "B",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 2,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 10,
+      "all20_read": false
+    },
+    {
+      "position": 40,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        2,
+        6
+      ],
+      "question_overlap_rank_required_unused": [
+        1
+      ],
+      "historical_input_category": "wrong",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "addressee_binding_vocative",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 42,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        1,
+        9
+      ],
+      "question_overlap_rank_required_unused": [
+        4
+      ],
+      "historical_input_category": "partial",
+      "primary_category": 4,
+      "secondary_categories": [
+        1,
+        3
+      ],
+      "mechanism": "partial_presupposition_plus_omission",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 4,
+      "all20_read": false
+    },
+    {
+      "position": 43,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        7,
+        9
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "wrong",
+      "primary_category": 4,
+      "secondary_categories": [
+        2
+      ],
+      "mechanism": "presupposition_failure_answered_scene_transfer",
+      "fix_class": "C",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 4,
+      "teacher_label_action": "abstain",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 20,
+      "all20_read": true
+    },
+    {
+      "position": 44,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        4,
+        5
+      ],
+      "question_overlap_rank_required_unused": [
+        14,
+        17
+      ],
+      "historical_input_category": "partial",
+      "primary_category": 1,
+      "secondary_categories": [
+        4,
+        3
+      ],
+      "mechanism": "omission_plus_unestablished_premise",
+      "fix_class": "D",
+      "offline_conversion_likelihood": "low",
+      "first_issue_fact_index": null,
+      "input_fact_count": 4,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 6,
+      "all20_read": false
+    },
+    {
+      "position": 46,
+      "round": "2/2",
+      "question_overlap_rank_cited": [
+        10
+      ],
+      "question_overlap_rank_required_unused": [],
+      "historical_input_category": "partial",
+      "primary_category": 2,
+      "secondary_categories": [],
+      "mechanism": "coreference_participant_binding",
+      "fix_class": "B",
+      "offline_conversion_likelihood": "medium",
+      "first_issue_fact_index": 1,
+      "input_fact_count": 5,
+      "teacher_label_action": "answer_directly",
+      "input_action": "answer_directly",
+      "evidence_passages_read": 5,
+      "all20_read": false
+    }
+  ]
+}
