@@ -1,0 +1,449 @@
+{
+ "semantic_judgments": "none; all counts are deterministic string statistics",
+ "train_rows": 1117,
+ "val_rows": 46,
+ "provenance_action_counts": [
+  {
+   "kind": "base_none",
+   "origin": "no_generation_id",
+   "action": "abstain",
+   "n": 8
+  },
+  {
+   "kind": "base_none",
+   "origin": "no_generation_id",
+   "action": "answer_directly",
+   "n": 267
+  },
+  {
+   "kind": "base_none",
+   "origin": "no_generation_id",
+   "action": "retrieve_more",
+   "n": 5
+  },
+  {
+   "kind": "event_state_scope",
+   "origin": "generated_from_evidence",
+   "action": "abstain",
+   "n": 1
+  },
+  {
+   "kind": "event_state_scope",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 66
+  },
+  {
+   "kind": "evidence_boundary",
+   "origin": "generated_from_evidence",
+   "action": "abstain",
+   "n": 17
+  },
+  {
+   "kind": "evidence_boundary",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 41
+  },
+  {
+   "kind": "evidence_boundary",
+   "origin": "generated_from_evidence",
+   "action": "retrieve_more",
+   "n": 53
+  },
+  {
+   "kind": "minimal_complete",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 71
+  },
+  {
+   "kind": "missing_evidence",
+   "origin": "generated_from_evidence",
+   "action": "abstain",
+   "n": 36
+  },
+  {
+   "kind": "missing_evidence",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 41
+  },
+  {
+   "kind": "missing_evidence",
+   "origin": "generated_from_evidence",
+   "action": "retrieve_more",
+   "n": 69
+  },
+  {
+   "kind": "multi_question",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 114
+  },
+  {
+   "kind": "partial_support",
+   "origin": "generated_from_evidence",
+   "action": "abstain",
+   "n": 1
+  },
+  {
+   "kind": "partial_support",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 38
+  },
+  {
+   "kind": "partial_support",
+   "origin": "generated_from_evidence",
+   "action": "retrieve_more",
+   "n": 8
+  },
+  {
+   "kind": "speaker_direction",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 71
+  },
+  {
+   "kind": "speaker_identity",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 120
+  },
+  {
+   "kind": "timeline_scope",
+   "origin": "generated_from_evidence",
+   "action": "answer_directly",
+   "n": 89
+  },
+  {
+   "kind": "timeline_scope",
+   "origin": "generated_from_evidence",
+   "action": "retrieve_more",
+   "n": 1
+  }
+ ],
+ "detector": "longest content run (form words removed) whose every bigram is absent from all 20 passages; scores capped at 8",
+ "dev46_teacher_actions": {
+  "answer_directly": 41,
+  "retrieve_more": 1,
+  "abstain": 4
+ },
+ "dev46_score_by_position": [
+  {
+   "position": 1,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 2,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 3,
+   "score": 4,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 4,
+   "score": 5,
+   "teacher_action": "retrieve_more"
+  },
+  {
+   "position": 5,
+   "score": 5,
+   "teacher_action": "abstain"
+  },
+  {
+   "position": 6,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 7,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 8,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 9,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 10,
+   "score": 0,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 11,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 12,
+   "score": 5,
+   "teacher_action": "abstain"
+  },
+  {
+   "position": 13,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 14,
+   "score": 4,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 15,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 16,
+   "score": 0,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 17,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 18,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 19,
+   "score": 6,
+   "teacher_action": "abstain"
+  },
+  {
+   "position": 20,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 21,
+   "score": 0,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 22,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 23,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 24,
+   "score": 4,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 25,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 26,
+   "score": 0,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 27,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 28,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 29,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 30,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 31,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 32,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 33,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 34,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 35,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 36,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 37,
+   "score": 4,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 38,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 39,
+   "score": 3,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 40,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 41,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 42,
+   "score": 0,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 43,
+   "score": 3,
+   "teacher_action": "abstain"
+  },
+  {
+   "position": 44,
+   "score": 5,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 45,
+   "score": 4,
+   "teacher_action": "answer_directly"
+  },
+  {
+   "position": 46,
+   "score": 2,
+   "teacher_action": "answer_directly"
+  }
+ ],
+ "dev46_auc_nonanswer_vs_answer": 0.9390243902439024,
+ "dev46_thresholds": {
+  "1": {
+   "flagged_nonanswer": 5,
+   "nonanswer": 5,
+   "flagged_answer": 36,
+   "answer": 41
+  },
+  "2": {
+   "flagged_nonanswer": 5,
+   "nonanswer": 5,
+   "flagged_answer": 36,
+   "answer": 41
+  },
+  "3": {
+   "flagged_nonanswer": 5,
+   "nonanswer": 5,
+   "flagged_answer": 16,
+   "answer": 41
+  },
+  "4": {
+   "flagged_nonanswer": 4,
+   "nonanswer": 5,
+   "flagged_answer": 6,
+   "answer": 41
+  },
+  "5": {
+   "flagged_nonanswer": 4,
+   "nonanswer": 5,
+   "flagged_answer": 1,
+   "answer": 41
+  },
+  "6": {
+   "flagged_nonanswer": 1,
+   "nonanswer": 5,
+   "flagged_answer": 0,
+   "answer": 41
+  },
+  "7": {
+   "flagged_nonanswer": 0,
+   "nonanswer": 5,
+   "flagged_answer": 0,
+   "answer": 41
+  },
+  "8": {
+   "flagged_nonanswer": 0,
+   "nonanswer": 5,
+   "flagged_answer": 0,
+   "answer": 41
+  }
+ },
+ "train_score_distribution_nonanswer": {
+  "0": 4,
+  "2": 51,
+  "3": 72,
+  "4": 40,
+  "5": 21,
+  "6": 8,
+  "8": 3
+ },
+ "train_score_distribution_answer": {
+  "0": 23,
+  "2": 208,
+  "3": 303,
+  "4": 233,
+  "5": 79,
+  "6": 47,
+  "7": 15,
+  "8": 10
+ },
+ "train_auc_nonanswer_vs_answer": 0.47467183411611436,
+ "binding_rows_labelled_speakers_named_in_question": {
+  "speaker_direction": {
+   "named_0": 2,
+   "named_1": 26,
+   "named_2_or_more": 43
+  },
+  "speaker_identity": {
+   "named_0": 33,
+   "named_1": 46,
+   "named_2_or_more": 41
+  }
+ },
+ "binding_note": "counts only speakers that appear as line labels in the 20 passages; aliases and titles are missed"
+}
